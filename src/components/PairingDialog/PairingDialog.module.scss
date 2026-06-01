@@ -1,0 +1,107 @@
+.overlay {
+  @include absolute-fill;
+  background: rgba(0, 0, 0, 0.62);
+  @include flex-center;
+  z-index: $z-menu;
+  animation: pairingFadeIn $dur-base $ease-standard both;
+}
+
+@keyframes pairingFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card {
+  background: $bg;
+  padding: $s-7 $s-8;
+  border-radius: $r-2xl;
+  @include column;
+  align-items: center;
+  text-align: center;
+  @include flex-gap-y($s-3);
+  max-width: 480px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: pairingSlideIn $dur-slow $ease-emphasized both;
+}
+
+@keyframes pairingSlideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.title {
+  font-size: $fs-3xl;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  font-size: $fs-lg;
+  color: $text-tertiary;
+  max-width: 320px;
+  line-height: 1.4;
+}
+
+.passkey {
+  font-size: 64px;
+  font-weight: $fw-bold;
+  letter-spacing: 0.12em;
+  color: $text-primary;
+  font-variant-numeric: tabular-nums;
+  padding: $s-4 0;
+}
+
+.address {
+  font-size: $fs-sm;
+  color: $text-quaternary;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.waitingRow {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+  margin-top: $s-5;
+}
+
+.pulseDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: $accent;
+  box-shadow: 0 0 0 0 rgba(30, 215, 96, 0.55);
+  animation: pairingPulse 1.6s $ease-standard infinite;
+}
+
+@keyframes pairingPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(30, 215, 96, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(30, 215, 96, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(30, 215, 96, 0);
+  }
+}
+
+.waitingLabel {
+  font-size: $fs-md;
+  color: $text-secondary;
+}
+
+.subtitle strong {
+  color: $text-primary;
+  font-weight: $fw-semibold;
+}

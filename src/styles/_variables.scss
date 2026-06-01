@@ -1,0 +1,97 @@
+// display on the car thing is 800×480
+$screen-width: 800px;
+$screen-height: 480px;
+
+// layout
+$pad-x: 24px;
+$pad-y: 24px;
+$col-gap: 24px;
+$art-size: 200px;
+$art-size-large: 320px;
+$bottom-bar-h: 124px;
+
+// system colors
+$bg: #121212;
+$surface: #181818;
+$surface-elev: #1f1f22;
+$divider: rgba(255, 255, 255, 0.08);
+
+$text-primary: #ffffff;
+$text-secondary: rgba(255, 255, 255, 0.62);
+$text-tertiary: rgba(255, 255, 255, 0.42);
+$text-quaternary: rgba(255, 255, 255, 0.28);
+$text-disabled: rgba(255, 255, 255, 0.18);
+
+// lyrics opacity
+$lyric-active: $text-primary;
+$lyric-adjacent: rgba(255, 255, 255, 0.4);
+$lyric-far: rgba(255, 255, 255, 0.15);
+$lyric-unsynced: rgba(255, 255, 255, 0.6);
+
+$accent: #1ed760;
+$accent-dim: rgba(30, 215, 96, 0.32);
+
+$menu-bg: rgba(28, 28, 30, 0.96);
+$menu-border: rgba(255, 255, 255, 0.08);
+
+// spacing scale
+$s-1: 4px;
+$s-2: 8px;
+$s-3: 12px;
+$s-4: 16px;
+$s-5: 20px;
+$s-6: 24px;
+$s-7: 32px;
+$s-8: 48px;
+
+$r-sm: 6px;
+$r-md: 12px;
+$r-lg: 16px;
+$r-xl: 20px;
+$r-2xl: 28px;
+$r-pill: 999px;
+
+// fonts
+$font-system:
+  'Inter',
+  'Noto Sans JP',
+  'Noto Sans KR',
+  'Noto Sans SC',
+  'Noto Sans TC',
+  'Noto Naskh Arabic',
+  'Noto Sans Thai',
+  'Noto Sans Bengali',
+  'Noto Sans Devanagari',
+  'Noto Sans Hebrew',
+  'Noto Sans Greek',
+  'Noto Sans Tamil',
+  -apple-system,
+  BlinkMacSystemFont,
+  'Helvetica Neue',
+  sans-serif;
+
+$fs-xs: 11px;
+$fs-sm: 12px;
+$fs-md: 14px;
+$fs-lg: 16px;
+$fs-xl: 18px;
+$fs-2xl: 22px;
+$fs-3xl: 28px;
+$fs-4xl: 36px;
+
+$fw-regular: 400;
+$fw-medium: 500;
+$fw-semibold: 600;
+$fw-bold: 700;
+
+$touch-min: 44px;
+
+$ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+$ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+$dur-fast: 120ms;
+$dur-base: 200ms;
+$dur-slow: 300ms;
+
+$z-content: 1;
+$z-bottom-bar: 5;
+$z-menu: 50;

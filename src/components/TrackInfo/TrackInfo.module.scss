@@ -1,0 +1,34 @@
+.info {
+  @include column;
+  max-width: $art-size;
+  min-width: 0;
+  @include flex-gap-y($s-1);
+}
+
+.title {
+  font-size: 24px;
+  font-weight: $fw-bold;
+  letter-spacing: -0.01em;
+  color: $text-primary;
+}
+
+.artist {
+  font-size: 18px;
+  font-weight: $fw-medium;
+  color: $text-secondary;
+}
+
+.large {
+  max-width: 520px;
+  align-items: center;
+  text-align: center;
+
+  .title {
+    font-size: 28px;
+    font-weight: $fw-bold;
+  }
+  .artist {
+    font-size: 20px;
+    color: $text-secondary;
+  }
+}

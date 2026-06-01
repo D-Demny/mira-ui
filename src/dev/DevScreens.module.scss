@@ -1,0 +1,145 @@
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $s-6;
+  animation: scrimIn 120ms $ease-standard both;
+}
+
+@keyframes scrimIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.panel {
+  width: 100%;
+  max-width: 480px;
+  background: $menu-bg;
+  border: 1px solid $menu-border;
+  border-radius: $r-lg;
+  padding: $s-3;
+  font-family: $font-system;
+  color: $text-primary;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  animation: panelIn 160ms $ease-standard both;
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $s-2 $s-3 $s-3;
+}
+
+.title {
+  font-size: $fs-lg;
+  font-weight: $fw-semibold;
+  letter-spacing: 0.02em;
+}
+
+.kbd {
+  font-size: $fs-xs;
+  color: $text-tertiary;
+  font-family: ui-monospace, monospace;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid $divider;
+  padding: 2px 6px;
+  border-radius: $r-sm;
+}
+
+.divider {
+  height: 1px;
+  background: $divider;
+  margin: $s-2 0;
+}
+
+.row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: $s-3;
+  padding: $s-3;
+  background: transparent;
+  border: 0;
+  border-radius: $r-md;
+  color: $text-primary;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: $fs-md;
+  transition: background-color $dur-fast $ease-standard;
+
+  &:hover,
+  &:focus-visible {
+    background: rgba(255, 255, 255, 0.06);
+    outline: none;
+  }
+}
+
+.rowActive {
+  background: rgba(30, 215, 96, 0.12);
+
+  &:hover,
+  &:focus-visible {
+    background: rgba(30, 215, 96, 0.18);
+  }
+}
+
+.rowMark {
+  color: $accent;
+  font-weight: $fw-bold;
+  text-align: center;
+}
+
+.rowLabel {
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+}
+
+.rowHint {
+  font-size: $fs-xs;
+  color: $text-tertiary;
+  font-family: ui-monospace, monospace;
+}
+
+.badge {
+  position: fixed;
+  bottom: $s-3;
+  left: $s-3;
+  z-index: 9998;
+  background: rgba(30, 215, 96, 0.92);
+  color: #0a0a0a;
+  font-family: ui-monospace, monospace;
+  font-size: $fs-xs;
+  font-weight: $fw-bold;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: $r-sm;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+
+  &:hover {
+    background: $accent;
+  }
+}

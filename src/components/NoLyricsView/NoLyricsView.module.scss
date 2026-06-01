@@ -1,0 +1,27 @@
+.wrap {
+  width: 100%;
+  height: 100%;
+  @include flex-center;
+  flex-direction: column;
+  @include flex-gap-y($s-3);
+}
+
+@keyframes kenburns {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+.kenburns {
+  animation: kenburns 20s ease-in-out infinite;
+  will-change: transform;
+}
+
+.text {
+  width: 100%;
+  @include flex-center;
+}

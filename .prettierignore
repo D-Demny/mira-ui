@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+coverage
+*.local
+
+# Generated / vendored
+package-lock.json
+public/fonts
+
+# Build artifacts
+*.min.js
+*.min.css

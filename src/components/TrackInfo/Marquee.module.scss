@@ -1,0 +1,87 @@
+.wrap {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+
+.inner {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.animating {
+  text-align: left;
+}
+
+.animating .inner {
+  animation: marquee-scroll var(--marquee-duration, 12s) ease-in-out infinite;
+  will-change: transform;
+}
+
+.animating::before,
+.animating::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.animating::before {
+  left: 0;
+  background: linear-gradient(to right, $bg, transparent);
+  animation: marquee-fade-left var(--marquee-duration, 12s) ease-in-out infinite;
+}
+
+.animating::after {
+  right: 0;
+  background: linear-gradient(to left, $bg, transparent);
+  animation: marquee-fade-right var(--marquee-duration, 12s) ease-in-out infinite;
+}
+
+@keyframes marquee-scroll {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  44%,
+  56% {
+    transform: translateX(var(--marquee-distance, 0px));
+  }
+  88%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes marquee-fade-left {
+  0%,
+  12% {
+    opacity: 0;
+  }
+  44%,
+  56% {
+    opacity: 1;
+  }
+  88%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes marquee-fade-right {
+  0%,
+  12% {
+    opacity: 1;
+  }
+  44%,
+  56% {
+    opacity: 0;
+  }
+  88%,
+  100% {
+    opacity: 1;
+  }
+}

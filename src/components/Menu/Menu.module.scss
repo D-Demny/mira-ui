@@ -1,0 +1,173 @@
+.root {
+  @include absolute-fill;
+  z-index: $z-menu;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0);
+  transition: background-color $dur-base $ease-standard;
+}
+
+.sheet {
+  position: absolute;
+  left: 50%;
+  bottom: $s-4;
+  transform: translate(-50%, calc(100% + 16px));
+  width: 520px;
+  max-width: calc(100% - #{$s-7});
+  padding: $s-4;
+  background: $menu-bg;
+  border: 1px solid $menu-border;
+  border-radius: $r-2xl;
+  @include column;
+  transition:
+    transform $dur-base $ease-emphasized,
+    opacity $dur-base $ease-standard;
+  @include flex-gap-y($s-2);
+  opacity: 0;
+}
+
+.handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: $text-disabled;
+  margin: 0 auto $s-2;
+}
+
+.open {
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.45);
+
+  .sheet {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}
+
+.closed {
+  // Default visual state
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  padding: $s-4 $s-5;
+  border-radius: $r-md;
+  color: $text-primary;
+  font-size: 20px;
+  text-align: left;
+  transition: background-color $dur-fast $ease-standard;
+
+  &:active {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.rowLabel {
+  font-weight: $fw-semibold;
+}
+
+.rowValue {
+  color: $text-tertiary;
+  font-weight: $fw-medium;
+  font-variant-numeric: tabular-nums;
+}
+
+.offsetGroup {
+  padding: $s-3 $s-4 $s-2;
+}
+
+.offsetLabel {
+  font-size: $fs-md;
+  color: $text-tertiary;
+  margin-bottom: $s-2;
+}
+
+.offsetButtons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: $s-2;
+}
+
+.offsetBtn {
+  height: $touch-min;
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.06);
+  color: $text-secondary;
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+  font-variant-numeric: tabular-nums;
+  transition:
+    opacity $dur-fast $ease-standard,
+    transform $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
+.offsetBtnActive {
+  background: $accent-dim;
+  color: $text-primary;
+}
+
+.rowDestructive {
+  .rowLabel {
+    color: #e25b5b;
+  }
+}
+
+.confirmGroup {
+  padding: $s-2 $s-3 $s-3;
+  @include column;
+  @include flex-gap-y($s-3);
+}
+
+.confirmTitle {
+  font-size: $fs-2xl;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+}
+
+.confirmBody {
+  font-size: $fs-md;
+  color: $text-secondary;
+  line-height: 1.45;
+}
+
+.confirmButtons {
+  display: flex;
+  @include flex-gap-x($s-3);
+  margin-top: $s-2;
+}
+
+.confirmBtn {
+  flex: 1;
+  height: 48px;
+  border-radius: $r-pill;
+  font-size: $fs-lg;
+  font-weight: $fw-semibold;
+  transition:
+    opacity $dur-fast $ease-standard,
+    transform $dur-fast $ease-standard;
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.confirmBtnSecondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: $text-primary;
+}
+
+.confirmBtnDanger {
+  background: #c43d3d;
+  color: $text-primary;
+}
