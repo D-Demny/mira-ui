@@ -26,6 +26,8 @@ export function useControls() {
     [],
   )
   const togglePlayPause = useCallback(() => call('POST', '/player/playpause'), [])
+  // play a playlist/album/liked on the active device
+  const playContext = useCallback((uri: string) => call('POST', '/player/play', { uri }), [])
   const setVolume = useCallback(
     (volume: number, relative = false) =>
       call('POST', '/player/volume', { volume: Math.round(volume), relative }),
@@ -43,5 +45,16 @@ export function useControls() {
       call('POST', '/player/repeat_track', { repeat_track }),
     ]).then(() => undefined)
   }, [])
-  return { play, pause, next, prev, seek, togglePlayPause, setVolume, setShuffle, setRepeat }
+  return {
+    play,
+    pause,
+    next,
+    prev,
+    seek,
+    togglePlayPause,
+    playContext,
+    setVolume,
+    setShuffle,
+    setRepeat,
+  }
 }

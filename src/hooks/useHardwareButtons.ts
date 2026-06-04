@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ObserverStatusActive } from '@/api/types'
+import { getPreset, presetIndexFromCode } from '@/presets'
 
 // physical controls keycodes:
 //   knob turn  - REL_HWHEEL  - wheel event, horizontal deltaX
@@ -40,7 +41,12 @@ export interface UseHardwareButtonsParams {
   onPlayPause: () => void
   // set device volume
   setVolume: (volume: number, relative?: boolean) => Promise<void> | void
+  // play a context (used by preset buttons)
+  playContext: (uri: string) => Promise<void> | void
 }
+
+// preset short-press vs long-press threshold
+const PRESET_LONG_PRESS_MS = 600
 
 export interface VolumeOverlayState {
   visible: boolean
@@ -57,6 +63,7 @@ export function useHardwareButtons({
   status,
   onPlayPause,
   setVolume,
+  playContext,
 }: UseHardwareButtonsParams): UseHardwareButtonsResult {
   const [volumeOverlay, setVolumeOverlay] = useState<VolumeOverlayState>({
     visible: false,
@@ -166,6 +173,36 @@ export function useHardwareButtons({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onPlayPause])
+
+  // preset buttons
+  // short press = play the assigned context
+  // long press = (TODO) save the current context to the slot
+  useEffect(() => {
+    const downAt: Record<string, number> = {}
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (presetIndexFromCode(e.code) == null) return
+      if (e.repeat) return
+      downAt[e.code] = Date.now()
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      const idx = presetIndexFromCode(e.code)
+      if (idx == null) return
+      const start = downAt[e.code]
+      delete downAt[e.code]
+      const held = start ? Date.now() - start : 0
+      // TODO long press
+      if (held >= PRESET_LONG_PRESS_MS) return
+      const preset = getPreset(idx)
+      // unassigned slots (2-4 for now) just do nothing
+      if (preset?.contextUri) void playContext(preset.contextUri)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [playContext])
 
   // clean up timers
   useEffect(

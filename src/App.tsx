@@ -34,7 +34,8 @@ export default function App() {
   // TODO: currently broken so set to false
   const daemonDown = false
   const { status: realStatus, loading, connected } = useObserver()
-  const { togglePlayPause, next, prev, seek, setVolume, setShuffle, setRepeat } = useControls()
+  const { togglePlayPause, next, prev, seek, playContext, setVolume, setShuffle, setRepeat } =
+    useControls()
   const handleSeek = useCallback(
     (positionMs: number) => {
       void seek(positionMs)
@@ -100,6 +101,7 @@ export default function App() {
     status: status && status.active ? status : null,
     onPlayPause: controls.onPlayPause,
     setVolume,
+    playContext,
   })
 
   const globalOverlays = (

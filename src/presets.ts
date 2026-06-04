@@ -1,0 +1,64 @@
+// Physical preset buttons (Digit1-4 on the Car Thing).
+//
+// For now this is mostly scaffolding: preset 1 plays Liked Songs, presets 2-4
+// are unassigned. Will be further developed once we have the library
+// Designed so a long-press would save the currently-playing context to a
+// slot
+
+export interface PresetConfig {
+  contextUri: string | null
+  label: string
+}
+
+const STORAGE_KEY = 'thing.presets.v1'
+
+// Liked Songs context — confirmed playing on the active device (2026-06-04).
+// (If some device ever rejects it, the user-scoped `spotify:user:{id}:collection`
+// is the alternative form.)
+const DEFAULTS: Record<number, PresetConfig> = {
+  1: { contextUri: 'spotify:collection:tracks', label: 'Liked Songs' },
+  2: { contextUri: null, label: 'Preset 2' },
+  3: { contextUri: null, label: 'Preset 3' },
+  4: { contextUri: null, label: 'Preset 4' },
+}
+
+function loadOverrides(): Record<number, PresetConfig> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as Record<number, PresetConfig>) : {}
+  } catch {
+    return {}
+  }
+}
+
+export function getPreset(index: number): PresetConfig | null {
+  const overrides = loadOverrides()
+  return overrides[index] ?? DEFAULTS[index] ?? null
+}
+
+// TODO: called on long-press to assign the currently-playing context to a slot
+export function setPreset(index: number, config: PresetConfig): void {
+  const overrides = loadOverrides()
+  overrides[index] = config
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides))
+  } catch {
+    // Ignore
+  }
+}
+
+// maps a KeyboardEvent.code from a preset button
+export function presetIndexFromCode(code: string): number | null {
+  switch (code) {
+    case 'Digit1':
+      return 1
+    case 'Digit2':
+      return 2
+    case 'Digit3':
+      return 3
+    case 'Digit4':
+      return 4
+    default:
+      return null
+  }
+}
