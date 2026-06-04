@@ -26,6 +26,11 @@ export function useControls() {
     [],
   )
   const togglePlayPause = useCallback(() => call('POST', '/player/playpause'), [])
+  const setVolume = useCallback(
+    (volume: number, relative = false) =>
+      call('POST', '/player/volume', { volume: Math.round(volume), relative }),
+    [],
+  )
   const setShuffle = useCallback(
     (on: boolean) => call('POST', '/player/shuffle_context', { shuffle_context: on }),
     [],
@@ -38,5 +43,5 @@ export function useControls() {
       call('POST', '/player/repeat_track', { repeat_track }),
     ]).then(() => undefined)
   }, [])
-  return { play, pause, next, prev, seek, togglePlayPause, setShuffle, setRepeat }
+  return { play, pause, next, prev, seek, togglePlayPause, setVolume, setShuffle, setRepeat }
 }

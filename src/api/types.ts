@@ -28,6 +28,10 @@ export interface ObserverStatusActive {
   position: number
   is_playing: boolean
   is_paused: boolean
+  volume?: number
+  volume_max?: number
+  volume_disabled?: boolean
+  volume_steps?: number
   shuffle: boolean
   repeat_context: boolean
   repeat_track: boolean
@@ -137,6 +141,9 @@ export interface RemoteStateWire {
   IsPlaying: boolean
   IsPaused: boolean
   PlaybackSpeed: number
+  Volume?: number
+  VolumeDisabled?: boolean
+  VolumeSteps?: number
   ShuffleContext: boolean
   RepeatContext: boolean
   RepeatTrack: boolean

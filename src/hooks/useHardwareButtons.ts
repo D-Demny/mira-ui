@@ -1,0 +1,180 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ObserverStatusActive } from '@/api/types'
+
+// physical controls keycodes:
+//   knob turn  - REL_HWHEEL  - wheel event, horizontal deltaX
+//   knob press - KEY_ENTER   - Enter
+//   playlist 1 -
+//   playlist 2 -
+//   playlist 3 -
+//   playlist 4 -
+//   power      -
+//   back       -
+
+const VOLUME_MAX = 65535
+
+// quadrature encoder wheel so its two contact pads sometimes send erronious signals still ever after a kernal level change
+
+// rougly 2% increase
+// TODO: make this user adjustable later
+const VOLUME_STEP_PER_CLICK = 1311
+
+const VOLUME_DIRECTION = -1
+
+// drop events that are close together by this much
+const MIN_STEP_INTERVAL_MS = 55
+
+// similar idea
+const REVERSAL_DEBOUNCE_MS = 140
+
+const OVERLAY_MS = 1400
+
+// for the local optimistic value
+const INTERACTION_GRACE_MS = 1500
+
+const SEND_THROTTLE_MS = 80
+
+export interface UseHardwareButtonsParams {
+  // observer status
+  status: ObserverStatusActive | null
+  onPlayPause: () => void
+  // set device volume
+  setVolume: (volume: number, relative?: boolean) => Promise<void> | void
+}
+
+export interface VolumeOverlayState {
+  visible: boolean
+  value: number
+  // true when the active device refuses remote volume like a phone
+  disabled: boolean
+}
+
+export interface UseHardwareButtonsResult {
+  volumeOverlay: VolumeOverlayState
+}
+
+export function useHardwareButtons({
+  status,
+  onPlayPause,
+  setVolume,
+}: UseHardwareButtonsParams): UseHardwareButtonsResult {
+  const [volumeOverlay, setVolumeOverlay] = useState<VolumeOverlayState>({
+    visible: false,
+    value: 0,
+    disabled: false,
+  })
+
+  const volumeRef = useRef(0)
+  const lastTurnAtRef = useRef(0)
+  const overlayTimerRef = useRef<number | undefined>(undefined)
+  const sendTimerRef = useRef<number | undefined>(undefined)
+  const pendingSendRef = useRef<number | null>(null)
+  const lastStepAtRef = useRef(0)
+  const lastStepDirRef = useRef<1 | -1>(1)
+
+  const statusVolume = status?.volume
+  const volumeDisabled = status?.volume_disabled ?? false
+
+  const statusVolumeRef = useRef<number | undefined>(statusVolume)
+  statusVolumeRef.current = statusVolume
+  const volumeDisabledRef = useRef(volumeDisabled)
+  volumeDisabledRef.current = volumeDisabled
+
+  // sync volume from the device when not mid turn
+  useEffect(() => {
+    if (typeof statusVolume !== 'number') return
+    if (Date.now() - lastTurnAtRef.current < INTERACTION_GRACE_MS) return
+    volumeRef.current = statusVolume
+  }, [statusVolume])
+
+  const queueSend = useCallback(
+    (v: number) => {
+      pendingSendRef.current = v
+      if (sendTimerRef.current != null) return
+      sendTimerRef.current = window.setTimeout(() => {
+        sendTimerRef.current = undefined
+        if (pendingSendRef.current == null) return
+        const send = pendingSendRef.current
+        pendingSendRef.current = null
+        void setVolume(send, false)
+      }, SEND_THROTTLE_MS)
+    },
+    [setVolume],
+  )
+
+  const showOverlay = useCallback((value01: number, disabled: boolean) => {
+    setVolumeOverlay({ visible: true, value: value01, disabled })
+    if (overlayTimerRef.current != null) window.clearTimeout(overlayTimerRef.current)
+    overlayTimerRef.current = window.setTimeout(() => {
+      setVolumeOverlay((o) => ({ ...o, visible: false }))
+    }, OVERLAY_MS)
+  }, [])
+
+  // one knob click is one volume step.
+  const stepVolume = useCallback(
+    (dir: 1 | -1) => {
+      if (volumeDisabledRef.current) {
+        // show if a device wont allow volume controls
+        showOverlay((statusVolumeRef.current ?? 0) / VOLUME_MAX, true)
+        return
+      }
+      const next = Math.max(
+        0,
+        Math.min(VOLUME_MAX, volumeRef.current + dir * VOLUME_STEP_PER_CLICK),
+      )
+      volumeRef.current = next
+      showOverlay(next / VOLUME_MAX, false)
+      queueSend(next)
+    },
+    [showOverlay, queueSend],
+  )
+
+  // knob turn -> volume only when something is playing
+  useEffect(() => {
+    if (!status) return
+
+    const onWheel = (e: WheelEvent) => {
+      // the knob is REL_HWHEEL -> horizontal deltaX
+      if (e.deltaX === 0) return
+      e.preventDefault()
+
+      const now = Date.now()
+      lastTurnAtRef.current = now
+      const dir: 1 | -1 = (e.deltaX > 0 ? 1 : -1) * VOLUME_DIRECTION > 0 ? 1 : -1
+      const sinceStep = now - lastStepAtRef.current
+
+      if (dir !== lastStepDirRef.current && sinceStep < REVERSAL_DEBOUNCE_MS) return
+      if (sinceStep < MIN_STEP_INTERVAL_MS) return
+
+      lastStepAtRef.current = now
+      lastStepDirRef.current = dir
+      stepVolume(dir)
+    }
+
+    // capture phase + window so a lyrics cant scroll from the wheel
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => window.removeEventListener('wheel', onWheel, { capture: true })
+  }, [status, stepVolume])
+
+  // play pause and a preventdefault so the enter doesnt trigger a focused button like the menu
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return
+      e.preventDefault()
+      onPlayPause()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onPlayPause])
+
+  // clean up timers
+  useEffect(
+    () => () => {
+      if (overlayTimerRef.current != null) window.clearTimeout(overlayTimerRef.current)
+      if (sendTimerRef.current != null) window.clearTimeout(sendTimerRef.current)
+    },
+    [],
+  )
+
+  return { volumeOverlay }
+}

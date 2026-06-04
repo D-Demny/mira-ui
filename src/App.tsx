@@ -14,6 +14,7 @@ import { PairingDialog } from '@/components/PairingDialog'
 import { PcConnect } from '@/components/PcConnect'
 import { ProgressBar } from '@/components/ProgressBar'
 import { TrackInfo } from '@/components/TrackInfo'
+import { VolumeOverlay } from '@/components/VolumeOverlay'
 import { useDevScreen } from '@/dev/devContext'
 import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
@@ -21,6 +22,7 @@ import { useBluetooth } from '@/hooks/useBluetooth'
 import { useControls } from '@/hooks/useControls'
 // Disabled for now needs more testing
 // import { useDaemonHealth } from '@/hooks/useDaemonHealth'
+import { useHardwareButtons } from '@/hooks/useHardwareButtons'
 import { useObserver } from '@/hooks/useObserver'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
@@ -32,7 +34,7 @@ export default function App() {
   // TODO: currently broken so set to false
   const daemonDown = false
   const { status: realStatus, loading, connected } = useObserver()
-  const { togglePlayPause, next, prev, seek, setShuffle, setRepeat } = useControls()
+  const { togglePlayPause, next, prev, seek, setVolume, setShuffle, setRepeat } = useControls()
   const handleSeek = useCallback(
     (positionMs: number) => {
       void seek(positionMs)
@@ -94,10 +96,17 @@ export default function App() {
     setRepeat,
   })
 
+  const hardware = useHardwareButtons({
+    status: status && status.active ? status : null,
+    onPlayPause: controls.onPlayPause,
+    setVolume,
+  })
+
   const globalOverlays = (
     <>
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
       {daemonDown || forced === 'daemon-error' ? <DaemonError /> : null}
+      <VolumeOverlay state={hardware.volumeOverlay} />
     </>
   )
 

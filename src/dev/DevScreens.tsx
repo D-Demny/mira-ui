@@ -101,7 +101,7 @@ export function DevOverlay() {
         onClick={() => setOpen(true)}
         title="Open dev screens (`)"
       >
-        DEV → {forced}
+        DEV - {forced}
       </button>
     ) : null
 
@@ -128,7 +128,7 @@ export function DevOverlay() {
             setOpen(false)
           }}
         >
-          <span className={styles.rowMark}>{forced === null ? '→' : ''}</span>
+          <span className={styles.rowMark}>{forced === null ? '->' : ''}</span>
           <span className={styles.rowLabel}>Reset (live state)</span>
           <span className={styles.rowHint}>Stop overriding</span>
         </button>
@@ -147,7 +147,7 @@ export function DevOverlay() {
                 setOpen(false)
               }}
             >
-              <span className={styles.rowMark}>{active ? '→' : ''}</span>
+              <span className={styles.rowMark}>{active ? '->' : ''}</span>
               <span className={styles.rowLabel}>{s.label}</span>
               <span className={styles.rowHint}>{s.hint ?? ''}</span>
             </button>

@@ -129,7 +129,7 @@ describe('usePlayerControls prev double-tap window', () => {
 })
 
 describe('usePlayerControls repeat / shuffle cycling', () => {
-  it('cycles repeat through off → context → track → off and fires setRepeat each step', () => {
+  it('cycles repeat through off > context > track > off and fires setRepeat each step', () => {
     const mocks = makeMocks()
     const status: ObserverStatusActive = {
       ...activeStatus,

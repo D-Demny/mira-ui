@@ -29,7 +29,7 @@ function stubPointerCapture(el: HTMLElement) {
 }
 
 describe('ProgressBar DOM event wiring', () => {
-  it('routes pointerdown → pointerup into a seek call at the tapped position', () => {
+  it('routes pointerdown pointerup into a seek call at the tapped position', () => {
     const onSeek = vi.fn()
     render(<ProgressBar status={activeStatus} onSeek={onSeek} />)
 
