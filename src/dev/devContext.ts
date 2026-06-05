@@ -13,6 +13,7 @@ export type DevForcedScreen =
   | 'playing-no-lyrics'
   | 'pairing'
   | 'menu'
+  | 'power-menu'
   | 'daemon-error'
 
 export interface DevScreenCtx {

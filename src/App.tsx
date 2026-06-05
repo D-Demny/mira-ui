@@ -12,6 +12,7 @@ import { NeedsNetwork } from '@/components/NeedsNetwork'
 import { NoLyricsView } from '@/components/NoLyricsView'
 import { PairingDialog } from '@/components/PairingDialog'
 import { PcConnect } from '@/components/PcConnect'
+import { PowerMenu } from '@/components/PowerMenu'
 import { ProgressBar } from '@/components/ProgressBar'
 import { TrackInfo } from '@/components/TrackInfo'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
@@ -19,6 +20,7 @@ import { useDevScreen } from '@/dev/devContext'
 import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
 import { useBluetooth } from '@/hooks/useBluetooth'
+import { suspendDevice } from '@/api/system'
 import { useControls } from '@/hooks/useControls'
 // Disabled for now needs more testing
 // import { useDaemonHealth } from '@/hooks/useDaemonHealth'
@@ -47,6 +49,7 @@ export default function App() {
 
   const [showLyricsReal, setShowLyrics] = useState(true)
   const [menuOpenReal, setMenuOpen] = useState(false)
+  const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [offlineMethod, setOfflineMethod] = useState<'chooser' | 'bluetooth' | 'pc'>('chooser')
 
   // Cold-boot rescue: fall through from BootSplash to NeedsNetwork after
@@ -78,12 +81,14 @@ export default function App() {
     forced === 'playing-lyrics' ||
     forced === 'playing-no-lyrics' ||
     forced === 'pairing' ||
-    forced === 'menu'
+    forced === 'menu' ||
+    forced === 'power-menu'
       ? mockStatus
       : realStatus
 
   const showLyrics = forced === 'playing-no-lyrics' ? false : showLyricsReal
   const menuOpen = forced === 'menu' ? true : menuOpenReal
+  const powerMenuOpen = forced === 'power-menu' ? true : powerMenuOpenReal
   const pairing =
     forced === 'pairing' ? { address: 'AB:CD:EF:01:23:45', passkey: '123456' } : realPairing
 
@@ -97,8 +102,22 @@ export default function App() {
     if (forced === 'menu') setForced('playing-lyrics')
   }, [forced, setForced])
 
+  const closePowerMenu = useCallback(() => {
+    setPowerMenuOpen(false)
+    if (forced === 'power-menu') setForced('playing-lyrics')
+  }, [forced, setForced])
+
+  const onSleep = useCallback(() => {
+    closePowerMenu()
+    void suspendDevice().catch(() => {})
+  }, [closePowerMenu])
+
   // hardware back button
   const goBack = useCallback(() => {
+    if (powerMenuOpen) {
+      closePowerMenu()
+      return
+    }
     if (menuOpen) {
       closeMenu()
       return
@@ -108,7 +127,7 @@ export default function App() {
       return
     }
     // nothing to go back to
-  }, [menuOpen, closeMenu, onOfflineSetup, offlineMethod])
+  }, [powerMenuOpen, closePowerMenu, menuOpen, closeMenu, onOfflineSetup, offlineMethod])
 
   const controls = usePlayerControls({
     status: status && status.active ? status : null,
@@ -126,6 +145,8 @@ export default function App() {
     setVolume,
     playContext,
     onBack: goBack,
+    onTogglePowerMenu: () => setPowerMenuOpen((v) => !v),
+    onSleep,
   })
 
   const globalOverlays = (
@@ -133,6 +154,7 @@ export default function App() {
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
       {daemonDown || forced === 'daemon-error' ? <DaemonError /> : null}
       <VolumeOverlay state={hardware.volumeOverlay} />
+      <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
     </>
   )
 

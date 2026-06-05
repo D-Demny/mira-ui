@@ -45,10 +45,19 @@ export interface UseHardwareButtonsParams {
   playContext: (uri: string) => Promise<void> | void
   // back button (esc), go back one step, or no-op
   onBack: () => void
+  // power button (KeyM): short press opens the power menu
+  onTogglePowerMenu: () => void
+  // power button double-press: sleep shortcut
+  onSleep: () => void
 }
 
 // preset short-press vs long-press threshold
 const PRESET_LONG_PRESS_MS = 600
+
+// power button: a press held longer than this is ignored (no long-press action yet?)
+const POWER_LONG_PRESS_MS = 600
+// power button: a second press within this window counts as a double-press
+const POWER_DOUBLE_MS = 350
 
 export interface VolumeOverlayState {
   visible: boolean
@@ -67,6 +76,8 @@ export function useHardwareButtons({
   setVolume,
   playContext,
   onBack,
+  onTogglePowerMenu,
+  onSleep,
 }: UseHardwareButtonsParams): UseHardwareButtonsResult {
   const [volumeOverlay, setVolumeOverlay] = useState<VolumeOverlayState>({
     visible: false,
@@ -211,6 +222,47 @@ export function useHardwareButtons({
       window.removeEventListener('keyup', onKeyUp)
     }
   }, [playContext])
+
+  // power button controls
+  useEffect(() => {
+    let downAt = 0
+    let armed = false
+    let pendingSingle: number | undefined
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyM') return
+      if (e.repeat) return
+      downAt = Date.now()
+      armed = true
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== 'KeyM') return
+      // only count a keyup that had a matching keydown
+      if (!armed) return
+      armed = false
+      const held = downAt ? Date.now() - downAt : 0
+      downAt = 0
+      // a deliberate hold does nothing yet?
+      if (held >= POWER_LONG_PRESS_MS) return
+      if (pendingSingle != null) {
+        // second tap within the window -> double press -> sleep
+        window.clearTimeout(pendingSingle)
+        pendingSingle = undefined
+        onSleep()
+      } else {
+        pendingSingle = window.setTimeout(() => {
+          pendingSingle = undefined
+          onTogglePowerMenu()
+        }, POWER_DOUBLE_MS)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      if (pendingSingle != null) window.clearTimeout(pendingSingle)
+    }
+  }, [onTogglePowerMenu, onSleep])
 
   // clean up timers
   useEffect(

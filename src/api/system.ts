@@ -1,11 +1,23 @@
 import { API_BASE } from '@/config'
 
-// Factory reset
-// deletes spotify credentials, bluetooth addresses, then reboots the device
-// TODO: should wipe the saved ip addresses too (for going from ics to nat)
-export async function resetDevice(): Promise<void> {
-  const res = await fetch(`${API_BASE}/system/reset`, { method: 'POST' })
+async function systemPost(path: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, { method: 'POST' })
   if (!res.ok) {
-    throw new Error(`system/reset: ${res.status}`)
+    throw new Error(`${path}: ${res.status}`)
   }
+}
+
+// full factory reset
+export function resetDevice(): Promise<void> {
+  return systemPost('/system/reset')
+}
+
+// restart without wiping anything
+export function restartDevice(): Promise<void> {
+  return systemPost('/system/restart')
+}
+
+// suspend to RAM (sleep), power button wakes it
+export function suspendDevice(): Promise<void> {
+  return systemPost('/system/suspend')
 }

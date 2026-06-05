@@ -62,6 +62,7 @@ const SCREENS: ScreenDef[] = [
   { id: 'playing-no-lyrics', label: 'Playing: no lyrics' },
   { id: 'pairing', label: 'Pairing dialog', hint: 'Over the player view' },
   { id: 'menu', label: 'Menu open', hint: 'Bottom-sheet over player' },
+  { id: 'power-menu', label: 'Power menu', hint: 'Sleep/Restart/Reset (tap Reset for confirm)' },
   { id: 'daemon-error', label: 'Daemon error', hint: 'Daemon-not-running popup' },
 ]
 
