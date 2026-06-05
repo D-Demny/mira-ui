@@ -87,6 +87,29 @@ export default function App() {
   const pairing =
     forced === 'pairing' ? { address: 'AB:CD:EF:01:23:45', passkey: '123456' } : realPairing
 
+  // offline setup flow
+  const knownOffline = online === false && status?.active !== true
+  const stuckOffline = bootStuck && online !== true && status?.active !== true
+  const onOfflineSetup = !forced && (knownOffline || stuckOffline)
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false)
+    if (forced === 'menu') setForced('playing-lyrics')
+  }, [forced, setForced])
+
+  // hardware back button
+  const goBack = useCallback(() => {
+    if (menuOpen) {
+      closeMenu()
+      return
+    }
+    if (onOfflineSetup && offlineMethod !== 'chooser') {
+      setOfflineMethod('chooser')
+      return
+    }
+    // nothing to go back to
+  }, [menuOpen, closeMenu, onOfflineSetup, offlineMethod])
+
   const controls = usePlayerControls({
     status: status && status.active ? status : null,
     togglePlayPause,
@@ -102,6 +125,7 @@ export default function App() {
     onPlayPause: controls.onPlayPause,
     setVolume,
     playContext,
+    onBack: goBack,
   })
 
   const globalOverlays = (
@@ -180,9 +204,6 @@ export default function App() {
   }
 
   if (!forced) {
-    const knownOffline = online === false && status?.active !== true
-    const stuckOffline = bootStuck && online !== true && status?.active !== true
-
     if (knownOffline || stuckOffline) {
       return (
         <div className={styles.app}>
@@ -290,10 +311,7 @@ export default function App() {
 
       <Menu
         open={menuOpen}
-        onClose={() => {
-          setMenuOpen(false)
-          if (forced === 'menu') setForced('playing-lyrics')
-        }}
+        onClose={closeMenu}
         showLyrics={showLyrics}
         onToggleLyrics={() => setShowLyrics((v) => !v)}
       />

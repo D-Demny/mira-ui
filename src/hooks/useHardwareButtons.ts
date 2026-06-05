@@ -43,6 +43,8 @@ export interface UseHardwareButtonsParams {
   setVolume: (volume: number, relative?: boolean) => Promise<void> | void
   // play a context (used by preset buttons)
   playContext: (uri: string) => Promise<void> | void
+  // back button (esc), go back one step, or no-op
+  onBack: () => void
 }
 
 // preset short-press vs long-press threshold
@@ -64,6 +66,7 @@ export function useHardwareButtons({
   onPlayPause,
   setVolume,
   playContext,
+  onBack,
 }: UseHardwareButtonsParams): UseHardwareButtonsResult {
   const [volumeOverlay, setVolumeOverlay] = useState<VolumeOverlayState>({
     visible: false,
@@ -163,16 +166,21 @@ export function useHardwareButtons({
     return () => window.removeEventListener('wheel', onWheel, { capture: true })
   }, [status, stepVolume])
 
-  // play pause and a preventdefault so the enter doesnt trigger a focused button like the menu
+  // knob press (Enter) is play/pause, back (Escape) is go back.
+  // preventDefault so Enter doesnt also trigger a focused button like the menu.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter') return
-      e.preventDefault()
-      onPlayPause()
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        onPlayPause()
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        onBack()
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onPlayPause])
+  }, [onPlayPause, onBack])
 
   // preset buttons
   // short press = play the assigned context

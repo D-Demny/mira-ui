@@ -12,9 +12,7 @@ export interface PresetConfig {
 
 const STORAGE_KEY = 'thing.presets.v1'
 
-// Liked Songs context — confirmed playing on the active device (2026-06-04).
-// (If some device ever rejects it, the user-scoped `spotify:user:{id}:collection`
-// is the alternative form.)
+// Liked songs context
 const DEFAULTS: Record<number, PresetConfig> = {
   1: { contextUri: 'spotify:collection:tracks', label: 'Liked Songs' },
   2: { contextUri: null, label: 'Preset 2' },
