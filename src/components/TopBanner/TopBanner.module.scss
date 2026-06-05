@@ -1,0 +1,33 @@
+.banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: $z-menu;
+
+  transform: translateY(-100%);
+  transition: transform $dur-base $ease-standard;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: $s-3 $s-5;
+
+  background: $surface-elev;
+  border-radius: 0 0 $r-lg $r-lg;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+
+  pointer-events: none;
+}
+
+.visible {
+  transform: translateY(0);
+}
+
+.message {
+  font-size: $fs-lg;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+  text-align: center;
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ObserverStatusActive } from '@/api/types'
-import { getPreset, presetIndexFromCode } from '@/presets'
+import { getPreset, labelFromUri, presetIndexFromCode, setPreset } from '@/presets'
+import type { NotifyFn } from '@/notify/notifyContext'
 
 // physical controls keycodes:
 //   knob turn  - REL_HWHEEL  - wheel event, horizontal deltaX
@@ -49,10 +50,12 @@ export interface UseHardwareButtonsParams {
   onTogglePowerMenu: () => void
   // power button double-press: sleep shortcut
   onSleep: () => void
+  // top banner message for playlist msgs
+  notify: NotifyFn
 }
 
-// preset short-press vs long-press threshold
-const PRESET_LONG_PRESS_MS = 600
+// hold a preset this long to save the current context
+const PRESET_HOLD_MS = 2000
 
 // power button: a press held longer than this is ignored (no long-press action yet?)
 const POWER_LONG_PRESS_MS = 600
@@ -78,6 +81,7 @@ export function useHardwareButtons({
   onBack,
   onTogglePowerMenu,
   onSleep,
+  notify,
 }: UseHardwareButtonsParams): UseHardwareButtonsResult {
   const [volumeOverlay, setVolumeOverlay] = useState<VolumeOverlayState>({
     visible: false,
@@ -100,6 +104,8 @@ export function useHardwareButtons({
   statusVolumeRef.current = statusVolume
   const volumeDisabledRef = useRef(volumeDisabled)
   volumeDisabledRef.current = volumeDisabled
+  const statusRef = useRef(status)
+  statusRef.current = status
 
   // sync volume from the device when not mid turn
   useEffect(() => {
@@ -195,33 +201,61 @@ export function useHardwareButtons({
 
   // preset buttons
   // short press = play the assigned context
-  // long press = (TODO) save the current context to the slot
+  // hold for 2s = save current context to the slot
   useEffect(() => {
-    const downAt: Record<string, number> = {}
+    const holdTimers: Record<string, number> = {}
+    const saved: Record<string, boolean> = {}
+
+    const saveCurrentToPreset = (idx: number) => {
+      const cur = statusRef.current
+      if (cur && cur.context_uri) {
+        const label = cur.context_name || labelFromUri(cur.context_uri)
+        setPreset(idx, { contextUri: cur.context_uri, label })
+        notify(`Saved "${label}" to preset ${idx}`, { variant: 'success' })
+      } else {
+        notify('Nothing playing to save', { variant: 'warning' })
+      }
+    }
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (presetIndexFromCode(e.code) == null) return
+      const idx = presetIndexFromCode(e.code)
+      if (idx == null) return
       if (e.repeat) return
-      downAt[e.code] = Date.now()
+      if (holdTimers[e.code] != null) return
+      saved[e.code] = false
+      holdTimers[e.code] = window.setTimeout(() => {
+        holdTimers[e.code] = undefined as unknown as number
+        saved[e.code] = true // suppress the play on release
+        saveCurrentToPreset(idx)
+      }, PRESET_HOLD_MS)
     }
     const onKeyUp = (e: KeyboardEvent) => {
       const idx = presetIndexFromCode(e.code)
       if (idx == null) return
-      const start = downAt[e.code]
-      delete downAt[e.code]
-      const held = start ? Date.now() - start : 0
-      // TODO long press
-      if (held >= PRESET_LONG_PRESS_MS) return
+      if (holdTimers[e.code] != null) {
+        window.clearTimeout(holdTimers[e.code])
+        holdTimers[e.code] = undefined as unknown as number
+      }
+      if (saved[e.code]) {
+        saved[e.code] = false
+        return // hold already saved dont also play
+      }
+      // short press will play the assigned context
       const preset = getPreset(idx)
-      // unassigned slots (2-4 for now) just do nothing
-      if (preset?.contextUri) void playContext(preset.contextUri)
+      if (preset?.contextUri) {
+        void playContext(preset.contextUri)
+        notify(`Playing from ${preset.label}`)
+      }
+      // unassigned slots (2-4 until saved) just do nothing
     }
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      for (const t of Object.values(holdTimers)) if (t != null) window.clearTimeout(t)
     }
-  }, [playContext])
+  }, [playContext, notify])
 
   // power button controls
   useEffect(() => {

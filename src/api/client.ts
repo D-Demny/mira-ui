@@ -26,6 +26,7 @@ export function remoteStateToStatus(rs: RemoteStateWire): ObserverStatusActive {
     track_album: rs.TrackAlbum,
     track_image: rs.TrackImageUrl,
     context_uri: rs.ContextUri,
+    context_name: rs.ContextName ?? '',
     duration: rs.Duration,
     position,
     is_playing: rs.IsPlaying,

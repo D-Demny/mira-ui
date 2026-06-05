@@ -16,6 +16,7 @@ export function makeMockStatus(): ObserverStatusActive {
     track_album: env.VITE_MOCK_TRACK_ALBUM ?? '',
     track_image: env.VITE_MOCK_TRACK_IMAGE ?? '',
     context_uri: env.VITE_MOCK_CONTEXT_URI ?? 'spotify:playlist:dev-mock',
+    context_name: env.VITE_MOCK_CONTEXT_NAME ?? 'Dev Playlist',
     duration: Number(env.VITE_MOCK_DURATION ?? 200000),
     position: Number(env.VITE_MOCK_POSITION ?? 60000),
     is_playing: true,

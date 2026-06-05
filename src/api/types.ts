@@ -24,6 +24,7 @@ export interface ObserverStatusActive {
   track_album: string
   track_image: string
   context_uri: string
+  context_name: string
   duration: number
   position: number
   is_playing: boolean
@@ -135,6 +136,7 @@ export interface RemoteStateWire {
   TrackAlbum: string
   TrackImageUrl: string
   ContextUri: string
+  ContextName: string
   Duration: number
   PositionAsOfTimestamp: number
   Timestamp: number

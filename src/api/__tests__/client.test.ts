@@ -14,6 +14,7 @@ const baseWire: RemoteStateWire = {
   TrackAlbum: 'Test Album',
   TrackImageUrl: 'https://i.scdn.co/image/abc',
   ContextUri: 'spotify:playlist:xyz',
+  ContextName: 'My Playlist',
   Duration: 180_000,
   PositionAsOfTimestamp: 30_000,
   Timestamp: 0,

@@ -34,7 +34,7 @@ export function getPreset(index: number): PresetConfig | null {
   return overrides[index] ?? DEFAULTS[index] ?? null
 }
 
-// TODO: called on long-press to assign the currently-playing context to a slot
+// called on long-press to assign the currently-playing context to a slot
 export function setPreset(index: number, config: PresetConfig): void {
   const overrides = loadOverrides()
   overrides[index] = config
@@ -43,6 +43,16 @@ export function setPreset(index: number, config: PresetConfig): void {
   } catch {
     // Ignore
   }
+}
+
+// try to get the human readable label or fall back to a generic one
+export function labelFromUri(uri: string): string {
+  if (uri.startsWith('spotify:collection')) return 'Liked Songs'
+  if (uri.includes(':playlist:')) return 'Playlist'
+  if (uri.includes(':album:')) return 'Album'
+  if (uri.includes(':artist:')) return 'Artist'
+  if (uri.includes(':show:') || uri.includes(':episode:')) return 'Podcast'
+  return 'Saved'
 }
 
 // maps a KeyboardEvent.code from a preset button

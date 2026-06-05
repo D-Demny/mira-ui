@@ -25,6 +25,7 @@ import { useControls } from '@/hooks/useControls'
 // Disabled for now needs more testing
 // import { useDaemonHealth } from '@/hooks/useDaemonHealth'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
+import { useNotify } from '@/notify/notifyContext'
 import { useObserver } from '@/hooks/useObserver'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
@@ -74,6 +75,7 @@ export default function App() {
   }, [])
 
   const { forced, setForced } = useDevScreen()
+  const notify = useNotify()
 
   const mockStatus = useMemo<ObserverStatusActive>(() => makeMockStatus(), [])
 
@@ -147,6 +149,7 @@ export default function App() {
     onBack: goBack,
     onTogglePowerMenu: () => setPowerMenuOpen((v) => !v),
     onSleep,
+    notify,
   })
 
   const globalOverlays = (
