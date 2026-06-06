@@ -30,6 +30,7 @@ import { useObserver } from '@/hooks/useObserver'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
 import type { ObserverStatusActive } from '@/api/types'
+import { loadShowLyrics, saveShowLyrics } from '@/viewPref'
 import styles from './App.module.scss'
 
 export default function App() {
@@ -48,7 +49,7 @@ export default function App() {
   usePrefetch(realStatus)
   const { online, pairing: realPairing, lastDevice, setDiscoverable } = useBluetooth()
 
-  const [showLyricsReal, setShowLyrics] = useState(true)
+  const [showLyricsReal, setShowLyrics] = useState(loadShowLyrics)
   const [menuOpenReal, setMenuOpen] = useState(false)
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [offlineMethod, setOfflineMethod] = useState<'chooser' | 'bluetooth' | 'pc'>('chooser')
@@ -338,7 +339,13 @@ export default function App() {
         open={menuOpen}
         onClose={closeMenu}
         showLyrics={showLyrics}
-        onToggleLyrics={() => setShowLyrics((v) => !v)}
+        onToggleLyrics={() =>
+          setShowLyrics((v) => {
+            const next = !v
+            saveShowLyrics(next)
+            return next
+          })
+        }
       />
 
       {globalOverlays}
