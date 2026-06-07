@@ -7,6 +7,7 @@ const baseProps = () => ({
   onClose: vi.fn(),
   showLyrics: true,
   onToggleLyrics: vi.fn(),
+  onOpenDevices: vi.fn(),
 })
 
 describe('Menu', () => {

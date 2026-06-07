@@ -1,5 +1,11 @@
 import { API_BASE, WS_URL } from '@/config'
-import type { LyricsResult, ObserverStatus, ObserverStatusActive, RemoteStateWire } from './types'
+import type {
+  ConnectDevice,
+  LyricsResult,
+  ObserverStatus,
+  ObserverStatusActive,
+  RemoteStateWire,
+} from './types'
 
 function trackIdFromUri(uri: string): string {
   const parts = uri.split(':')
@@ -58,6 +64,23 @@ export async function fetchObserverStatus(signal?: AbortSignal): Promise<Observe
     return { ...(body as Omit<ObserverStatusActive, 'received_at'>), received_at: Date.now() }
   }
   return body as ObserverStatus
+}
+
+export async function fetchConnectDevices(signal?: AbortSignal): Promise<ConnectDevice[]> {
+  const res = await fetch(`${API_BASE}/connect/devices`, { signal, cache: 'no-store' })
+  if (!res.ok) throw new Error(`connect/devices ${res.status}`)
+  const body = await res.json()
+  return Array.isArray(body?.devices) ? (body.devices as ConnectDevice[]) : []
+}
+
+// transfer the current playback session to another device
+export async function transferToDevice(deviceId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/connect/transfer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_id: deviceId }),
+  })
+  if (!res.ok) throw new Error(`connect/transfer ${res.status}`)
 }
 
 export async function fetchLyrics(

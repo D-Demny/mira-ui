@@ -3,6 +3,19 @@ export interface ObserverStatusInactive {
   message?: string
 }
 
+// a selectable spotify connect device
+export interface ConnectDevice {
+  id: string
+  name: string
+  type: string
+  volume: number
+  volume_steps: number
+  volume_disabled: boolean
+  is_active: boolean
+  is_offline: boolean
+  can_transfer: boolean
+}
+
 export interface QueueTrack {
   uri: string
   track_id: string
@@ -63,6 +76,8 @@ export interface LyricsResult {
 export type ApiEventType =
   | 'observer_track_changed'
   | 'observer_state_changed'
+  | 'observer_inactive'
+  | 'connect_devices'
   | 'playing'
   | 'paused'
   | 'not_playing'

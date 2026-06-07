@@ -73,6 +73,15 @@ export function useObserver() {
         return
       }
 
+      // no device is active anymore, flip to idle immediately
+      if (evt.type === 'observer_inactive') {
+        dispatch({
+          type: 'status',
+          status: { active: false, message: 'no remote device is currently playing' },
+        })
+        return
+      }
+
       // patch events only mutate part of the snapshot
       const cur = latestRef.current
       if (!cur || !cur.active) return

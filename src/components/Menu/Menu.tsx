@@ -9,10 +9,13 @@ interface Props {
 
   showLyrics: boolean
   onToggleLyrics: () => void
+
+  currentDevice?: string
+  onOpenDevices: () => void
 }
 
 // TODO: add some more setting toggles here (vol, brightness etc)
-function MenuImpl({ open, onClose, showLyrics, onToggleLyrics }: Props) {
+function MenuImpl({ open, onClose, showLyrics, onToggleLyrics, currentDevice, onOpenDevices }: Props) {
   return (
     <div
       className={`${styles.root} ${open ? styles.open : styles.closed}`}
@@ -26,6 +29,7 @@ function MenuImpl({ open, onClose, showLyrics, onToggleLyrics }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.handle} aria-hidden />
+        <Row label="Devices" value={currentDevice ?? 'Switch'} onClick={onOpenDevices} />
         <Row label="Show Lyrics" value={showLyrics ? 'On' : 'Off'} onClick={onToggleLyrics} />
       </div>
     </div>

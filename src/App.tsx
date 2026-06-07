@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
 import { AuthScreen } from '@/components/AuthScreen'
 import { BootSplash } from '@/components/BootSplash'
 import { ConnectionChooser } from '@/components/ConnectionChooser'
 import { Controls } from '@/components/Controls'
 import { DaemonError } from '@/components/DaemonError'
+import { DevicePicker } from '@/components/DevicePicker'
 import { IdleScreen } from '@/components/IdleScreen'
 import { Lyrics } from '@/components/Lyrics'
 import { Menu } from '@/components/Menu'
@@ -20,6 +21,7 @@ import { useDevScreen } from '@/dev/devContext'
 import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
 import { useBluetooth } from '@/hooks/useBluetooth'
+import { useConnectDevices } from '@/hooks/useConnectDevices'
 import { suspendDevice } from '@/api/system'
 import { useControls } from '@/hooks/useControls'
 // Disabled for now needs more testing
@@ -29,7 +31,8 @@ import { useNotify } from '@/notify/notifyContext'
 import { useObserver } from '@/hooks/useObserver'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
-import type { ObserverStatusActive } from '@/api/types'
+import { transferToDevice } from '@/api/client'
+import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
 import { loadShowLyrics, saveShowLyrics } from '@/viewPref'
 import styles from './App.module.scss'
 
@@ -48,6 +51,37 @@ export default function App() {
   )
   usePrefetch(realStatus)
   const { online, pairing: realPairing, lastDevice, setDiscoverable } = useBluetooth()
+  const connectDevices = useConnectDevices()
+  const notify = useNotify()
+  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false)
+
+  // notification for the playback device changes
+  const prevDeviceRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (realStatus == null) return
+    const curId = realStatus.active ? realStatus.device_id : ''
+    const prev = prevDeviceRef.current
+    if (prev !== undefined && prev !== curId) {
+      if (realStatus.active) {
+        notify(`Now playing on ${realStatus.device_name}`, { variant: 'info' })
+      } else {
+        notify('Nothing is playing. Pick a device or start Spotify', { variant: 'info' })
+      }
+    }
+    prevDeviceRef.current = curId
+  }, [realStatus, notify])
+
+  const onPickDevice = useCallback(
+    (d: ConnectDevice) => {
+      setDeviceMenuOpen(false)
+      notify(`Switching to ${d.name}…`, { variant: 'info' })
+      void transferToDevice(d.id).catch((err) => {
+        console.warn('transfer failed', err)
+        notify(`Couldn't switch to ${d.name}`, { variant: 'error' })
+      })
+    },
+    [notify],
+  )
 
   const [showLyricsReal, setShowLyrics] = useState(loadShowLyrics)
   const [menuOpenReal, setMenuOpen] = useState(false)
@@ -76,7 +110,6 @@ export default function App() {
   }, [])
 
   const { forced, setForced } = useDevScreen()
-  const notify = useNotify()
 
   const mockStatus = useMemo<ObserverStatusActive>(() => makeMockStatus(), [])
 
@@ -117,6 +150,10 @@ export default function App() {
 
   // hardware back button
   const goBack = useCallback(() => {
+    if (deviceMenuOpen) {
+      setDeviceMenuOpen(false)
+      return
+    }
     if (powerMenuOpen) {
       closePowerMenu()
       return
@@ -130,7 +167,15 @@ export default function App() {
       return
     }
     // nothing to go back to
-  }, [powerMenuOpen, closePowerMenu, menuOpen, closeMenu, onOfflineSetup, offlineMethod])
+  }, [
+    deviceMenuOpen,
+    powerMenuOpen,
+    closePowerMenu,
+    menuOpen,
+    closeMenu,
+    onOfflineSetup,
+    offlineMethod,
+  ])
 
   const controls = usePlayerControls({
     status: status && status.active ? status : null,
@@ -159,6 +204,14 @@ export default function App() {
       {daemonDown || forced === 'daemon-error' ? <DaemonError /> : null}
       <VolumeOverlay state={hardware.volumeOverlay} />
       <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
+      {deviceMenuOpen ? (
+        <DevicePicker
+          devices={connectDevices}
+          onSelect={onPickDevice}
+          placement="modal"
+          onClose={() => setDeviceMenuOpen(false)}
+        />
+      ) : null}
     </>
   )
 
@@ -223,7 +276,11 @@ export default function App() {
   if (forced === 'idle') {
     return (
       <div className={styles.app}>
-        <IdleScreen connected={connected} />
+        <IdleScreen
+          connected={connected}
+          devices={connectDevices}
+          onSelectDevice={onPickDevice}
+        />
         {globalOverlays}
       </div>
     )
@@ -286,8 +343,9 @@ export default function App() {
       return (
         <div className={styles.app}>
           <IdleScreen
-            message={status && !status.active ? status.message : undefined}
             connected={connected}
+            devices={connectDevices}
+            onSelectDevice={onPickDevice}
           />
           {globalOverlays}
         </div>
@@ -346,6 +404,11 @@ export default function App() {
             return next
           })
         }
+        currentDevice={status.device_name}
+        onOpenDevices={() => {
+          setMenuOpen(false)
+          setDeviceMenuOpen(true)
+        }}
       />
 
       {globalOverlays}

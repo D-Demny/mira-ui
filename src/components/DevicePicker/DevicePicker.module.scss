@@ -1,0 +1,123 @@
+.cardInline {
+  width: 320px;
+  max-width: calc(100% - #{$s-7});
+  padding: $s-3;
+  background: $surface-elev;
+  border: 1px solid $divider;
+  border-radius: $r-lg;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  text-align: left;
+}
+
+// modal backdrop + card match PowerMenu / PairingDialog so the device popup
+// feels like the same modal family (solid $bg, $r-2xl, fade + slide-up).
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.62);
+  animation: deviceFadeIn $dur-base $ease-standard both;
+}
+
+@keyframes deviceFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cardModal {
+  width: 360px;
+  max-width: calc(100% - #{$s-6});
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  padding: $s-6;
+  background: $bg;
+  border-radius: $r-2xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: deviceSlideIn $dur-slow $ease-emphasized both;
+}
+
+@keyframes deviceSlideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.empty {
+  padding: $s-3 $s-2 $s-2;
+  font-size: $fs-md;
+  color: $text-tertiary;
+  line-height: 1.4;
+}
+
+.header {
+  font-size: $fs-sm;
+  font-weight: $fw-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: $text-tertiary;
+  padding: $s-1 $s-2 $s-2;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  @include flex-gap-y($s-1);
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+  padding: $s-2 $s-2;
+  border-radius: $r-md;
+  color: $text-secondary;
+}
+
+.interactive {
+  cursor: pointer;
+
+  &:hover {
+    background: $surface;
+    color: $text-primary;
+  }
+}
+
+.active {
+  color: $text-primary;
+}
+
+.icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: inherit;
+}
+
+.name {
+  flex: 1 1 auto;
+  font-size: $fs-lg;
+  font-weight: $fw-medium;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activeDot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: $accent;
+}
