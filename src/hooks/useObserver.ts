@@ -1,7 +1,7 @@
-import { useEffect, useReducer, useRef } from 'react'
+import { useEffect, useReducer } from 'react'
 import { fetchObserverStatus, remoteStateToStatus } from '@/api/client'
 import { subscribeConnection, subscribeEvents } from '@/api/eventBus'
-import type { ApiEvent, ObserverStatus, ObserverStatusActive, RemoteStateWire } from '@/api/types'
+import type { ApiEvent, ObserverStatus, RemoteStateWire } from '@/api/types'
 
 interface ObserverState {
   status: ObserverStatus | null
@@ -41,8 +41,6 @@ const POLL_TIMEOUT_MS = 5000
 
 export function useObserver() {
   const [state, dispatch] = useReducer(reducer, initial)
-  const latestRef = useRef<ObserverStatus | null>(null)
-  latestRef.current = state.status
 
   useEffect(() => {
     let cancelled = false
@@ -82,39 +80,7 @@ export function useObserver() {
         return
       }
 
-      // patch events only mutate part of the snapshot
-      const cur = latestRef.current
-      if (!cur || !cur.active) return
-
-      const patched: ObserverStatusActive = { ...cur }
-      switch (evt.type) {
-        case 'paused':
-          patched.is_paused = true
-          patched.is_playing = false
-          patched.received_at = Date.now()
-          break
-        case 'playing':
-          patched.is_paused = false
-          patched.is_playing = true
-          patched.received_at = Date.now()
-          break
-        case 'seek': {
-          const d = evt.data as { position?: number }
-          if (typeof d?.position === 'number') {
-            patched.position = d.position
-            patched.received_at = Date.now()
-          }
-          break
-        }
-        case 'stopped':
-        case 'not_playing':
-          patched.is_playing = false
-          patched.received_at = Date.now()
-          break
-        default:
-          return
-      }
-      dispatch({ type: 'status', status: patched })
+      // Snapshot-only contract
     }
 
     const unsubEvents = subscribeEvents(applyEvent)

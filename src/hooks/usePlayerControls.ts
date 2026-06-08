@@ -11,14 +11,21 @@ interface OptimisticValue<T> {
   at: number
 }
 
+interface TrackTransition {
+  fromTrackId: string
+  at: number
+}
+
 export interface UsePlayerControlsParams {
   status: ObserverStatusActive | null
-  togglePlayPause: () => Promise<void> | void
+  play: () => Promise<void> | void
+  pause: () => Promise<void> | void
   next: () => Promise<void> | void
   prev: () => Promise<void> | void
   seek: (positionMs: number) => Promise<void> | void
   setShuffle: (on: boolean) => Promise<void> | void
   setRepeat: (mode: RepeatMode) => Promise<void> | void
+  onCommandError?: (message: string) => void
 }
 
 export interface UsePlayerControlsResult {
@@ -34,12 +41,12 @@ export interface UsePlayerControlsResult {
 }
 
 export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerControlsResult {
-  const { status, togglePlayPause, next, prev, seek, setShuffle, setRepeat } = params
+  const { status, play, pause, next, prev, seek, setShuffle, setRepeat, onCommandError } = params
 
   const [optimisticPause, setOptimisticPause] = useState<OptimisticValue<boolean> | null>(null)
   const [optimisticShuffle, setOptimisticShuffle] = useState<OptimisticValue<boolean> | null>(null)
   const [optimisticRepeat, setOptimisticRepeat] = useState<OptimisticValue<RepeatMode> | null>(null)
-  const [trackTransitionAt, setTrackTransitionAt] = useState<number>(0)
+  const [trackTransition, setTrackTransition] = useState<TrackTransition | null>(null)
 
   const lastPrevAtRef = useRef(0)
 
@@ -62,16 +69,15 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
   }, [optimisticRepeat])
 
   useEffect(() => {
-    if (trackTransitionAt === 0) return
-    const t = window.setTimeout(() => setTrackTransitionAt(0), TRANSITION_TIMEOUT_MS + 50)
+    if (!trackTransition) return
+    const t = window.setTimeout(() => setTrackTransition(null), TRANSITION_TIMEOUT_MS + 50)
     return () => window.clearTimeout(t)
-  }, [trackTransitionAt])
+  }, [trackTransition])
 
-  const receivedAt = status?.received_at ?? 0
-
-  const optimisticPauseActive = optimisticPause != null && receivedAt <= optimisticPause.at
+  const pauseFromStatus = status?.is_paused ?? false
+  const optimisticPauseActive = optimisticPause != null && pauseFromStatus !== optimisticPause.value
   const isPaused =
-    optimisticPauseActive && optimisticPause ? optimisticPause.value : (status?.is_paused ?? false)
+    optimisticPauseActive && optimisticPause ? optimisticPause.value : pauseFromStatus
 
   // hold the optimistic value until the server reports the target
   const shuffleFromStatus = status?.shuffle ?? false
@@ -90,12 +96,26 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
   const repeat =
     optimisticRepeatActive && optimisticRepeat ? optimisticRepeat.value : repeatFromStatus
 
-  const transitioning = trackTransitionAt > 0 && receivedAt <= trackTransitionAt
+  const transitioning =
+    trackTransition != null && status != null && status.track_id === trackTransition.fromTrackId
+
+  const reportCommandError = useCallback(
+    (message: string, err: unknown) => {
+      console.warn(message, err)
+      onCommandError?.(message)
+    },
+    [onCommandError],
+  )
 
   const onPlayPause = useCallback(() => {
-    setOptimisticPause({ value: !isPaused, at: Date.now() })
-    void togglePlayPause()
-  }, [isPaused, togglePlayPause])
+    const nextPaused = !isPaused
+    setOptimisticPause({ value: nextPaused, at: Date.now() })
+    const command = nextPaused ? pause : play
+    void Promise.resolve(command()).catch((err) => {
+      setOptimisticPause(null)
+      reportCommandError('Play/pause failed', err)
+    })
+  }, [isPaused, pause, play, reportCommandError])
 
   const onPrev = useCallback(() => {
     const now = Date.now()
@@ -103,31 +123,43 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     lastPrevAtRef.current = now
     if (recent) {
       // second press within window > actual prev
-      setTrackTransitionAt(now)
-      void prev()
+      setTrackTransition({ fromTrackId: status?.track_id ?? '', at: now })
+      void Promise.resolve(prev()).catch((err) => {
+        setTrackTransition(null)
+        reportCommandError('Previous failed', err)
+      })
     } else {
       // first press > rewind to start of current track
-      void seek(0)
+      void Promise.resolve(seek(0)).catch((err) => reportCommandError('Seek failed', err))
     }
-  }, [prev, seek])
+  }, [prev, reportCommandError, seek, status?.track_id])
 
   const onNext = useCallback(() => {
-    setTrackTransitionAt(Date.now())
-    void next()
-  }, [next])
+    setTrackTransition({ fromTrackId: status?.track_id ?? '', at: Date.now() })
+    void Promise.resolve(next()).catch((err) => {
+      setTrackTransition(null)
+      reportCommandError('Next failed', err)
+    })
+  }, [next, reportCommandError, status?.track_id])
 
   const onToggleShuffle = useCallback(() => {
     const nextShuffle = !shuffle
     setOptimisticShuffle({ value: nextShuffle, at: Date.now() })
-    void setShuffle(nextShuffle)
-  }, [shuffle, setShuffle])
+    void Promise.resolve(setShuffle(nextShuffle)).catch((err) => {
+      setOptimisticShuffle(null)
+      reportCommandError('Shuffle failed', err)
+    })
+  }, [reportCommandError, setShuffle, shuffle])
 
   const onCycleRepeat = useCallback(() => {
     const nextMode: RepeatMode =
       repeat === 'off' ? 'context' : repeat === 'context' ? 'track' : 'off'
     setOptimisticRepeat({ value: nextMode, at: Date.now() })
-    void setRepeat(nextMode)
-  }, [repeat, setRepeat])
+    void Promise.resolve(setRepeat(nextMode)).catch((err) => {
+      setOptimisticRepeat(null)
+      reportCommandError('Repeat failed', err)
+    })
+  }, [repeat, reportCommandError, setRepeat])
 
   return {
     isPaused,

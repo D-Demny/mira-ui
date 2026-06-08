@@ -123,7 +123,8 @@ export function useHardwareButtons({
         if (pendingSendRef.current == null) return
         const send = pendingSendRef.current
         pendingSendRef.current = null
-        void setVolume(send, false)
+        // swallow quietly
+        void Promise.resolve(setVolume(send, false)).catch(() => {})
       }, SEND_THROTTLE_MS)
     },
     [setVolume],
@@ -243,8 +244,10 @@ export function useHardwareButtons({
       // short press will play the assigned context
       const preset = getPreset(idx)
       if (preset?.contextUri) {
-        void playContext(preset.contextUri)
-        notify(`Playing from ${preset.label}`)
+        // only claim success once the play actually lands
+        void Promise.resolve(playContext(preset.contextUri))
+          .then(() => notify(`Playing from ${preset.label}`))
+          .catch(() => notify(`Couldn't play ${preset.label}`, { variant: 'error' }))
       }
       // unassigned slots (2-4 until saved) just do nothing
     }

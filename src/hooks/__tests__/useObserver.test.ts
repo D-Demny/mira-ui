@@ -135,7 +135,7 @@ describe('useObserver', () => {
     })
   })
 
-  it('applies a `paused` patch to the current status', async () => {
+  it('ignores legacy patch-style events and waits for full snapshots', async () => {
     server.use(http.get('*/observer/status', () => new Promise(() => undefined)))
 
     const { result } = renderHook(() => useObserver())
@@ -153,35 +153,12 @@ describe('useObserver', () => {
 
     expect(result.current.status).toMatchObject({
       active: true,
-      is_paused: true,
-      is_playing: false,
-    })
-  })
-
-  it('applies a `playing` patch to the current status', async () => {
-    server.use(http.get('*/observer/status', () => new Promise(() => undefined)))
-
-    const { result } = renderHook(() => useObserver())
-
-    await act(async () => {
-      fireEvent({
-        type: 'observer_state_changed',
-        data: { ...baseWire, IsPlaying: false, IsPaused: true },
-      })
-    })
-
-    await act(async () => {
-      fireEvent({ type: 'playing', data: null })
-    })
-
-    expect(result.current.status).toMatchObject({
-      active: true,
       is_paused: false,
       is_playing: true,
     })
   })
 
-  it('applies a `seek` patch with a numeric position', async () => {
+  it('ignores seek patches, even with numeric positions', async () => {
     server.use(http.get('*/observer/status', () => new Promise(() => undefined)))
 
     const { result } = renderHook(() => useObserver())
@@ -192,64 +169,9 @@ describe('useObserver', () => {
         data: { ...baseWire, PositionAsOfTimestamp: 30_000 },
       })
     })
-
-    // received_at must advance, else interpolation compounds elapsed onto the new pos
-    const before = (result.current.status as ObserverStatusActive).received_at
 
     await act(async () => {
       fireEvent({ type: 'seek', data: { position: 45_000 } })
-    })
-
-    const after = (result.current.status as ObserverStatusActive).received_at
-    expect((result.current.status as ObserverStatusActive).position).toBe(45_000)
-    expect(after).toBeGreaterThanOrEqual(before)
-  })
-
-  it('applies `stopped` and `not_playing` patches by setting is_playing=false', async () => {
-    server.use(http.get('*/observer/status', () => new Promise(() => undefined)))
-
-    const { result } = renderHook(() => useObserver())
-
-    await act(async () => {
-      fireEvent({
-        type: 'observer_state_changed',
-        data: { ...baseWire, IsPlaying: true, IsPaused: false },
-      })
-    })
-
-    await act(async () => {
-      fireEvent({ type: 'stopped', data: null })
-    })
-    expect((result.current.status as ObserverStatusActive).is_playing).toBe(false)
-
-    await act(async () => {
-      fireEvent({
-        type: 'observer_state_changed',
-        data: { ...baseWire, IsPlaying: true, IsPaused: false },
-      })
-    })
-    expect((result.current.status as ObserverStatusActive).is_playing).toBe(true)
-
-    await act(async () => {
-      fireEvent({ type: 'not_playing', data: null })
-    })
-    expect((result.current.status as ObserverStatusActive).is_playing).toBe(false)
-  })
-
-  it('ignores a seek event with no numeric position field', async () => {
-    server.use(http.get('*/observer/status', () => new Promise(() => undefined)))
-
-    const { result } = renderHook(() => useObserver())
-
-    await act(async () => {
-      fireEvent({
-        type: 'observer_state_changed',
-        data: { ...baseWire, PositionAsOfTimestamp: 30_000 },
-      })
-    })
-
-    await act(async () => {
-      fireEvent({ type: 'seek', data: {} })
     })
 
     expect((result.current.status as ObserverStatusActive).position).toBe(30_000)

@@ -6,7 +6,8 @@ import type { ObserverStatusActive } from '../../api/types'
 
 function makeMocks() {
   return {
-    togglePlayPause: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    play: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    pause: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     next: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     prev: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     seek: vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined),
@@ -29,7 +30,7 @@ afterEach(() => {
 })
 
 describe('usePlayerControls optimistic play/pause', () => {
-  it('flips isPaused immediately on onPlayPause and fires togglePlayPause', () => {
+  it('flips isPaused immediately on onPlayPause and fires explicit resume', () => {
     const mocks = makeMocks()
     const status: ObserverStatusActive = {
       ...activeStatus,
@@ -46,11 +47,36 @@ describe('usePlayerControls optimistic play/pause', () => {
     })
 
     expect(result.current.isPaused).toBe(false)
-    expect(mocks.togglePlayPause).toHaveBeenCalledTimes(1)
+    expect(mocks.play).toHaveBeenCalledTimes(1)
+    expect(mocks.pause).not.toHaveBeenCalled()
   })
 
-  it('drops the optimistic override once an observer event arrives past click time', () => {
-    // regression for "play/pause stays wrong forever if the command failed silently"
+  it('sends explicit pause then resume on a fast double tap', () => {
+    const mocks = makeMocks()
+    const status: ObserverStatusActive = {
+      ...activeStatus,
+      is_paused: false,
+      is_playing: true,
+      received_at: T0 - 1_000,
+    }
+
+    const { result } = renderHook(() => usePlayerControls({ status, ...mocks }))
+
+    act(() => {
+      result.current.onPlayPause()
+    })
+    expect(result.current.isPaused).toBe(true)
+    expect(mocks.pause).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      result.current.onPlayPause()
+    })
+    expect(result.current.isPaused).toBe(false)
+    expect(mocks.play).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds optimistic pause through stale snapshots until the target is confirmed', () => {
+    // A random newer snapshot may still carry old playback state
     const mocks = makeMocks()
     const initial: ObserverStatusActive = {
       ...activeStatus,
@@ -67,9 +93,39 @@ describe('usePlayerControls optimistic play/pause', () => {
     })
     expect(result.current.isPaused).toBe(false)
 
+    // stale snapshot still reporting paused=true
     rerender({ status: { ...initial, is_paused: true, received_at: T0 + 100 } })
+    expect(result.current.isPaused).toBe(false)
 
-    expect(result.current.isPaused).toBe(true)
+    // server confirms the target
+    rerender({ status: { ...initial, is_paused: false, received_at: T0 + 200 } })
+    expect(result.current.isPaused).toBe(false)
+  })
+
+  it('clears the optimistic pause and reports an error when the command fails', async () => {
+    const mocks = makeMocks()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const onCommandError = vi.fn()
+    mocks.play.mockRejectedValueOnce(new Error('offline'))
+    const status: ObserverStatusActive = {
+      ...activeStatus,
+      is_paused: true,
+      received_at: T0 - 1_000,
+    }
+
+    try {
+      const { result } = renderHook(() => usePlayerControls({ status, ...mocks, onCommandError }))
+
+      await act(async () => {
+        result.current.onPlayPause()
+        await Promise.resolve()
+      })
+
+      expect(result.current.isPaused).toBe(true)
+      expect(onCommandError).toHaveBeenCalledWith('Play/pause failed')
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 })
 
@@ -269,7 +325,7 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
 })
 
 describe('usePlayerControls track-transition dim', () => {
-  it('marks transitioning during a next click and clears on the next observer event', () => {
+  it('marks transitioning during a next click and clears when the track id changes', () => {
     const mocks = makeMocks()
     const initial: ObserverStatusActive = {
       ...activeStatus,
@@ -288,8 +344,11 @@ describe('usePlayerControls track-transition dim', () => {
     expect(result.current.transitioning).toBe(true)
     expect(mocks.next).toHaveBeenCalledTimes(1)
 
+    // unrelated newer snapshot for the same track should not clear the dim
     rerender({ status: { ...initial, received_at: T0 + 100 } })
+    expect(result.current.transitioning).toBe(true)
 
+    rerender({ status: { ...initial, track_id: 'next-track', received_at: T0 + 200 } })
     expect(result.current.transitioning).toBe(false)
   })
 

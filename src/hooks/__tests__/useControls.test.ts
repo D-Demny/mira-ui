@@ -122,7 +122,7 @@ describe('useControls endpoint dispatch', () => {
     ])
   })
 
-  it('swallows command errors (observer events are the source of truth)', async () => {
+  it('rejects command errors so callers can show feedback', async () => {
     server.use(
       http.post('*/player/resume', () => new HttpResponse(null, { status: 500 })),
       http.post('*/player/pause', () => HttpResponse.error()),
@@ -130,7 +130,7 @@ describe('useControls endpoint dispatch', () => {
 
     const { result } = renderHook(() => useControls())
 
-    await expect(result.current.play()).resolves.toBeUndefined()
-    await expect(result.current.pause()).resolves.toBeUndefined()
+    await expect(result.current.play()).rejects.toThrow('/player/resume: 500')
+    await expect(result.current.pause()).rejects.toThrow()
   })
 })

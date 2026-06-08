@@ -41,18 +41,18 @@ export default function App() {
   // TODO: currently broken so set to false
   const daemonDown = false
   const { status: realStatus, loading, connected } = useObserver()
-  const { togglePlayPause, next, prev, seek, playContext, setVolume, setShuffle, setRepeat } =
+  const notify = useNotify()
+  const { play, pause, next, prev, seek, playContext, setVolume, setShuffle, setRepeat } =
     useControls()
   const handleSeek = useCallback(
     (positionMs: number) => {
-      void seek(positionMs)
+      void seek(positionMs).catch(() => notify('Seek failed', { variant: 'error' }))
     },
-    [seek],
+    [notify, seek],
   )
   usePrefetch(realStatus)
   const { online, pairing: realPairing, lastDevice, setDiscoverable } = useBluetooth()
   const connectDevices = useConnectDevices()
-  const notify = useNotify()
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false)
 
   // notification for the playback device changes
@@ -179,12 +179,14 @@ export default function App() {
 
   const controls = usePlayerControls({
     status: status && status.active ? status : null,
-    togglePlayPause,
+    play,
+    pause,
     next,
     prev,
     seek,
     setShuffle,
     setRepeat,
+    onCommandError: (message) => notify(message, { variant: 'error' }),
   })
 
   const hardware = useHardwareButtons({
@@ -276,11 +278,7 @@ export default function App() {
   if (forced === 'idle') {
     return (
       <div className={styles.app}>
-        <IdleScreen
-          connected={connected}
-          devices={connectDevices}
-          onSelectDevice={onPickDevice}
-        />
+        <IdleScreen connected={connected} devices={connectDevices} onSelectDevice={onPickDevice} />
         {globalOverlays}
       </div>
     )
@@ -326,7 +324,7 @@ export default function App() {
       )
     }
 
-    if ((loading && !status) || auth.loading) {
+    if ((loading && !status) || (auth.loading && (!status || !status.active))) {
       const stuckHint =
         loadStuck && online === true && !auth.url
           ? 'Still connecting to Spotify if this persists for another minute, try unplugging and replugging.'

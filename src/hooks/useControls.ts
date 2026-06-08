@@ -2,14 +2,13 @@ import { useCallback } from 'react'
 import { API_BASE } from '@/config'
 
 async function call(method: string, path: string, body?: unknown): Promise<void> {
-  try {
-    await fetch(`${API_BASE}${path}`, {
-      method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    })
-  } catch {
-    // ignore
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    throw new Error(`${path}: ${res.status}`)
   }
 }
 
