@@ -28,6 +28,7 @@ function reducer(state: ScrubState, event: ScrubEvent): ScrubState {
 }
 
 function ProgressBarImpl({ status, onSeek }: Props) {
+  const seekDisabled = !!status.disallow_seek
   const fillRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<HTMLDivElement | null>(null)
   const barRef = useRef<HTMLDivElement | null>(null)
@@ -139,17 +140,20 @@ function ProgressBarImpl({ status, onSeek }: Props) {
   }, [])
 
   const onPointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    if (seekDisabled) return
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
     send({ type: 'pointerdown', ratio: computeRatio(e.clientX) })
   }
 
   const onPointerMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    if (seekDisabled) return
     if (stateRef.current.kind !== 'gesture') return
     send({ type: 'pointermove', ratio: computeRatio(e.clientX) })
   }
 
   const onPointerUp: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    if (seekDisabled) return
     if (stateRef.current.kind !== 'gesture') return
     e.currentTarget.releasePointerCapture(e.pointerId)
 
@@ -167,6 +171,7 @@ function ProgressBarImpl({ status, onSeek }: Props) {
   }
 
   const onPointerCancel: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    if (seekDisabled) return
     if (stateRef.current.kind !== 'gesture') return
     if (import.meta.env.DEV) {
       console.warn('[ProgressBar] pointercancel during scrub, browser interrupted the drag', {
@@ -188,7 +193,7 @@ function ProgressBarImpl({ status, onSeek }: Props) {
         0:00
       </span>
       <div
-        className={styles.hit}
+        className={`${styles.hit} ${seekDisabled ? styles.hitDisabled : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -197,6 +202,7 @@ function ProgressBarImpl({ status, onSeek }: Props) {
         aria-label="Playback position"
         aria-valuemin={0}
         aria-valuemax={status.duration}
+        aria-disabled={seekDisabled}
       >
         <div className={styles.bar} ref={barRef}>
           <div className={styles.barClip}>

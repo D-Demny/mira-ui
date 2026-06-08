@@ -64,6 +64,28 @@ describe('lyrics rendered DOM', () => {
     expect(onSeek).toHaveBeenCalledWith(10_000)
   })
 
+  it('does not make synced lines clickable when seeking is disallowed', async () => {
+    server.use(
+      http.get('*/lyrics/abc', () =>
+        HttpResponse.json({
+          syncType: 'LINE_SYNCED',
+          lines: [
+            { startTimeMs: '0', words: 'L0' },
+            { startTimeMs: '10000', words: 'L1' },
+          ],
+        }),
+      ),
+    )
+
+    const onSeek = vi.fn()
+    render(<Lyrics status={{ ...TRACK_STATUS, disallow_seek: true }} onSeek={onSeek} />)
+
+    const line = await screen.findByText('L1')
+    expect(line).not.toHaveAttribute('role', 'button')
+    fireEvent.click(line)
+    expect(onSeek).not.toHaveBeenCalled()
+  })
+
   it('shows the unsynced pill when the daemon returns unsynced lyrics', async () => {
     server.use(
       http.get('*/lyrics/abc', () =>

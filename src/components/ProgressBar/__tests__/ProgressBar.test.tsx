@@ -71,4 +71,19 @@ describe('ProgressBar DOM event wiring', () => {
       warnSpy.mockRestore()
     }
   })
+
+  it('does not fire a seek when seeking is disallowed', () => {
+    const onSeek = vi.fn()
+    render(<ProgressBar status={{ ...activeStatus, disallow_seek: true }} onSeek={onSeek} />)
+
+    const slider = screen.getByRole('slider')
+    mockBarRect(slider, 800)
+    stubPointerCapture(slider)
+
+    fireEvent.pointerDown(slider, { clientX: 400, pointerId: 1 })
+    fireEvent.pointerUp(slider, { clientX: 400, pointerId: 1 })
+
+    expect(slider).toHaveAttribute('aria-disabled', 'true')
+    expect(onSeek).not.toHaveBeenCalled()
+  })
 })

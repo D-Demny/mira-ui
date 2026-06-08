@@ -248,7 +248,7 @@ function LyricsImpl({ status, onSeek }: Props) {
                   : 'far'
             const startMs = synced ? starts[i] : undefined
             const onClick =
-              onSeek && typeof startMs === 'number' && startMs >= 0
+              !status.disallow_seek && onSeek && typeof startMs === 'number' && startMs >= 0
                 ? () => onSeek(startMs)
                 : undefined
             return (

@@ -34,6 +34,10 @@
   -webkit-touch-callout: none;
 }
 
+.hitDisabled {
+  cursor: default;
+}
+
 .bar {
   position: relative;
   width: 100%;
@@ -63,6 +67,10 @@
   will-change: transform;
 }
 
+.hitDisabled .fill {
+  background: #8a8a8e;
+}
+
 .handle {
   position: absolute;
   top: 50%;
@@ -73,4 +81,8 @@
   background: $text-primary;
   pointer-events: none;
   will-change: transform;
+}
+
+.hitDisabled .handle {
+  display: none;
 }
