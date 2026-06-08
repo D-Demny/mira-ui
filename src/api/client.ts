@@ -12,12 +12,17 @@ function trackIdFromUri(uri: string): string {
   return parts.length === 3 ? parts[2] : ''
 }
 
+const MAX_POSITION_PROJECTION_MS = 10 * 60 * 1000
+
 export function remoteStateToStatus(rs: RemoteStateWire): ObserverStatusActive {
   const trackId = trackIdFromUri(rs.TrackUri)
   // project PositionAsOfTimestamp forward to now if playing, so first paint is correct
   const now = Date.now()
+  const rawElapsed = rs.Timestamp > 0 ? now - rs.Timestamp : 0
   const elapsed =
-    rs.IsPlaying && !rs.IsPaused && rs.Timestamp > 0 ? Math.max(0, now - rs.Timestamp) : 0
+    rs.IsPlaying && !rs.IsPaused && rawElapsed >= 0 && rawElapsed <= MAX_POSITION_PROJECTION_MS
+      ? rawElapsed
+      : 0
   const position = Math.min(rs.Duration, rs.PositionAsOfTimestamp + elapsed)
 
   return {

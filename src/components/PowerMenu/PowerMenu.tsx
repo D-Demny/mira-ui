@@ -30,8 +30,8 @@ function PowerMenuImpl({ open, onClose }: Props) {
   const onRestart = () => {
     if (busy) return
     setBusy('restart')
-    void restartDevice().catch(() => {})
-    // leave busy true
+    void restartDevice().catch(() => setBusy(null))
+    // leave busy true on success
   }
 
   const onConfirmReset = () => {
@@ -42,7 +42,7 @@ function PowerMenuImpl({ open, onClose }: Props) {
     } catch {
       // ignore
     }
-    void resetDevice().catch(() => {})
+    void resetDevice().catch(() => setBusy(null))
   }
 
   return (

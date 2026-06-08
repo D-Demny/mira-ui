@@ -103,6 +103,18 @@ describe('remoteStateToStatus', () => {
     expect(remoteStateToStatus(wire).position).toBe(30_000)
   })
 
+  it('does not project when the remote timestamp is implausibly stale', () => {
+    const wire: RemoteStateWire = {
+      ...baseWire,
+      IsPlaying: true,
+      IsPaused: false,
+      PositionAsOfTimestamp: 30_000,
+      Timestamp: FROZEN_NOW - 10 * 60 * 1000 - 1,
+    }
+
+    expect(remoteStateToStatus(wire).position).toBe(30_000)
+  })
+
   it('extracts trackId from a 3-part Spotify URI and builds lyrics_url', () => {
     const status = remoteStateToStatus({
       ...baseWire,
