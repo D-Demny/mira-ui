@@ -1,5 +1,14 @@
 import { memo } from 'react'
-import { MoreIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon, RepeatIcon, ShuffleIcon } from './icons'
+import {
+  MoreIcon,
+  NextIcon,
+  PauseIcon,
+  PlayIcon,
+  PrevIcon,
+  RepeatIcon,
+  RepeatOneIcon,
+  ShuffleIcon,
+} from './icons'
 import styles from './Controls.module.scss'
 
 import type { RepeatMode } from '@/components/Menu'
@@ -86,8 +95,7 @@ function ControlsImpl({
           aria-pressed={repeatActive}
           onClick={onCycleRepeat}
         >
-          <RepeatIcon size={24} />
-          {repeat === 'track' ? <span className={styles.repeatBadge}>1</span> : null}
+          {repeat === 'track' ? <RepeatOneIcon size={24} /> : <RepeatIcon size={24} />}
         </button>
       </div>
 

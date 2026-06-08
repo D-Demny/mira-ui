@@ -73,18 +73,20 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
   const isPaused =
     optimisticPauseActive && optimisticPause ? optimisticPause.value : (status?.is_paused ?? false)
 
-  const optimisticShuffleActive = optimisticShuffle != null && receivedAt <= optimisticShuffle.at
+  // hold the optimistic value until the server reports the target
+  const shuffleFromStatus = status?.shuffle ?? false
+  const optimisticShuffleActive =
+    optimisticShuffle != null && shuffleFromStatus !== optimisticShuffle.value
   const shuffle =
-    optimisticShuffleActive && optimisticShuffle
-      ? optimisticShuffle.value
-      : (status?.shuffle ?? false)
+    optimisticShuffleActive && optimisticShuffle ? optimisticShuffle.value : shuffleFromStatus
 
   const repeatFromStatus: RepeatMode = status?.repeat_track
     ? 'track'
     : status?.repeat_context
       ? 'context'
       : 'off'
-  const optimisticRepeatActive = optimisticRepeat != null && receivedAt <= optimisticRepeat.at
+  const optimisticRepeatActive =
+    optimisticRepeat != null && repeatFromStatus !== optimisticRepeat.value
   const repeat =
     optimisticRepeatActive && optimisticRepeat ? optimisticRepeat.value : repeatFromStatus
 

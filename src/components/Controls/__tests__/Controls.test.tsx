@@ -73,16 +73,15 @@ describe('Controls', () => {
     expect(props.onNext).not.toHaveBeenCalled()
   })
 
-  it('renders the "1" badge only when repeat === "track"', () => {
+  it('labels the repeat button by mode (off/context/track)', () => {
+    // 'track' renders RepeatOneIcon, others render RepeatIcon the accessible name is the user-facing discriminator
     const { rerender } = render(<Controls {...defaultProps()} repeat="off" />)
-    expect(screen.queryByText('1')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Repeat off' })).toBeInTheDocument()
 
     rerender(<Controls {...defaultProps()} repeat="context" />)
-    expect(screen.queryByText('1')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Repeat context' })).toBeInTheDocument()
 
     rerender(<Controls {...defaultProps()} repeat="track" />)
-    expect(screen.getByText('1')).toBeInTheDocument()
-    const repeatBtn = screen.getByRole('button', { name: 'Repeat track' })
-    expect(repeatBtn).toContainElement(screen.getByText('1'))
+    expect(screen.getByRole('button', { name: 'Repeat track' })).toBeInTheDocument()
   })
 })

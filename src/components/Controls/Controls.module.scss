@@ -66,9 +66,13 @@
 .btnLg {
   width: 64px;
   height: 64px;
-  background: rgba(255, 255, 255, 0.1);
-  color: $text-primary;
+  background: $text-primary;
+  color: $bg;
   border-radius: 50%;
+
+  &:active {
+    color: $bg;
+  }
 
   svg {
     margin-left: 1px;
@@ -89,20 +93,4 @@
     border-radius: 50%;
     background: $accent;
   }
-}
-
-.repeatBadge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  font-size: 9px;
-  font-weight: $fw-bold;
-  color: $bg;
-  background: $accent;
-  border-radius: 999px;
-  min-width: 12px;
-  height: 12px;
-  padding: 0 3px;
-  @include flex-center;
-  pointer-events: none;
 }

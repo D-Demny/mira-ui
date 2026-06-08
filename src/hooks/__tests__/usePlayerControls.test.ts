@@ -160,8 +160,9 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
     expect(mocks.setRepeat).toHaveBeenNthCalledWith(3, 'off')
   })
 
-  it('drops optimistic shuffle once an observer event arrives past click time', () => {
-    // regression for "shuffle/repeat optimistic value sticks forever"
+  it('holds optimistic shuffle through a stale status, then follows the confirmed value', () => {
+    // regression for the flash: a stale in-flight status (still the old value)
+    // must NOT drop the optimistic before the server reports the target
     const mocks = makeMocks()
     const initial: ObserverStatusActive = {
       ...activeStatus,
@@ -178,12 +179,40 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
     })
     expect(result.current.shuffle).toBe(true)
 
+    // stale status still reporting false
     rerender({ status: { ...initial, shuffle: false, received_at: T0 + 100 } })
+    expect(result.current.shuffle).toBe(true)
 
+    // server confirms the target
+    rerender({ status: { ...initial, shuffle: true, received_at: T0 + 200 } })
+    expect(result.current.shuffle).toBe(true)
+  })
+
+  it('clears a never-confirmed optimistic shuffle after the safety timeout', () => {
+    const mocks = makeMocks()
+    const initial: ObserverStatusActive = {
+      ...activeStatus,
+      shuffle: false,
+      received_at: T0 - 1_000,
+    }
+    const { result } = renderHook(
+      ({ status }: { status: ObserverStatusActive }) => usePlayerControls({ status, ...mocks }),
+      { initialProps: { status: initial } },
+    )
+
+    act(() => {
+      result.current.onToggleShuffle()
+    })
+    expect(result.current.shuffle).toBe(true)
+
+    // change never confirms
+    act(() => {
+      vi.advanceTimersByTime(3_000)
+    })
     expect(result.current.shuffle).toBe(false)
   })
 
-  it('drops optimistic repeat once an observer event arrives past click time', () => {
+  it('holds optimistic repeat through a stale status, then follows the confirmed value', () => {
     const mocks = makeMocks()
     const initial: ObserverStatusActive = {
       ...activeStatus,
@@ -201,15 +230,40 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
     })
     expect(result.current.repeat).toBe('context')
 
+    // stale status still reporting off
     rerender({
-      status: {
-        ...initial,
-        repeat_context: false,
-        repeat_track: false,
-        received_at: T0 + 100,
-      },
+      status: { ...initial, repeat_context: false, repeat_track: false, received_at: T0 + 100 },
     })
+    expect(result.current.repeat).toBe('context')
 
+    // server confirms context
+    rerender({
+      status: { ...initial, repeat_context: true, repeat_track: false, received_at: T0 + 200 },
+    })
+    expect(result.current.repeat).toBe('context')
+  })
+
+  it('clears a never-confirmed optimistic repeat after the safety timeout', () => {
+    const mocks = makeMocks()
+    const initial: ObserverStatusActive = {
+      ...activeStatus,
+      repeat_context: false,
+      repeat_track: false,
+      received_at: T0 - 1_000,
+    }
+    const { result } = renderHook(
+      ({ status }: { status: ObserverStatusActive }) => usePlayerControls({ status, ...mocks }),
+      { initialProps: { status: initial } },
+    )
+
+    act(() => {
+      result.current.onCycleRepeat()
+    })
+    expect(result.current.repeat).toBe('context')
+
+    act(() => {
+      vi.advanceTimersByTime(3_000)
+    })
     expect(result.current.repeat).toBe('off')
   })
 })
