@@ -28,6 +28,8 @@ function prefetchImage(url: string) {
 function prefetchLyrics(t: QueueTrack) {
   // queue entries can ship with artist empty
   if (!t.track_id || !t.name || !t.artist) return
+  // skip podcast episodes
+  if (t.uri?.startsWith('spotify:episode:')) return
   const params = new URLSearchParams({
     track: t.name,
     artist: t.artist,

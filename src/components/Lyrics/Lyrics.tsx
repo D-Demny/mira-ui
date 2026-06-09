@@ -21,6 +21,7 @@ function isInstrumental(lines: { words: string }[]): boolean {
 }
 
 const ACTIVE_Y_RATIO = 0.33
+const TALL_LINE_TOP_RATIO = 0.12
 const SNAP_BACK_MS = 4000
 
 const TINT_ALPHA = 0.18
@@ -63,12 +64,14 @@ const LyricLine = memo(function LyricLine({
 })
 
 function LyricsImpl({ status, onSeek }: Props) {
+  const isPodcast = status.track_uri.startsWith('spotify:episode:')
   const { lyrics, loading, error } = useLyrics({
     trackId: status.track_id || null,
     trackName: status.track_name,
     artist: status.track_artist,
     album: status.track_album,
     durationMs: status.duration,
+    episode: isPodcast,
   })
 
   const color: RGB = useColorExtract(status.track_image)
@@ -122,7 +125,9 @@ function LyricsImpl({ status, onSeek }: Props) {
     const idx = activeIdx < 0 ? 0 : activeIdx
     const line = lineMetrics.current[idx]
     if (!line) return 0
-    const desired = line.top - viewport.clientHeight * ACTIVE_Y_RATIO + line.height / 2
+    const centered = line.top - viewport.clientHeight * ACTIVE_Y_RATIO + line.height / 2
+    const topAnchored = line.top - viewport.clientHeight * TALL_LINE_TOP_RATIO
+    const desired = Math.min(centered, topAnchored)
     const maxOffset = Math.max(0, listHeight.current - viewport.clientHeight)
     return Math.max(0, Math.min(desired, maxOffset))
   }
@@ -199,7 +204,9 @@ function LyricsImpl({ status, onSeek }: Props) {
   if (loading) {
     return (
       <div className={`${styles.lyrics} ${styles.state}`} style={bgStyle} ref={containerRef}>
-        <div className={styles.stateText}>Loading lyrics...</div>
+        <div className={styles.stateText}>
+          {isPodcast ? 'Loading transcript...' : 'Loading lyrics...'}
+        </div>
       </div>
     )
   }
@@ -207,7 +214,9 @@ function LyricsImpl({ status, onSeek }: Props) {
   if (error || !lyrics || lyrics.lines.length === 0) {
     return (
       <div className={`${styles.lyrics} ${styles.state}`} style={bgStyle} ref={containerRef}>
-        <div className={styles.stateText}>No lyrics available</div>
+        <div className={styles.stateText}>
+          {isPodcast ? 'No transcript available' : 'No lyrics available'}
+        </div>
       </div>
     )
   }

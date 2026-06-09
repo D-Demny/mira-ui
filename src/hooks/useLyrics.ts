@@ -8,6 +8,7 @@ interface LyricsParams {
   artist: string
   album?: string
   durationMs?: number
+  episode?: boolean
 }
 
 interface LyricsState {
@@ -54,19 +55,23 @@ export function useLyrics(params: LyricsParams): LyricsState {
     error: null,
   })
 
-  const { trackId, trackName, artist, album, durationMs } = params
+  const { trackId, trackName, artist, album, durationMs, episode } = params
   const debounceRef = useRef(0)
 
   useEffect(() => {
-    if (!trackId || !trackName || !artist) {
+    // tracks need name + artist to look up and episodes are fetched by id alone
+    if (!trackId || (!episode && (!trackName || !artist))) {
       setState({ lyrics: null, loading: false, error: null })
       return
     }
 
-    const cached = cacheGet(trackId)
-    if (cached) {
-      setState({ lyrics: cached, loading: false, error: null })
-      return
+    // podcasts aren't cached
+    if (!episode) {
+      const cached = cacheGet(trackId)
+      if (cached) {
+        setState({ lyrics: cached, loading: false, error: null })
+        return
+      }
     }
 
     const ac = new AbortController()
@@ -74,9 +79,9 @@ export function useLyrics(params: LyricsParams): LyricsState {
 
     window.clearTimeout(debounceRef.current)
     debounceRef.current = window.setTimeout(() => {
-      fetchLyrics(trackId, { track: trackName, artist, album, durationMs }, ac.signal)
+      fetchLyrics(trackId, { track: trackName, artist, album, durationMs, episode }, ac.signal)
         .then((lyrics) => {
-          if (lyrics) cacheSet(trackId, lyrics)
+          if (lyrics && !episode) cacheSet(trackId, lyrics)
           setState({ lyrics, loading: false, error: null })
         })
         .catch((err: unknown) => {
@@ -89,7 +94,7 @@ export function useLyrics(params: LyricsParams): LyricsState {
       ac.abort()
       window.clearTimeout(debounceRef.current)
     }
-  }, [trackId, trackName, artist, album, durationMs])
+  }, [trackId, trackName, artist, album, durationMs, episode])
 
   return state
 }

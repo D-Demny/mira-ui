@@ -7,6 +7,8 @@ import {
   PrevIcon,
   RepeatIcon,
   RepeatOneIcon,
+  SeekBack15Icon,
+  SeekForward15Icon,
   ShuffleIcon,
 } from './icons'
 import styles from './Controls.module.scss'
@@ -19,12 +21,16 @@ interface Props {
   repeat: RepeatMode
   disallowPrev?: boolean
   disallowNext?: boolean
+  // podcast mode: shuffle/repeat become rewind/forward 15s
+  isPodcast?: boolean
   onPrev?: () => void
   onPlayPause?: () => void
   onNext?: () => void
   onMore?: () => void
   onToggleShuffle?: () => void
   onCycleRepeat?: () => void
+  onRewind15?: () => void
+  onForward15?: () => void
 }
 
 function ControlsImpl({
@@ -33,12 +39,15 @@ function ControlsImpl({
   repeat,
   disallowPrev = false,
   disallowNext = false,
+  isPodcast = false,
   onPrev,
   onPlayPause,
   onNext,
   onMore,
   onToggleShuffle,
   onCycleRepeat,
+  onRewind15,
+  onForward15,
 }: Props) {
   const repeatActive = repeat !== 'off'
 
@@ -47,15 +56,26 @@ function ControlsImpl({
       <div className={styles.spacer} aria-hidden />
 
       <div className={styles.center}>
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnXs} ${shuffle ? styles.toggleOn : ''}`}
-          aria-label="Shuffle"
-          aria-pressed={shuffle}
-          onClick={onToggleShuffle}
-        >
-          <ShuffleIcon size={24} />
-        </button>
+        {isPodcast ? (
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnXs}`}
+            aria-label="Rewind 15 seconds"
+            onClick={onRewind15}
+          >
+            <SeekBack15Icon size={24} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnXs} ${shuffle ? styles.toggleOn : ''}`}
+            aria-label="Shuffle"
+            aria-pressed={shuffle}
+            onClick={onToggleShuffle}
+          >
+            <ShuffleIcon size={24} />
+          </button>
+        )}
 
         <button
           type="button"
@@ -88,15 +108,26 @@ function ControlsImpl({
           <NextIcon size={32} />
         </button>
 
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnXs} ${repeatActive ? styles.toggleOn : ''}`}
-          aria-label={`Repeat ${repeat}`}
-          aria-pressed={repeatActive}
-          onClick={onCycleRepeat}
-        >
-          {repeat === 'track' ? <RepeatOneIcon size={24} /> : <RepeatIcon size={24} />}
-        </button>
+        {isPodcast ? (
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnXs}`}
+            aria-label="Forward 15 seconds"
+            onClick={onForward15}
+          >
+            <SeekForward15Icon size={24} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnXs} ${repeatActive ? styles.toggleOn : ''}`}
+            aria-label={`Repeat ${repeat}`}
+            aria-pressed={repeatActive}
+            onClick={onCycleRepeat}
+          >
+            {repeat === 'track' ? <RepeatOneIcon size={24} /> : <RepeatIcon size={24} />}
+          </button>
+        )}
       </div>
 
       <div className={styles.right}>

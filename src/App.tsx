@@ -122,6 +122,21 @@ export default function App() {
       ? mockStatus
       : realStatus
 
+  const isPodcast = status?.active === true && status.track_uri.startsWith('spotify:episode:')
+
+  // seek relative to the live position
+  const seekRelative = useCallback(
+    (deltaMs: number) => {
+      if (!status?.active) return
+      const base = status.is_paused
+        ? status.position
+        : status.position + (Date.now() - status.received_at)
+      const target = Math.min(status.duration, Math.max(0, base + deltaMs))
+      void seek(target).catch(() => notify('Seek failed', { variant: 'error' }))
+    },
+    [status, seek, notify],
+  )
+
   const showLyrics = forced === 'playing-no-lyrics' ? false : showLyricsReal
   const menuOpen = forced === 'menu' ? true : menuOpenReal
   const powerMenuOpen = forced === 'power-menu' ? true : powerMenuOpenReal
@@ -382,11 +397,14 @@ export default function App() {
           repeat={controls.repeat}
           disallowPrev={status.disallow_prev}
           disallowNext={status.disallow_next}
+          isPodcast={isPodcast}
           onPrev={controls.onPrev}
           onNext={controls.onNext}
           onPlayPause={controls.onPlayPause}
           onToggleShuffle={controls.onToggleShuffle}
           onCycleRepeat={controls.onCycleRepeat}
+          onRewind15={() => seekRelative(-15000)}
+          onForward15={() => seekRelative(15000)}
           onMore={() => setMenuOpen(true)}
         />
       </div>
