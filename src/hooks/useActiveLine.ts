@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react'
 import { getActiveLyricIndex } from './useLyrics'
 import type { ObserverStatusActive } from '@/api/types'
 
-// active lyric index, refreshing only on line crossings
-export function useActiveLine(status: ObserverStatusActive, starts: number[]): number {
+export function useActiveLine(
+  status: ObserverStatusActive,
+  starts: number[],
+  enabled = true,
+): number {
   const [idx, setIdx] = useState(-1)
 
   useEffect(() => {
@@ -11,6 +14,7 @@ export function useActiveLine(status: ObserverStatusActive, starts: number[]): n
       setIdx(-1)
       return
     }
+    if (!enabled) return
 
     let timer = 0
     const playing = status.is_playing && !status.is_paused
@@ -33,6 +37,7 @@ export function useActiveLine(status: ObserverStatusActive, starts: number[]): n
     compute()
     return () => window.clearTimeout(timer)
   }, [
+    enabled,
     status.received_at,
     status.position,
     status.duration,

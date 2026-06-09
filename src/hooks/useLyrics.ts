@@ -9,6 +9,7 @@ interface LyricsParams {
   album?: string
   durationMs?: number
   episode?: boolean
+  enabled?: boolean
 }
 
 interface LyricsState {
@@ -55,10 +56,13 @@ export function useLyrics(params: LyricsParams): LyricsState {
     error: null,
   })
 
-  const { trackId, trackName, artist, album, durationMs, episode } = params
+  const { trackId, trackName, artist, album, durationMs, episode, enabled = true } = params
   const debounceRef = useRef(0)
 
   useEffect(() => {
+    // lyric view hidden dont fetch
+    if (!enabled) return
+
     // tracks need name + artist to look up and episodes are fetched by id alone
     if (!trackId || (!episode && (!trackName || !artist))) {
       setState({ lyrics: null, loading: false, error: null })
@@ -94,7 +98,7 @@ export function useLyrics(params: LyricsParams): LyricsState {
       ac.abort()
       window.clearTimeout(debounceRef.current)
     }
-  }, [trackId, trackName, artist, album, durationMs, episode])
+  }, [trackId, trackName, artist, album, durationMs, episode, enabled])
 
   return state
 }

@@ -1,21 +1,40 @@
 import { memo } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
-import { TrackInfo } from '@/components/TrackInfo'
+import { Marquee } from '@/components/TrackInfo/Marquee'
 import type { ObserverStatusActive } from '@/api/types'
 import styles from './NoLyricsView.module.scss'
 
 interface Props {
   status: ObserverStatusActive
+  active?: boolean
 }
 
-function NoLyricsViewImpl({ status }: Props) {
+const ART_SIZE = 220
+
+function NoLyricsViewImpl({ status, active = true }: Props) {
+  const art = status.track_image
+  const glowStyle = art ? ({ '--art': `url("${art}")` } as React.CSSProperties) : undefined
+
   return (
     <div className={styles.wrap}>
-      <div className={styles.kenburns}>
-        <AlbumArt src={status.track_image} size={220} />
+      <div className={styles.art}>
+        {art ? (
+          <div
+            className={`${styles.glow} ${active ? '' : styles.paused}`}
+            style={glowStyle}
+            aria-hidden
+          >
+            <span className={`${styles.orb} ${styles.orbA}`} />
+            <span className={`${styles.orb} ${styles.orbB}`} />
+          </div>
+        ) : null}
+        <div className={styles.cover}>
+          <AlbumArt src={status.track_image} size={ART_SIZE} />
+        </div>
       </div>
-      <div className={styles.text}>
-        <TrackInfo trackName={status.track_name} artist={status.track_artist} large />
+      <div className={styles.meta}>
+        <Marquee text={status.track_name || 'Unknown track'} className={styles.title} />
+        <Marquee text={status.track_artist || 'Unknown artist'} className={styles.artist} />
       </div>
     </div>
   )

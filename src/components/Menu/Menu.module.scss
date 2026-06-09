@@ -2,8 +2,9 @@
   @include absolute-fill;
   z-index: $z-menu;
   pointer-events: none;
-  background: rgba(0, 0, 0, 0);
-  transition: background-color $dur-base $ease-standard;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transition: opacity $dur-base $ease-standard;
 }
 
 .sheet {
@@ -35,7 +36,7 @@
 
 .open {
   pointer-events: auto;
-  background: rgba(0, 0, 0, 0.45);
+  opacity: 1;
 
   .sheet {
     transform: translate(-50%, 0);

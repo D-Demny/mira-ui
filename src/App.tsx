@@ -370,24 +370,30 @@ export default function App() {
 
   return (
     <div className={`${styles.app} ${styles.appPlaying}`}>
-      {showLyrics ? (
-        <div className={styles.top} key="lyrics">
-          <div className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}>
-            <AlbumArt src={status.track_image} size={200} />
-            <TrackInfo trackName={status.track_name} artist={status.track_artist} />
-          </div>
-          <div className={styles.right}>
-            <Lyrics status={status} onSeek={handleSeek} />
-          </div>
-        </div>
-      ) : (
+      <div className={styles.stage}>
         <div
-          className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
-          key="no-lyrics"
+          className={`${styles.viewLayer} ${showLyrics ? styles.viewActive : styles.viewInactive}`}
         >
-          <NoLyricsView status={status} />
+          <div className={styles.top}>
+            <div className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}>
+              <AlbumArt src={status.track_image} size={200} />
+              <TrackInfo trackName={status.track_name} artist={status.track_artist} />
+            </div>
+            <div className={styles.right}>
+              <Lyrics status={status} onSeek={handleSeek} active={showLyrics} />
+            </div>
+          </div>
         </div>
-      )}
+        <div
+          className={`${styles.viewLayer} ${!showLyrics ? styles.viewActive : styles.viewInactive}`}
+        >
+          <div
+            className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
+          >
+            <NoLyricsView status={status} active={!showLyrics} />
+          </div>
+        </div>
+      </div>
 
       <div className={styles.bottom}>
         <ProgressBar status={status} onSeek={handleSeek} />

@@ -1,5 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { rgba, useColorExtract, type RGB } from '@/hooks/useColorExtract'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { darkBg, useColorExtract, type RGB } from '@/hooks/useColorExtract'
 import { useActiveLine } from '@/hooks/useActiveLine'
 import { useLyricStarts, useLyrics } from '@/hooks/useLyrics'
 import type { ObserverStatusActive } from '@/api/types'
@@ -10,6 +10,7 @@ import styles from './Lyrics.module.scss'
 interface Props {
   status: ObserverStatusActive
   onSeek?: (positionMs: number) => void
+  active?: boolean
 }
 
 type LineVariant = 'active' | 'adjacent' | 'far' | 'unsynced'
@@ -23,18 +24,8 @@ function isInstrumental(lines: { words: string }[]): boolean {
 const ACTIVE_Y_RATIO = 0.33
 const TALL_LINE_TOP_RATIO = 0.12
 const SNAP_BACK_MS = 4000
-
-const TINT_ALPHA = 0.18
-const BG_R = 0x12
-const BG_G = 0x12
-const BG_B = 0x12
-
-function compositeBg([r, g, b]: RGB): string {
-  const cr = Math.round(TINT_ALPHA * r + (1 - TINT_ALPHA) * BG_R)
-  const cg = Math.round(TINT_ALPHA * g + (1 - TINT_ALPHA) * BG_G)
-  const cb = Math.round(TINT_ALPHA * b + (1 - TINT_ALPHA) * BG_B)
-  return `rgb(${cr}, ${cg}, ${cb})`
-}
+const DRAG_THRESHOLD_PX = 8
+const SEEK_HINT_TIMEOUT_MS = 2500
 
 const LyricLine = memo(function LyricLine({
   text,
@@ -63,7 +54,7 @@ const LyricLine = memo(function LyricLine({
   )
 })
 
-function LyricsImpl({ status, onSeek }: Props) {
+function LyricsImpl({ status, onSeek, active = true }: Props) {
   const isPodcast = status.track_uri.startsWith('spotify:episode:')
   const { lyrics, loading, error } = useLyrics({
     trackId: status.track_id || null,
@@ -72,12 +63,16 @@ function LyricsImpl({ status, onSeek }: Props) {
     album: status.track_album,
     durationMs: status.duration,
     episode: isPodcast,
+    enabled: active,
   })
 
   const color: RGB = useColorExtract(status.track_image)
   const starts = useLyricStarts(lyrics)
   const synced = lyrics?.syncType === 'LINE_SYNCED'
-  const activeIdx = useActiveLine(status, synced ? starts : [])
+  const activeIdx = useActiveLine(status, synced ? starts : [], active)
+
+  const [seekHint, setSeekHint] = useState<number | null>(null)
+  const effIdx = seekHint ?? activeIdx
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -91,15 +86,15 @@ function LyricsImpl({ status, onSeek }: Props) {
   const snapBackTimer = useRef(0)
   const dragStartY = useRef(0)
   const dragStartOffset = useRef(0)
+  const dragging = useRef(false)
 
-  const bgStyle = useMemo(
-    () =>
-      ({
-        '--lyrics-tint': rgba(color, TINT_ALPHA),
-        '--lyrics-bg-solid': compositeBg(color),
-      }) as React.CSSProperties,
-    [color],
-  )
+  const bgStyle = useMemo(() => {
+    const bg = darkBg(color)
+    return {
+      '--lyrics-tint': bg,
+      '--lyrics-bg-solid': bg,
+    } as React.CSSProperties
+  }, [color])
 
   const applyOffset = (instant = false) => {
     const list = listRef.current
@@ -122,7 +117,7 @@ function LyricsImpl({ status, onSeek }: Props) {
   const computeAutoTarget = (): number => {
     const viewport = viewportRef.current
     if (!viewport || lineMetrics.current.length === 0) return 0
-    const idx = activeIdx < 0 ? 0 : activeIdx
+    const idx = effIdx < 0 ? 0 : effIdx
     const line = lineMetrics.current[idx]
     if (!line) return 0
     const centered = line.top - viewport.clientHeight * ACTIVE_Y_RATIO + line.height / 2
@@ -159,12 +154,24 @@ function LyricsImpl({ status, onSeek }: Props) {
     if (Date.now() - userActiveAt.current < SNAP_BACK_MS) return
     offset.current = computeAutoTarget()
     applyOffset()
-  }, [activeIdx, lyrics, status.track_id])
+  }, [effIdx, lyrics, status.track_id])
+
+  useEffect(() => {
+    if (seekHint == null) return
+    if (activeIdx === seekHint) {
+      setSeekHint(null)
+      return
+    }
+    const t = window.setTimeout(() => setSeekHint(null), SEEK_HINT_TIMEOUT_MS)
+    return () => window.clearTimeout(t)
+  }, [seekHint, activeIdx])
 
   useEffect(() => {
     window.clearTimeout(snapBackTimer.current)
     userActiveAt.current = 0
+    dragging.current = false
     offset.current = 0
+    setSeekHint(null)
     applyOffset(true)
   }, [status.track_id])
 
@@ -178,18 +185,34 @@ function LyricsImpl({ status, onSeek }: Props) {
   const onTouchStart: React.TouchEventHandler<HTMLDivElement> = (e) => {
     dragStartY.current = e.touches[0].clientY
     dragStartOffset.current = offset.current
+    dragging.current = false
     window.clearTimeout(snapBackTimer.current)
   }
 
   const onTouchMove: React.TouchEventHandler<HTMLDivElement> = (e) => {
-    const dy = dragStartY.current - e.touches[0].clientY
-    offset.current = dragStartOffset.current + dy
+    const y = e.touches[0].clientY
+    if (!dragging.current) {
+      if (Math.abs(dragStartY.current - y) < DRAG_THRESHOLD_PX) return
+      dragging.current = true
+      dragStartY.current = y
+      dragStartOffset.current = offset.current
+    }
+    offset.current = dragStartOffset.current + (dragStartY.current - y)
     applyOffset(true)
     userActiveAt.current = Date.now()
   }
 
   const onTouchEnd: React.TouchEventHandler<HTMLDivElement> = () => {
-    snapBackTimer.current = window.setTimeout(snapBack, SNAP_BACK_MS)
+    if (dragging.current) {
+      snapBackTimer.current = window.setTimeout(snapBack, SNAP_BACK_MS)
+    }
+  }
+
+  const onLineTap = (idx: number, startMs: number) => {
+    userActiveAt.current = 0
+    window.clearTimeout(snapBackTimer.current)
+    setSeekHint(idx)
+    onSeek?.(startMs)
   }
 
   const onWheel: React.WheelEventHandler<HTMLDivElement> = (e) => {
@@ -250,15 +273,15 @@ function LyricsImpl({ status, onSeek }: Props) {
           {lyrics.lines.map((line, i) => {
             const variant: LineVariant = !synced
               ? 'unsynced'
-              : i === activeIdx
+              : i === effIdx
                 ? 'active'
-                : Math.abs(i - activeIdx) === 1 && activeIdx >= 0
+                : Math.abs(i - effIdx) === 1 && effIdx >= 0
                   ? 'adjacent'
                   : 'far'
             const startMs = synced ? starts[i] : undefined
             const onClick =
               !status.disallow_seek && onSeek && typeof startMs === 'number' && startMs >= 0
-                ? () => onSeek(startMs)
+                ? () => onLineTap(i, startMs)
                 : undefined
             return (
               <LyricLine key={i} text={line.words || '♪'} variant={variant} onClick={onClick} />
