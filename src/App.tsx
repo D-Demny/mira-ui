@@ -38,7 +38,7 @@ import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
 import { useSavedTrack } from '@/hooks/useSavedTrack'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
-import { transferToDevice } from '@/api/client'
+import { resumeLastDevice, transferToDevice } from '@/api/client'
 import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
 import styles from './App.module.scss'
@@ -342,9 +342,21 @@ export default function App() {
       : null
   const liked = useSavedTrack(savableUri, (message) => notify(message, { variant: 'error' }))
 
+  const statusActive = status?.active === true
+  const onPlayPauseActive = controls.onPlayPause
+  const resumeLast = useCallback(() => {
+    void resumeLastDevice().catch(() => {
+      notify('Nothing to resume. Start playback on a device', { variant: 'info' })
+    })
+  }, [notify])
+  const onHardwarePlayPause = useCallback(() => {
+    if (statusActive) onPlayPauseActive()
+    else resumeLast()
+  }, [statusActive, onPlayPauseActive, resumeLast])
+
   const hardware = useHardwareButtons({
     status: status && status.active ? status : null,
-    onPlayPause: controls.onPlayPause,
+    onPlayPause: onHardwarePlayPause,
     setVolume,
     playContext,
     onBack: goBack,

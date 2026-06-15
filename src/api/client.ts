@@ -78,6 +78,13 @@ export async function fetchConnectDevices(signal?: AbortSignal): Promise<Connect
   return Array.isArray(body?.devices) ? (body.devices as ConnectDevice[]) : []
 }
 
+// resume playback on the last active device (used from the idle screen). Throws
+// on non-OK (404 = no remembered/available device) so the caller can banner it.
+export async function resumeLastDevice(): Promise<void> {
+  const res = await fetch(`${API_BASE}/player/resume_last`, { method: 'POST' })
+  if (!res.ok) throw new Error(`player/resume_last ${res.status}`)
+}
+
 // transfer the current playback session to another device
 export async function transferToDevice(deviceId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/connect/transfer`, {
