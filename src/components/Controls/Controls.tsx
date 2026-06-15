@@ -11,6 +11,7 @@ import {
   SeekForward15Icon,
   ShuffleIcon,
 } from './icons'
+import { SaveButton } from './SaveButton'
 import styles from './Controls.module.scss'
 
 import type { RepeatMode } from '@/components/Menu'
@@ -23,6 +24,9 @@ interface Props {
   disallowNext?: boolean
   // podcast mode: shuffle/repeat become rewind/forward 15s
   isPodcast?: boolean
+  showSave?: boolean
+  saved?: boolean
+  onToggleSaved?: () => void
   onPrev?: () => void
   onPlayPause?: () => void
   onNext?: () => void
@@ -40,6 +44,9 @@ function ControlsImpl({
   disallowPrev = false,
   disallowNext = false,
   isPodcast = false,
+  showSave = false,
+  saved = false,
+  onToggleSaved,
   onPrev,
   onPlayPause,
   onNext,
@@ -53,7 +60,9 @@ function ControlsImpl({
 
   return (
     <div className={styles.row}>
-      <div className={styles.spacer} aria-hidden />
+      <div className={styles.left}>
+        {showSave ? <SaveButton saved={saved} onToggle={onToggleSaved} /> : null}
+      </div>
 
       <div className={styles.center}>
         {isPodcast ? (
@@ -63,7 +72,7 @@ function ControlsImpl({
             aria-label="Rewind 15 seconds"
             onClick={onRewind15}
           >
-            <SeekBack15Icon size={24} />
+            <SeekBack15Icon size={28} />
           </button>
         ) : (
           <button
@@ -73,7 +82,7 @@ function ControlsImpl({
             aria-pressed={shuffle}
             onClick={onToggleShuffle}
           >
-            <ShuffleIcon size={24} />
+            <ShuffleIcon size={28} />
           </button>
         )}
 
@@ -85,7 +94,7 @@ function ControlsImpl({
           disabled={disallowPrev}
           onClick={disallowPrev ? undefined : onPrev}
         >
-          <PrevIcon size={32} />
+          <PrevIcon size={36} />
         </button>
 
         <button
@@ -105,7 +114,7 @@ function ControlsImpl({
           disabled={disallowNext}
           onClick={disallowNext ? undefined : onNext}
         >
-          <NextIcon size={32} />
+          <NextIcon size={36} />
         </button>
 
         {isPodcast ? (
@@ -115,7 +124,7 @@ function ControlsImpl({
             aria-label="Forward 15 seconds"
             onClick={onForward15}
           >
-            <SeekForward15Icon size={24} />
+            <SeekForward15Icon size={28} />
           </button>
         ) : (
           <button
@@ -125,7 +134,7 @@ function ControlsImpl({
             aria-pressed={repeatActive}
             onClick={onCycleRepeat}
           >
-            {repeat === 'track' ? <RepeatOneIcon size={24} /> : <RepeatIcon size={24} />}
+            {repeat === 'track' ? <RepeatOneIcon size={28} /> : <RepeatIcon size={28} />}
           </button>
         )}
       </div>

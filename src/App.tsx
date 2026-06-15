@@ -36,6 +36,7 @@ import { useNotify } from '@/notify/notifyContext'
 import { useObserver } from '@/hooks/useObserver'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
+import { useSavedTrack } from '@/hooks/useSavedTrack'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { transferToDevice } from '@/api/client'
 import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
@@ -334,6 +335,13 @@ export default function App() {
     onCommandError: (message) => notify(message, { variant: 'error' }),
   })
 
+  const savableStatus = status && status.active ? status : reconnecting ? heldStatus : null
+  const savableUri =
+    savableStatus && !savableStatus.track_uri.startsWith('spotify:episode:')
+      ? savableStatus.track_uri
+      : null
+  const liked = useSavedTrack(savableUri, (message) => notify(message, { variant: 'error' }))
+
   const hardware = useHardwareButtons({
     status: status && status.active ? status : null,
     onPlayPause: controls.onPlayPause,
@@ -621,6 +629,9 @@ export default function App() {
           disallowPrev={playerStatus.disallow_prev}
           disallowNext={playerStatus.disallow_next}
           isPodcast={isPodcast}
+          showSave={!isPodcast}
+          saved={liked.saved}
+          onToggleSaved={liked.toggle}
           onPrev={controls.onPrev}
           onNext={controls.onNext}
           onPlayPause={controls.onPlayPause}

@@ -109,6 +109,27 @@ export async function fetchLyrics(
   return (await res.json()) as LyricsResult
 }
 
+// whether the given track is in the liked songs
+export async function fetchSavedState(uri: string, signal?: AbortSignal): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/player/saved?uri=${encodeURIComponent(uri)}`, {
+    signal,
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`player/saved ${res.status}`)
+  const body = await res.json()
+  return body?.saved === true
+}
+
+// add or remove the track from liked songs
+export async function setSavedState(uri: string, saved: boolean): Promise<void> {
+  const res = await fetch(`${API_BASE}/player/saved`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uri, saved }),
+  })
+  if (!res.ok) throw new Error(`player/saved ${res.status}`)
+}
+
 export function eventsUrl(): string {
   return WS_URL
 }

@@ -1,0 +1,165 @@
+.save {
+  position: relative;
+  @include flex-center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: $text-tertiary;
+  transition: color $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.saved {
+  color: $accent;
+}
+
+.icons {
+  position: relative;
+  width: 32px;
+  height: 32px;
+}
+
+.outline,
+.filled {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  @include flex-center;
+}
+
+.outline {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.filled {
+  opacity: 0;
+  transform: scale(0.6);
+  color: $accent;
+}
+
+.saved .outline {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.saved .filled {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.animating .outline,
+.animating .filled {
+  transition:
+    opacity $dur-base $ease-standard,
+    transform $dur-base $ease-standard;
+}
+
+.animating.saved .filled {
+  animation: save-pop $dur-base $ease-emphasized;
+}
+
+.animating.saved .icons::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  right: -5px;
+  bottom: -5px;
+  border-radius: 50%;
+  border: 2px solid $accent;
+  animation: save-ripple $dur-slow $ease-standard forwards;
+}
+
+@keyframes save-pop {
+  0% {
+    transform: scale(0.3);
+  }
+  55% {
+    transform: scale(1.3);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes save-ripple {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+
+.confetti {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.bit {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 1px;
+  clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%);
+  opacity: 0;
+  animation: confetti-fly 600ms $ease-emphasized forwards;
+}
+
+.c0 {
+  background: #5ff550;
+}
+.c1 {
+  background: #c5f0c9;
+}
+.c2 {
+  background: #19e68c;
+}
+
+@keyframes confetti-fly {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.3) rotate(0deg);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--x)), calc(-50% + var(--y))) scale(1) rotate(var(--r));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save,
+  .outline,
+  .filled,
+  .animating .outline,
+  .animating .filled {
+    transition: none;
+  }
+
+  .animating.saved .filled {
+    animation: none;
+  }
+
+  .animating.saved .icons::after {
+    display: none;
+  }
+
+  .bit {
+    animation: none;
+  }
+}
