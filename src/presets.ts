@@ -5,12 +5,12 @@
 // Designed so a long-press would save the currently-playing context to a
 // slot
 
+import { getSettings, updateSettings } from '@/settings'
+
 export interface PresetConfig {
   contextUri: string | null
   label: string
 }
-
-const STORAGE_KEY = 'thing.presets.v1'
 
 // Liked songs context
 const DEFAULTS: Record<number, PresetConfig> = {
@@ -20,29 +20,13 @@ const DEFAULTS: Record<number, PresetConfig> = {
   4: { contextUri: null, label: 'Preset 4' },
 }
 
-function loadOverrides(): Record<number, PresetConfig> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Record<number, PresetConfig>) : {}
-  } catch {
-    return {}
-  }
-}
-
 export function getPreset(index: number): PresetConfig | null {
-  const overrides = loadOverrides()
-  return overrides[index] ?? DEFAULTS[index] ?? null
+  return getSettings().presets[index] ?? DEFAULTS[index] ?? null
 }
 
 // called on long-press to assign the currently-playing context to a slot
 export function setPreset(index: number, config: PresetConfig): void {
-  const overrides = loadOverrides()
-  overrides[index] = config
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides))
-  } catch {
-    // Ignore
-  }
+  updateSettings({ presets: { ...getSettings().presets, [index]: config } })
 }
 
 // try to get the human readable label or fall back to a generic one

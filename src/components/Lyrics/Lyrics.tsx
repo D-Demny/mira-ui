@@ -2,10 +2,9 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import { darkBg, useColorExtract, type RGB } from '@/hooks/useColorExtract'
 import { useActiveLine } from '@/hooks/useActiveLine'
 import { useLyricStarts, useLyrics } from '@/hooks/useLyrics'
+import { useSettings } from '@/settings'
 import type { ObserverStatusActive } from '@/api/types'
 import styles from './Lyrics.module.scss'
-
-// TODO: fix a bug around the tap to lyric function, it will go to that timestamp but the ui will scroll back until it moves on the next lyric
 
 interface Props {
   status: ObserverStatusActive
@@ -69,7 +68,8 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
   const color: RGB = useColorExtract(status.track_image)
   const starts = useLyricStarts(lyrics)
   const synced = lyrics?.syncType === 'LINE_SYNCED'
-  const activeIdx = useActiveLine(status, synced ? starts : [], active)
+  const { lyricOffsetMs } = useSettings()
+  const activeIdx = useActiveLine(status, synced ? starts : [], active, lyricOffsetMs)
 
   const [seekHint, setSeekHint] = useState<number | null>(null)
   const effIdx = seekHint ?? activeIdx

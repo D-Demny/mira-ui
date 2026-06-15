@@ -1,25 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ObserverStatusActive } from '@/api/types'
 import { getPreset, labelFromUri, presetIndexFromCode, setPreset } from '@/presets'
+import { getSettings } from '@/settings'
 import type { NotifyFn } from '@/notify/notifyContext'
 
-// physical controls keycodes:
-//   knob turn  - REL_HWHEEL  - wheel event, horizontal deltaX
-//   knob press - KEY_ENTER   - Enter
-//   playlist 1 -
-//   playlist 2 -
-//   playlist 3 -
-//   playlist 4 -
-//   power      -
-//   back       -
+// physical controls
 
 const VOLUME_MAX = 65535
 
 // quadrature encoder wheel so its two contact pads sometimes send erronious signals still ever after a kernal level change
-
-// rougly 2% increase
-// TODO: make this user adjustable later
-const VOLUME_STEP_PER_CLICK = 1311
+// volume change per notch is user-adjustable now
 
 const VOLUME_DIRECTION = -1
 
@@ -30,6 +20,9 @@ const MIN_STEP_INTERVAL_MS = 55
 const REVERSAL_DEBOUNCE_MS = 140
 
 const OVERLAY_MS = 1400
+
+// throttle the "can't control volume" banner
+const DISABLED_VOLUME_NOTIFY_MS = 4000
 
 // for the local optimistic value
 const INTERACTION_GRACE_MS = 1500
@@ -96,12 +89,11 @@ export function useHardwareButtons({
   const pendingSendRef = useRef<number | null>(null)
   const lastStepAtRef = useRef(0)
   const lastStepDirRef = useRef<1 | -1>(1)
+  const lastDisabledNotifyRef = useRef(0)
 
   const statusVolume = status?.volume
   const volumeDisabled = status?.volume_disabled ?? false
 
-  const statusVolumeRef = useRef<number | undefined>(statusVolume)
-  statusVolumeRef.current = statusVolume
   const volumeDisabledRef = useRef(volumeDisabled)
   volumeDisabledRef.current = volumeDisabled
   const statusRef = useRef(status)
@@ -142,19 +134,21 @@ export function useHardwareButtons({
   const stepVolume = useCallback(
     (dir: 1 | -1) => {
       if (volumeDisabledRef.current) {
-        // show if a device wont allow volume controls
-        showOverlay((statusVolumeRef.current ?? 0) / VOLUME_MAX, true)
+        const now = Date.now()
+        if (now - lastDisabledNotifyRef.current > DISABLED_VOLUME_NOTIFY_MS) {
+          lastDisabledNotifyRef.current = now
+          notify('Cannot control volume on this device', { variant: 'warning' })
+        }
         return
       }
-      const next = Math.max(
-        0,
-        Math.min(VOLUME_MAX, volumeRef.current + dir * VOLUME_STEP_PER_CLICK),
-      )
+      // user adjustable
+      const step = Math.max(1, Math.round((getSettings().volumeStepPct / 100) * VOLUME_MAX))
+      const next = Math.max(0, Math.min(VOLUME_MAX, volumeRef.current + dir * step))
       volumeRef.current = next
       showOverlay(next / VOLUME_MAX, false)
       queueSend(next)
     },
-    [showOverlay, queueSend],
+    [showOverlay, queueSend, notify],
   )
 
   // knob turn -> volume only when something is playing

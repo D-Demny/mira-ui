@@ -1,0 +1,110 @@
+.row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  transition: opacity $dur-base $ease-standard;
+  @include flex-gap-x($s-3);
+}
+
+.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.stepBtn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: $r-pill;
+  background: rgba(255, 255, 255, 0.07);
+  color: $text-primary;
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform $dur-fast $ease-standard,
+    background-color $dur-fast $ease-standard,
+    opacity $dur-fast $ease-standard;
+
+  &:active:not(:disabled) {
+    transform: scale(0.94);
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+  }
+}
+
+.bar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  touch-action: none;
+}
+
+.bar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  border-radius: $r-pill;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.notches {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 1px;
+  pointer-events: none;
+}
+
+.notch {
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.fill {
+  position: absolute;
+  left: 0;
+  height: 6px;
+  border-radius: $r-pill;
+  background: $accent;
+  transition: width $dur-fast $ease-standard;
+}
+
+.defaultMark {
+  position: absolute;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid rgba(255, 255, 255, 0.65);
+  transform: translate(-50%, calc(-50% - 9px));
+  pointer-events: none;
+}
+
+.handle {
+  position: absolute;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: $text-primary;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%);
+  transition: left $dur-fast $ease-standard;
+}
