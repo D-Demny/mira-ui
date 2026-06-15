@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react'
 
+export const DEV_SCREENS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_DEV_SCREENS === '1'
+
 export type DevForcedScreen =
   | null
   | 'connection-chooser'
@@ -14,6 +16,12 @@ export type DevForcedScreen =
   | 'pairing'
   | 'menu'
   | 'power-menu'
+  | 'bluetooth-menu'
+  | 'settings'
+  | 'reconnecting'
+  | 'no-internet'
+  | 'checking'
+  | 'reconnect-banner'
   | 'daemon-error'
 
 export interface DevScreenCtx {

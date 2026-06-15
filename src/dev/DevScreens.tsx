@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { DevScreenContext, type DevForcedScreen, useDevScreen } from './devContext'
+import {
+  DEV_SCREENS_ENABLED,
+  DevScreenContext,
+  type DevForcedScreen,
+  useDevScreen,
+} from './devContext'
 import styles from './DevScreens.module.scss'
 
 const STORAGE_KEY = 'thing.dev.forcedScreen'
 
 function readStored(): DevForcedScreen {
-  if (!import.meta.env.DEV) return null
+  if (!DEV_SCREENS_ENABLED) return null
   try {
     const v = window.localStorage.getItem(STORAGE_KEY)
     if (!v || v === 'null') return null
@@ -39,7 +44,7 @@ export function DevScreenProvider({ children }: { children: ReactNode }) {
     [forced],
   )
 
-  if (!import.meta.env.DEV) return <>{children}</>
+  if (!DEV_SCREENS_ENABLED) return <>{children}</>
 
   return <DevScreenContext.Provider value={value}>{children}</DevScreenContext.Provider>
 }
@@ -63,6 +68,20 @@ const SCREENS: ScreenDef[] = [
   { id: 'pairing', label: 'Pairing dialog', hint: 'Over the player view' },
   { id: 'menu', label: 'Menu open', hint: 'Bottom-sheet over player' },
   { id: 'power-menu', label: 'Power menu', hint: 'Sleep/Restart/Reset (tap Reset for confirm)' },
+  {
+    id: 'bluetooth-menu',
+    label: 'Bluetooth menu',
+    hint: 'Known devices / pair (live daemon list)',
+  },
+  { id: 'settings', label: 'Settings', hint: 'Lyric sync / volume / brightness' },
+  {
+    id: 'reconnecting',
+    label: 'Reconnecting screen',
+    hint: 'Phone out of range (no stale player)',
+  },
+  { id: 'no-internet', label: 'No internet (prolonged)', hint: 'Reconnecting escalated + Restart' },
+  { id: 'checking', label: 'Checking connection', hint: 'Grace splash before no-internet' },
+  { id: 'reconnect-banner', label: 'Reconnect banner', hint: 'Transient drop over the player' },
   { id: 'daemon-error', label: 'Daemon error', hint: 'Daemon-not-running popup' },
 ]
 
@@ -71,7 +90,7 @@ export function DevOverlay() {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return
+    if (!DEV_SCREENS_ENABLED) return
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
       const inEditable =
@@ -92,7 +111,7 @@ export function DevOverlay() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  if (!import.meta.env.DEV) return null
+  if (!DEV_SCREENS_ENABLED) return null
 
   const badge =
     !open && forced ? (

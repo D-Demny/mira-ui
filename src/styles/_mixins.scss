@@ -31,6 +31,10 @@
 
 @mixin absolute-fill {
   position: absolute;
+  @include inset-0;
+}
+
+@mixin inset-0 {
   top: 0;
   right: 0;
   bottom: 0;

@@ -22,7 +22,7 @@
 
 .viewLayer {
   position: absolute;
-  inset: 0;
+  @include inset-0;
   transition:
     opacity $dur-slow $ease-standard,
     transform $dur-slow $ease-emphasized;

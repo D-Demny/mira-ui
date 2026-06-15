@@ -32,7 +32,7 @@
 
 .orb {
   position: absolute;
-  inset: 0;
+  @include inset-0;
   border-radius: 50%;
   background-image: var(--art);
   background-size: cover;

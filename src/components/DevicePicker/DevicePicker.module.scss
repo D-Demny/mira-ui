@@ -9,11 +9,9 @@
   text-align: left;
 }
 
-// modal backdrop + card match PowerMenu / PairingDialog so the device popup
-// feels like the same modal family (solid $bg, $r-2xl, fade + slide-up).
 .backdrop {
   position: fixed;
-  inset: 0;
+  @include inset-0;
   z-index: $z-menu;
   @include flex-center;
   background: rgba(0, 0, 0, 0.62);

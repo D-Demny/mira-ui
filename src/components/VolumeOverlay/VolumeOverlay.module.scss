@@ -7,7 +7,7 @@
 
   display: flex;
   align-items: center;
-  gap: $s-3;
+  @include flex-gap-x($s-3);
 
   padding: $s-3 $s-5;
   border-radius: 0 0 $r-xl $r-xl;
