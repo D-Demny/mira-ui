@@ -7,6 +7,7 @@ export const server = setupServer(
     HttpResponse.json({ required: false, url: null, loading: false }),
   ),
   http.get('*/bluetooth/pairing', () => HttpResponse.json({ pending: false })),
+  http.get('*/bluetooth/known', () => HttpResponse.json([])),
   http.post('*/bluetooth/discover/*', () => HttpResponse.json({})),
   http.post('*/bluetooth/network/*', () => HttpResponse.json({})),
 )

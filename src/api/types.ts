@@ -114,6 +114,16 @@ export interface BluetoothDeviceInfo {
   batteryPercentage?: number
 }
 
+// must match daemon/bluetooth/known_devices.go
+export interface KnownBluetoothDevice {
+  address: string
+  name: string
+  starred: boolean
+  last_connected: string
+  connected: boolean
+  network: boolean
+}
+
 export interface PairingStartedPayload {
   address: string
   pairingKey: string
@@ -138,6 +148,9 @@ export interface NetworkConnectedPayload {
 
 export interface NetworkStatusPayload {
   status: 'online' | 'offline'
+  // which physical links are up
+  usb?: boolean
+  bt?: boolean
 }
 
 // PascalCase shape on the /events WS for observer events

@@ -1,5 +1,5 @@
 import { API_BASE } from '@/config'
-import type { BluetoothDeviceInfo, PairingStartedPayload } from './types'
+import type { BluetoothDeviceInfo, KnownBluetoothDevice, PairingStartedPayload } from './types'
 
 async function bt<T = void>(
   path: string,
@@ -37,6 +37,19 @@ export const connectNetwork = (addr: string) =>
   bt(`/network/${encodeURIComponent(addr)}`, { method: 'POST' })
 
 export const networkStatus = () => bt<{ up: boolean }>('/network', undefined, (r) => r.json())
+
+// prioritized reconnect list
+export const listKnownDevices = () =>
+  bt<KnownBluetoothDevice[]>('/known', undefined, (r) => r.json())
+
+export const starDevice = (addr: string, starred: boolean) =>
+  bt(`/known/${encodeURIComponent(addr)}/${starred ? 'star' : 'unstar'}`, { method: 'POST' })
+
+export const forgetDevice = (addr: string) =>
+  bt(`/known/${encodeURIComponent(addr)}/forget`, { method: 'POST' })
+
+export const connectKnownDevice = (addr: string) =>
+  bt(`/known/${encodeURIComponent(addr)}/connect`, { method: 'POST' })
 
 export const acceptPairing = () => bt('/pairing/accept', { method: 'POST' })
 
