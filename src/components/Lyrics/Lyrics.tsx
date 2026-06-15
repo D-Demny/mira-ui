@@ -3,8 +3,64 @@ import { darkBg, useColorExtract, type RGB } from '@/hooks/useColorExtract'
 import { useActiveLine } from '@/hooks/useActiveLine'
 import { useLyricStarts, useLyrics } from '@/hooks/useLyrics'
 import { useSettings } from '@/settings'
-import type { ObserverStatusActive } from '@/api/types'
+import type { LyricsWord, ObserverStatusActive } from '@/api/types'
 import styles from './Lyrics.module.scss'
+
+// playback position right now
+function currentPosMs(status: ObserverStatusActive): number {
+  const playing = status.is_playing && !status.is_paused
+  const elapsed = playing ? Math.max(0, Date.now() - status.received_at) : 0
+  return Math.min(status.duration, status.position + elapsed)
+}
+
+// highlight each word slightly before its true start
+const KARAOKE_LEAD_MS = 90
+
+function sungCount(syllables: LyricsWord[], posMs: number): number {
+  let n = 0
+  for (let i = 0; i < syllables.length; i++) {
+    if (posMs + KARAOKE_LEAD_MS < parseInt(syllables[i].startTimeMs, 10)) break
+    n = i + 1
+  }
+  return n
+}
+
+const KaraokeLine = memo(function KaraokeLine({
+  syllables,
+  status,
+  onClick,
+}: {
+  syllables: LyricsWord[]
+  status: ObserverStatusActive
+  onClick?: () => void
+}) {
+  const [sung, setSung] = useState(() => sungCount(syllables, currentPosMs(status)))
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      setSung(sungCount(syllables, currentPosMs(status)))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [syllables, status])
+
+  const cls = `${styles.line} ${styles.lineActive}${onClick ? ` ${styles.lineClickable}` : ''}`
+  return (
+    <div
+      className={cls}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+    >
+      {syllables.map((w, i) => (
+        <span key={i} className={i < sung ? styles.wordSung : styles.word}>
+          {w.word}
+        </span>
+      ))}
+    </div>
+  )
+})
 
 interface Props {
   status: ObserverStatusActive
@@ -283,6 +339,11 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
               !status.disallow_seek && onSeek && typeof startMs === 'number' && startMs >= 0
                 ? () => onLineTap(i, startMs)
                 : undefined
+            if (i === effIdx && line.syllables && line.syllables.length > 0) {
+              return (
+                <KaraokeLine key={i} syllables={line.syllables} status={status} onClick={onClick} />
+              )
+            }
             return (
               <LyricLine key={i} text={line.words || '♪'} variant={variant} onClick={onClick} />
             )

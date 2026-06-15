@@ -83,7 +83,11 @@ export function useLyrics(params: LyricsParams): LyricsState {
 
     window.clearTimeout(debounceRef.current)
     debounceRef.current = window.setTimeout(() => {
-      fetchLyrics(trackId, { track: trackName, artist, album, durationMs, episode }, ac.signal)
+      fetchLyrics(
+        trackId,
+        { track: trackName, artist, album, durationMs, episode, richsync: !episode },
+        ac.signal,
+      )
         .then((lyrics) => {
           if (lyrics && !episode) cacheSet(trackId, lyrics)
           setState({ lyrics, loading: false, error: null })

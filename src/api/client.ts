@@ -97,7 +97,14 @@ export async function transferToDevice(deviceId: string): Promise<void> {
 
 export async function fetchLyrics(
   trackId: string,
-  meta: { track: string; artist: string; album?: string; durationMs?: number; episode?: boolean },
+  meta: {
+    track: string
+    artist: string
+    album?: string
+    durationMs?: number
+    episode?: boolean
+    richsync?: boolean
+  },
   signal?: AbortSignal,
 ): Promise<LyricsResult | null> {
   const params = new URLSearchParams({
@@ -108,6 +115,8 @@ export async function fetchLyrics(
   if (meta.durationMs && meta.durationMs > 0) params.set('duration', String(meta.durationMs))
   // route to the podcast-transcript source on the daemon
   if (meta.episode) params.set('episode', '1')
+  // word by word timing
+  if (meta.richsync) params.set('richsync', '1')
 
   const res = await fetch(`${API_BASE}/lyrics/${encodeURIComponent(trackId)}?${params}`, { signal })
   // 404 means nothing was found (instrumental or too niche)

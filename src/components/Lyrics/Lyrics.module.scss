@@ -93,6 +93,16 @@
   opacity: 1;
 }
 
+.word {
+  opacity: 0.38;
+  transition: opacity 50ms linear;
+}
+
+.wordSung {
+  opacity: 1;
+  transition: opacity 50ms linear;
+}
+
 .lineAdjacent {
   opacity: 0.42;
 }

@@ -61,9 +61,15 @@ export interface ObserverStatusActive {
 
 export type ObserverStatus = ObserverStatusActive | ObserverStatusInactive
 
+export interface LyricsWord {
+  startTimeMs: string
+  word: string
+}
+
 export interface LyricsLine {
   startTimeMs: string
   words: string
+  syllables?: LyricsWord[]
 }
 
 export type LyricsSyncType = 'LINE_SYNCED' | 'UNSYNCED'
