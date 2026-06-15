@@ -1,0 +1,64 @@
+.banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: $z-menu;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  @include flex-gap-x($s-3);
+  min-height: 48px;
+  padding: $s-3 $s-5;
+
+  background: $surface-elev;
+  border-radius: 0 0 $r-lg $r-lg;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+
+  animation: reconnectSlideIn $dur-base $ease-standard both;
+}
+
+@keyframes reconnectSlideIn {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.pulseDot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: $accent;
+  animation: reconnectPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes reconnectPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.message {
+  font-size: $fs-lg;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner {
+    animation: none;
+  }
+  .pulseDot {
+    animation: none;
+  }
+}

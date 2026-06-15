@@ -8,6 +8,8 @@ const baseProps = () => ({
   showLyrics: true,
   onToggleLyrics: vi.fn(),
   onOpenDevices: vi.fn(),
+  onOpenBluetooth: vi.fn(),
+  onOpenSettings: vi.fn(),
 })
 
 describe('Menu', () => {
@@ -28,5 +30,19 @@ describe('Menu', () => {
     render(<Menu {...props} />)
     fireEvent.click(screen.getByText('Show Lyrics'))
     expect(props.onToggleLyrics).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onOpenSettings when the Settings row is clicked', () => {
+    const props = baseProps()
+    render(<Menu {...props} />)
+    fireEvent.click(screen.getByText('Settings'))
+    expect(props.onOpenSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onOpenBluetooth when the Bluetooth Pairing row is clicked', () => {
+    const props = baseProps()
+    render(<Menu {...props} />)
+    fireEvent.click(screen.getByText('Bluetooth Pairing'))
+    expect(props.onOpenBluetooth).toHaveBeenCalledTimes(1)
   })
 })

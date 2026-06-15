@@ -1,0 +1,121 @@
+.container {
+  @include absolute-fill;
+  background: $bg;
+  @include flex-center;
+  flex-direction: column;
+  text-align: center;
+  padding: $s-7 $s-8;
+  @include flex-gap-y($s-5);
+  z-index: $z-menu;
+  animation: reconnectingFadeIn $dur-slow $ease-standard both;
+}
+
+@keyframes reconnectingFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.headline {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
+
+.pulseDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: $accent;
+  box-shadow: 0 0 0 0 rgba(30, 215, 96, 0.55);
+  animation: reconnectingPulse 1.6s $ease-standard infinite;
+}
+
+@keyframes reconnectingPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(30, 215, 96, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(30, 215, 96, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(30, 215, 96, 0);
+  }
+}
+
+.title {
+  font-size: $fs-4xl;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+  letter-spacing: -0.02em;
+}
+
+.body {
+  font-size: $fs-lg;
+  color: $text-secondary;
+  max-width: 520px;
+  line-height: 1.4;
+}
+
+.actions {
+  margin-top: $s-3;
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
+
+.restartBtn {
+  min-height: 44px;
+  padding: 0 $s-6;
+  border: none;
+  border-radius: $r-pill;
+  background: $accent;
+  color: #08130b;
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  cursor: pointer;
+  transition:
+    filter $dur-fast $ease-standard,
+    transform $dur-fast $ease-standard;
+
+  &:hover {
+    filter: brightness(1.08);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+.altBtn {
+  min-height: 44px;
+  padding: 0 $s-5;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: $r-pill;
+  background: transparent;
+  color: $text-secondary;
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+  cursor: pointer;
+  transition: background-color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .container {
+    animation: none;
+  }
+  .pulseDot {
+    animation: none;
+  }
+}

@@ -2,7 +2,7 @@
   @include absolute-fill;
   background: rgba(0, 0, 0, 0.62);
   @include flex-center;
-  z-index: $z-menu;
+  z-index: $z-pairing;
   animation: pairingFadeIn $dur-base $ease-standard both;
 }
 

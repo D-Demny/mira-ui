@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
 import { AuthScreen } from '@/components/AuthScreen'
+import { BluetoothMenu } from '@/components/BluetoothMenu'
 import { BootSplash } from '@/components/BootSplash'
 import { ConnectionChooser } from '@/components/ConnectionChooser'
 import { Controls } from '@/components/Controls'
@@ -15,6 +16,9 @@ import { PairingDialog } from '@/components/PairingDialog'
 import { PcConnect } from '@/components/PcConnect'
 import { PowerMenu } from '@/components/PowerMenu'
 import { ProgressBar } from '@/components/ProgressBar'
+import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBanner'
+import { ReconnectingScreen } from '@/components/ReconnectingScreen'
+import { SettingsSheet } from '@/components/SettingsSheet'
 import { TrackInfo } from '@/components/TrackInfo'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
 import { useDevScreen } from '@/dev/devContext'
@@ -27,13 +31,15 @@ import { useControls } from '@/hooks/useControls'
 // Disabled for now needs more testing
 // import { useDaemonHealth } from '@/hooks/useDaemonHealth'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
+import { useKnownDevices } from '@/hooks/useKnownDevices'
 import { useNotify } from '@/notify/notifyContext'
 import { useObserver } from '@/hooks/useObserver'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
+import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { transferToDevice } from '@/api/client'
 import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
-import { loadShowLyrics, saveShowLyrics } from '@/viewPref'
+import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
 import styles from './App.module.scss'
 
 export default function App() {
@@ -51,8 +57,12 @@ export default function App() {
     [notify, seek],
   )
   usePrefetch(realStatus)
-  const { online, pairing: realPairing, lastDevice, setDiscoverable } = useBluetooth()
+  const { online, carriers, pairing: realPairing, setDiscoverable } = useBluetooth()
   const connectDevices = useConnectDevices()
+  const { devices: knownDevices } = useKnownDevices(true) // paired bt devices
+  const hasKnownDevice = (knownDevices?.length ?? 0) > 0
+  const btConnectedDevice = knownDevices?.find((d) => d.connected) ?? null
+  const topKnownDeviceName = knownDevices?.[0]?.name ?? null
   const [deviceMenuOpen, setDeviceMenuOpen] = useState(false)
 
   // notification for the playback device changes
@@ -74,7 +84,7 @@ export default function App() {
   const onPickDevice = useCallback(
     (d: ConnectDevice) => {
       setDeviceMenuOpen(false)
-      notify(`Switching to ${d.name}…`, { variant: 'info' })
+      notify(`Switching to ${d.name}...`, { variant: 'info' })
       void transferToDevice(d.id).catch((err) => {
         console.warn('transfer failed', err)
         notify(`Couldn't switch to ${d.name}`, { variant: 'error' })
@@ -83,10 +93,24 @@ export default function App() {
     [notify],
   )
 
-  const [showLyricsReal, setShowLyrics] = useState(loadShowLyrics)
+  const settings = useSettings()
+  const showLyricsReal = settings.showLyrics
   const [menuOpenReal, setMenuOpen] = useState(false)
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
+  const [settingsOpenReal, setSettingsOpen] = useState(false)
+  const [btMenuOpenReal, setBtMenuOpen] = useState(false)
   const [offlineMethod, setOfflineMethod] = useState<'chooser' | 'bluetooth' | 'pc'>('chooser')
+  const [setupOverride, setSetupOverride] = useState(false)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+
+  const toggleLyrics = useCallback(() => {
+    updateSettings({ showLyrics: !getSettings().showLyrics })
+  }, [])
+
+  // get settings from the daemon
+  useEffect(() => {
+    void initSettings()
+  }, [])
 
   // Cold-boot rescue: fall through from BootSplash to NeedsNetwork after
   // BOOT_STUCK_MS without an online signal, so the user gets actionable
@@ -109,6 +133,17 @@ export default function App() {
     return () => window.clearTimeout(t)
   }, [])
 
+  // reset the "set up a different connection" override once we online again
+  useEffect(() => {
+    if (online === true) setSetupOverride(false)
+  }, [online])
+
+  // were we ever online? shows first time setup or wifi dropped
+  const [wasOnline, setWasOnline] = useState(false)
+  useEffect(() => {
+    if (online === true) setWasOnline(true)
+  }, [online])
+
   const { forced, setForced } = useDevScreen()
 
   const mockStatus = useMemo<ObserverStatusActive>(() => makeMockStatus(), [])
@@ -118,11 +153,45 @@ export default function App() {
     forced === 'playing-no-lyrics' ||
     forced === 'pairing' ||
     forced === 'menu' ||
-    forced === 'power-menu'
+    forced === 'power-menu' ||
+    forced === 'bluetooth-menu' ||
+    forced === 'reconnect-banner' ||
+    forced === 'daemon-error' ||
+    forced === 'settings'
       ? mockStatus
       : realStatus
 
-  const isPodcast = status?.active === true && status.track_uri.startsWith('spotify:episode:')
+  // hold the last now-playing through any small drops in network
+  const [heldStatus, setHeldStatus] = useState<ObserverStatusActive | null>(null)
+  useEffect(() => {
+    if (realStatus?.active) setHeldStatus(realStatus)
+  }, [realStatus])
+
+  const connecting =
+    online === false && (carriers?.bt === true || btConnectedDevice != null || heldStatus != null)
+  const connMilestone = `${carriers?.bt === true}|${btConnectedDevice?.address ?? ''}|${heldStatus != null}`
+  const OFFLINE_GRACE_MS = 6000
+  const [graceElapsed, setGraceElapsed] = useState(false)
+  useEffect(() => {
+    if (!connecting) {
+      setGraceElapsed(true)
+      return
+    }
+    setGraceElapsed(false)
+    const t = window.setTimeout(() => setGraceElapsed(true), OFFLINE_GRACE_MS)
+    return () => window.clearTimeout(t)
+  }, [connecting, connMilestone])
+
+  // small drops while the phone is still reachable
+  let dropReason: ReconnectReason | null = null
+  if (!forced && heldStatus && realStatus?.active !== true && online === true) {
+    if (!connected) {
+      dropReason = 'ws'
+    } else if (realStatus && !realStatus.active && realStatus.message === 'starting up') {
+      dropReason = 'dealer'
+    }
+  }
+  const reconnecting = dropReason !== null
 
   // seek relative to the live position
   const seekRelative = useCallback(
@@ -140,13 +209,58 @@ export default function App() {
   const showLyrics = forced === 'playing-no-lyrics' ? false : showLyricsReal
   const menuOpen = forced === 'menu' ? true : menuOpenReal
   const powerMenuOpen = forced === 'power-menu' ? true : powerMenuOpenReal
+  const btMenuOpen = forced === 'bluetooth-menu' ? true : btMenuOpenReal
+  const settingsOpen = forced === 'settings' ? true : settingsOpenReal
   const pairing =
     forced === 'pairing' ? { address: 'AB:CD:EF:01:23:45', passkey: '123456' } : realPairing
 
-  // offline setup flow
-  const knownOffline = online === false && status?.active !== true
-  const stuckOffline = bootStuck && online !== true && status?.active !== true
-  const onOfflineSetup = !forced && (knownOffline || stuckOffline)
+  const offlineActive =
+    !forced && !reconnecting && (online === false || (bootStuck && online !== true))
+  // hold a brief "checking connection"
+  const offlineChecking = offlineActive && connecting && !graceElapsed
+  const onOfflineSetup = offlineActive
+
+  // which offline screen wins
+  let offlineScreen:
+    | 'checking'
+    | 'tethering'
+    | 'reconnecting'
+    | 'chooser'
+    | 'pc'
+    | 'bluetooth'
+    | null = null
+  if (offlineActive) {
+    if (offlineChecking) {
+      offlineScreen = 'checking'
+    } else if (btConnectedDevice && !setupOverride) {
+      // phone is connected but no internet -> "turn on tethering"
+      offlineScreen = 'tethering'
+    } else if ((hasKnownDevice || wasOnline) && !setupOverride) {
+      offlineScreen = 'reconnecting'
+    } else {
+      offlineScreen = offlineMethod
+    }
+  }
+
+  // discoverable while the Bluetooth pairing screen is up
+  const pairingScreenShown = forced === 'needs-network' || offlineScreen === 'bluetooth'
+  useEffect(() => {
+    if (btMenuOpen) return
+    if (!pairingScreenShown) {
+      void setDiscoverable(false).catch(() => {})
+      return
+    }
+    let cancelled = false
+    const assertOn = () => {
+      if (!cancelled) void setDiscoverable(true).catch(() => {})
+    }
+    assertOn()
+    const id = window.setInterval(assertOn, 3000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [pairingScreenShown, btMenuOpen, setDiscoverable])
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false)
@@ -169,6 +283,14 @@ export default function App() {
       setDeviceMenuOpen(false)
       return
     }
+    if (btMenuOpen) {
+      setBtMenuOpen(false)
+      return
+    }
+    if (settingsOpen) {
+      setSettingsOpen(false)
+      return
+    }
     if (powerMenuOpen) {
       closePowerMenu()
       return
@@ -181,15 +303,23 @@ export default function App() {
       setOfflineMethod('chooser')
       return
     }
+    // back out of the chooser the reconnecting screen pushed us into
+    if (onOfflineSetup && setupOverride) {
+      setSetupOverride(false)
+      return
+    }
     // nothing to go back to
   }, [
     deviceMenuOpen,
+    btMenuOpen,
+    settingsOpen,
     powerMenuOpen,
     closePowerMenu,
     menuOpen,
     closeMenu,
     onOfflineSetup,
     offlineMethod,
+    setupOverride,
   ])
 
   const controls = usePlayerControls({
@@ -215,12 +345,28 @@ export default function App() {
     notify,
   })
 
+  // touch gestures
+  const swipeEnabled =
+    status?.active === true &&
+    !menuOpen &&
+    !powerMenuOpen &&
+    !deviceMenuOpen &&
+    !btMenuOpen &&
+    !settingsOpen &&
+    !pairing
+  useSwipeGestures(stageRef, {
+    onNext: controls.onNext,
+    onPrev: controls.onPrevTrack,
+    onToggleView: toggleLyrics,
+    enabled: swipeEnabled,
+  })
+
   const globalOverlays = (
     <>
-      {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
       {daemonDown || forced === 'daemon-error' ? <DaemonError /> : null}
       <VolumeOverlay state={hardware.volumeOverlay} />
       <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
+      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {deviceMenuOpen ? (
         <DevicePicker
           devices={connectDevices}
@@ -229,15 +375,10 @@ export default function App() {
           onClose={() => setDeviceMenuOpen(false)}
         />
       ) : null}
+      {btMenuOpen ? <BluetoothMenu online={online} onClose={() => setBtMenuOpen(false)} /> : null}
+      {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
     </>
   )
-
-  const onNeedsNetworkMount = useCallback(() => {
-    void lastDevice
-    setDiscoverable(true).catch((err) => {
-      console.warn('setDiscoverable failed (will retry):', err)
-    })
-  }, [lastDevice, setDiscoverable])
 
   if (forced === 'connection-chooser') {
     return (
@@ -261,7 +402,7 @@ export default function App() {
   if (forced === 'needs-network') {
     return (
       <div className={styles.app}>
-        <NeedsNetwork onMount={onNeedsNetworkMount} />
+        <NeedsNetwork />
         {globalOverlays}
       </div>
     )
@@ -298,19 +439,77 @@ export default function App() {
       </div>
     )
   }
+  if (forced === 'reconnecting') {
+    return (
+      <div className={styles.app}>
+        <ReconnectingScreen
+          deviceName="Kaz’s S24"
+          carriers={{ usb: false, bt: false }}
+          onSetUpOther={() => {}}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'no-internet') {
+    return (
+      <div className={styles.app}>
+        <ReconnectingScreen
+          phase="no-internet"
+          deviceName="Kaz’s S24"
+          carriers={{ usb: false, bt: false }}
+          onSetUpOther={() => {}}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'checking') {
+    return (
+      <div className={styles.app}>
+        <ReconnectingScreen phase="checking" />
+        {globalOverlays}
+      </div>
+    )
+  }
 
   if (!forced) {
-    if (knownOffline || stuckOffline) {
-      return (
-        <div className={styles.app}>
-          {offlineMethod === 'chooser' && (
+    if (offlineScreen !== null) {
+      let screen
+      switch (offlineScreen) {
+        case 'checking':
+          screen = <ReconnectingScreen phase="checking" deviceName={topKnownDeviceName} />
+          break
+        case 'tethering':
+          screen = <NeedsNetwork />
+          break
+        case 'reconnecting':
+          screen = (
+            <ReconnectingScreen
+              phase="reconnecting"
+              deviceName={topKnownDeviceName}
+              carriers={carriers}
+              onSetUpOther={() => setSetupOverride(true)}
+            />
+          )
+          break
+        case 'pc':
+          screen = <PcConnect />
+          break
+        case 'bluetooth':
+          screen = <NeedsNetwork />
+          break
+        default:
+          screen = (
             <ConnectionChooser
               onPickPc={() => setOfflineMethod('pc')}
               onPickBluetooth={() => setOfflineMethod('bluetooth')}
             />
-          )}
-          {offlineMethod === 'pc' && <PcConnect />}
-          {offlineMethod === 'bluetooth' && <NeedsNetwork onMount={onNeedsNetworkMount} />}
+          )
+      }
+      return (
+        <div className={styles.app}>
+          {screen}
           {globalOverlays}
         </div>
       )
@@ -326,8 +525,13 @@ export default function App() {
     }
 
     // used to hide the starting up screen on first boot after a sucessful bluetooth pairing with pan
-    // TODO: cleant this up so the qr code isnt shown on every boot
-    if (online === true && auth.loading && !auth.url && (!status || !status.active)) {
+    if (
+      !reconnecting &&
+      online === true &&
+      auth.loading &&
+      !auth.url &&
+      (!status || !status.active)
+    ) {
       const preAuthHint = loadStuck
         ? 'Still fetching from Spotify if this persists, try unplugging and replugging.'
         : undefined
@@ -339,7 +543,12 @@ export default function App() {
       )
     }
 
-    if ((loading && !status) || (auth.loading && (!status || !status.active))) {
+    // the daemon reports "starting up" while the dealer is (re)connecting
+    const playerStartingUp = status != null && !status.active && status.message === 'starting up'
+    if (
+      !reconnecting &&
+      ((loading && !status) || (auth.loading && (!status || !status.active)) || playerStartingUp)
+    ) {
       const stuckHint =
         loadStuck && online === true && !auth.url
           ? 'Still connecting to Spotify if this persists for another minute, try unplugging and replugging.'
@@ -352,7 +561,7 @@ export default function App() {
       )
     }
 
-    if (!status || !status.active) {
+    if (!reconnecting && (!status || !status.active)) {
       return (
         <div className={styles.app}>
           <IdleScreen
@@ -366,21 +575,29 @@ export default function App() {
     }
   }
 
-  if (!status || !status.active) return null
+  // live status when active otherwise the last playing
+  const playerStatus = status && status.active ? status : reconnecting ? heldStatus : null
+  if (!playerStatus || !playerStatus.active) return null
+  const isPodcast = playerStatus.track_uri.startsWith('spotify:episode:')
+
+  // noti over the player on a network drops
+  const bannerReason: ReconnectReason | null =
+    forced === 'reconnect-banner' ? 'offline' : reconnecting ? dropReason : null
 
   return (
     <div className={`${styles.app} ${styles.appPlaying}`}>
-      <div className={styles.stage}>
+      {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
+      <div className={styles.stage} ref={stageRef}>
         <div
           className={`${styles.viewLayer} ${showLyrics ? styles.viewActive : styles.viewInactive}`}
         >
           <div className={styles.top}>
             <div className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}>
-              <AlbumArt src={status.track_image} size={200} />
-              <TrackInfo trackName={status.track_name} artist={status.track_artist} />
+              <AlbumArt src={playerStatus.track_image} size={200} />
+              <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
             </div>
             <div className={styles.right}>
-              <Lyrics status={status} onSeek={handleSeek} active={showLyrics} />
+              <Lyrics status={playerStatus} onSeek={handleSeek} active={showLyrics} />
             </div>
           </div>
         </div>
@@ -390,19 +607,19 @@ export default function App() {
           <div
             className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
           >
-            <NoLyricsView status={status} active={!showLyrics} />
+            <NoLyricsView status={playerStatus} active={!showLyrics} />
           </div>
         </div>
       </div>
 
       <div className={styles.bottom}>
-        <ProgressBar status={status} onSeek={handleSeek} />
+        <ProgressBar status={playerStatus} onSeek={handleSeek} />
         <Controls
           isPaused={controls.isPaused}
           shuffle={controls.shuffle}
           repeat={controls.repeat}
-          disallowPrev={status.disallow_prev}
-          disallowNext={status.disallow_next}
+          disallowPrev={playerStatus.disallow_prev}
+          disallowNext={playerStatus.disallow_next}
           isPodcast={isPodcast}
           onPrev={controls.onPrev}
           onNext={controls.onNext}
@@ -419,17 +636,19 @@ export default function App() {
         open={menuOpen}
         onClose={closeMenu}
         showLyrics={showLyrics}
-        onToggleLyrics={() =>
-          setShowLyrics((v) => {
-            const next = !v
-            saveShowLyrics(next)
-            return next
-          })
-        }
-        currentDevice={status.device_name}
+        onToggleLyrics={toggleLyrics}
+        currentDevice={playerStatus.device_name}
         onOpenDevices={() => {
           setMenuOpen(false)
           setDeviceMenuOpen(true)
+        }}
+        onOpenBluetooth={() => {
+          setMenuOpen(false)
+          setBtMenuOpen(true)
+        }}
+        onOpenSettings={() => {
+          setMenuOpen(false)
+          setSettingsOpen(true)
         }}
       />
 

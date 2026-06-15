@@ -14,7 +14,7 @@ function IdleScreenImpl({ connected, devices, onSelectDevice }: Props) {
   const subtitle =
     devices.length > 0
       ? 'No remote device is currently playing. \n Select one below'
-      : 'No remote device is currently playing'
+      : 'No remote device is currently playing. \n Open Spotify on your phone to control it here'
 
   return (
     <div className={styles.idle}>
@@ -24,8 +24,6 @@ function IdleScreenImpl({ connected, devices, onSelectDevice }: Props) {
       <div className={styles.title}>Nothing playing</div>
       <div className={styles.hint}>{subtitle}</div>
       <DevicePicker devices={devices} onSelect={onSelectDevice} placement="inline" />
-      {/* TODO: figure this out a little more, the connected/reconnecting signals our connection to the backend daemon.
-          Theoretically with testing and error handling it shouldn't ever crash.. but it can be misleading to mean internet*/}
       {!connected ? (
         <div className={styles.status}>
           <span className={`${styles.dot} ${styles.dotOff}`} aria-hidden />

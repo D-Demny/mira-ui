@@ -34,8 +34,14 @@ export interface PairingPrompt {
   passkey: string
 }
 
+export interface Carriers {
+  usb: boolean
+  bt: boolean
+}
+
 export interface BluetoothState {
-  online: boolean | null // null = haven't heard yet
+  online: boolean | null // null = havent heard yet
+  carriers: Carriers | null // which physical links are up
   pairing: PairingPrompt | null
   lastDevice: string | null
 }
@@ -47,6 +53,7 @@ export interface BluetoothActions {
 
 export function useBluetooth(): BluetoothState & BluetoothActions {
   const [online, setOnline] = useState<boolean | null>(null)
+  const [carriers, setCarriers] = useState<Carriers | null>(null)
   const [pairing, setPairing] = useState<PairingPrompt | null>(null)
   const [lastDevice, setLastDevice] = useState<string | null>(() => readLastDevice())
 
@@ -97,6 +104,9 @@ export function useBluetooth(): BluetoothState & BluetoothActions {
         case 'network_status': {
           const p = evt.data as NetworkStatusPayload
           setOnline(p?.status === 'online')
+          if (typeof p?.usb === 'boolean' || typeof p?.bt === 'boolean') {
+            setCarriers({ usb: p.usb === true, bt: p.bt === true })
+          }
           break
         }
         case 'bluetooth/pairing': {
@@ -160,6 +170,7 @@ export function useBluetooth(): BluetoothState & BluetoothActions {
 
   return {
     online,
+    carriers,
     pairing,
     lastDevice,
     setDiscoverable,
