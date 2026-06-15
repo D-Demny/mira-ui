@@ -35,6 +35,7 @@ export interface UsePlayerControlsResult {
   transitioning: boolean
   onPlayPause: () => void
   onPrev: () => void
+  onPrevTrack: () => void // straight to prev track (swipe gestures)
   onNext: () => void
   onToggleShuffle: () => void
   onCycleRepeat: () => void
@@ -134,6 +135,14 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     }
   }, [prev, reportCommandError, seek, status?.track_id])
 
+  const onPrevTrack = useCallback(() => {
+    setTrackTransition({ fromTrackId: status?.track_id ?? '', at: Date.now() })
+    void Promise.resolve(prev()).catch((err) => {
+      setTrackTransition(null)
+      reportCommandError('Previous failed', err)
+    })
+  }, [prev, reportCommandError, status?.track_id])
+
   const onNext = useCallback(() => {
     setTrackTransition({ fromTrackId: status?.track_id ?? '', at: Date.now() })
     void Promise.resolve(next()).catch((err) => {
@@ -168,6 +177,7 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     transitioning,
     onPlayPause,
     onPrev,
+    onPrevTrack,
     onNext,
     onToggleShuffle,
     onCycleRepeat,
