@@ -1,6 +1,6 @@
 {
-  "name": "thing-ui",
-  "description": "Frontend for thing, a standalone Spotify Car Thing controller.",
+  "name": "mira-ui",
+  "description": "Frontend for Mira, a standalone Spotify Car Thing controller.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

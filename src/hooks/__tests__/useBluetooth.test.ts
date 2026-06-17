@@ -30,7 +30,7 @@ vi.mock('@/api/eventBus', () => ({
 
 import { useBluetooth } from '../useBluetooth'
 
-const LAST_DEVICE_KEY = 'thing.bluetooth.lastDevice'
+const LAST_DEVICE_KEY = 'mira.bluetooth.lastDevice'
 
 function fireEvent(evt: ApiEvent) {
   for (const l of busState.listeners) l(evt)

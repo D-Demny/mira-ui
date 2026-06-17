@@ -1,13 +1,13 @@
-# thing-ui
+# mira-ui
 
-Frontend for thing, a custom firmware for the Spotify Car Thing controller designed to be as stand alone as possible.
+Frontend for Mira, a custom firmware for the Spotify Car Thing controller designed to be as stand alone as possible.
 
 React + TypeScript + Vite.
 
 See the related projects:
 
-- **thing-daemon** - the on-device daemon that talks to Spotify
-- **thing-firmware** - the firmware build pipeline
+- **mira-daemon** - the on-device daemon that talks to Spotify
+- **mira-firmware** - the firmware build pipeline
 - **thing-releases** - firmware images
 
 ## Development

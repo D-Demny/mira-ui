@@ -21,7 +21,7 @@ export const BRIGHTNESS_MIN = 1
 export const BRIGHTNESS_MAX = 10
 
 const SCHEMA_VERSION = 1
-const LS_KEY = 'thing.settings.v1'
+const LS_KEY = 'mira.settings.v1'
 const PUT_DEBOUNCE_MS = 400
 
 const DEFAULTS: Settings = {

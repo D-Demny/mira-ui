@@ -7,7 +7,7 @@ import {
 } from './devContext'
 import styles from './DevScreens.module.scss'
 
-const STORAGE_KEY = 'thing.dev.forcedScreen'
+const STORAGE_KEY = 'mira.dev.forcedScreen'
 
 function readStored(): DevForcedScreen {
   if (!DEV_SCREENS_ENABLED) return null

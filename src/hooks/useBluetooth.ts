@@ -10,7 +10,7 @@ import type {
   PairingStartedPayload,
 } from '@/api/types'
 
-const LAST_DEVICE_KEY = 'thing.bluetooth.lastDevice'
+const LAST_DEVICE_KEY = 'mira.bluetooth.lastDevice'
 
 function readLastDevice(): string | null {
   try {
