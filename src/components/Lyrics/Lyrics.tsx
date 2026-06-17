@@ -116,6 +116,7 @@ const LyricLine = memo(function LyricLine({
 
 function LyricsImpl({ status, onSeek, active = true }: Props) {
   const isPodcast = status.track_uri.startsWith('spotify:episode:')
+  const { lyricOffsetMs, karaokeLyrics } = useSettings()
   const { lyrics, loading, error } = useLyrics({
     trackId: status.track_id || null,
     trackName: status.track_name,
@@ -124,12 +125,12 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
     durationMs: status.duration,
     episode: isPodcast,
     enabled: active,
+    karaoke: karaokeLyrics,
   })
 
   const color: RGB = useColorExtract(status.track_image)
   const starts = useLyricStarts(lyrics)
   const synced = lyrics?.syncType === 'LINE_SYNCED'
-  const { lyricOffsetMs } = useSettings()
   const activeIdx = useActiveLine(status, synced ? starts : [], active, lyricOffsetMs)
 
   const [seekHint, setSeekHint] = useState<number | null>(null)
@@ -344,7 +345,7 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
               !status.disallow_seek && onSeek && typeof startMs === 'number' && startMs >= 0
                 ? () => onLineTap(i, startMs)
                 : undefined
-            if (i === effIdx && line.syllables && line.syllables.length > 0) {
+            if (karaokeLyrics && i === effIdx && line.syllables && line.syllables.length > 0) {
               return (
                 <KaraokeLine key={i} syllables={line.syllables} status={status} onClick={onClick} />
               )

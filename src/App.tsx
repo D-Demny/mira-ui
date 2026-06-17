@@ -108,6 +108,10 @@ export default function App() {
     updateSettings({ showLyrics: !getSettings().showLyrics })
   }, [])
 
+  const toggleKaraoke = useCallback(() => {
+    updateSettings({ karaokeLyrics: !getSettings().karaokeLyrics })
+  }, [])
+
   // get settings from the daemon
   useEffect(() => {
     void initSettings()
@@ -660,6 +664,8 @@ export default function App() {
         onClose={closeMenu}
         showLyrics={showLyrics}
         onToggleLyrics={toggleLyrics}
+        karaokeLyrics={settings.karaokeLyrics}
+        onToggleKaraoke={toggleKaraoke}
         currentDevice={playerStatus.device_name}
         onOpenDevices={() => {
           setMenuOpen(false)

@@ -7,6 +7,7 @@ import type { PresetConfig } from '@/presets'
 
 export interface Settings {
   showLyrics: boolean
+  karaokeLyrics: boolean
   lyricOffsetMs: number
   volumeStepPct: number
   autoBrightness: boolean
@@ -25,6 +26,7 @@ const PUT_DEBOUNCE_MS = 400
 
 const DEFAULTS: Settings = {
   showLyrics: true,
+  karaokeLyrics: true,
   lyricOffsetMs: 0,
   volumeStepPct: 2,
   autoBrightness: true,
@@ -39,6 +41,7 @@ function clamp(n: number, lo: number, hi: number): number {
 function coerce(partial: Partial<Settings> | null | undefined): Settings {
   return {
     showLyrics: partial?.showLyrics ?? DEFAULTS.showLyrics,
+    karaokeLyrics: partial?.karaokeLyrics ?? DEFAULTS.karaokeLyrics,
     lyricOffsetMs: partial?.lyricOffsetMs ?? DEFAULTS.lyricOffsetMs,
     volumeStepPct: clamp(
       partial?.volumeStepPct ?? DEFAULTS.volumeStepPct,

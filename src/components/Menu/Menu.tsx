@@ -10,6 +10,9 @@ interface Props {
   showLyrics: boolean
   onToggleLyrics: () => void
 
+  karaokeLyrics: boolean
+  onToggleKaraoke: () => void
+
   currentDevice?: string
   onOpenDevices: () => void
 
@@ -22,6 +25,8 @@ function MenuImpl({
   onClose,
   showLyrics,
   onToggleLyrics,
+  karaokeLyrics,
+  onToggleKaraoke,
   currentDevice,
   onOpenDevices,
   onOpenBluetooth,
@@ -41,6 +46,11 @@ function MenuImpl({
       >
         <div className={styles.handle} aria-hidden />
         <Row label="Show Lyrics" value={showLyrics ? 'On' : 'Off'} onClick={onToggleLyrics} />
+        <Row
+          label="Karaoke Lyrics"
+          value={karaokeLyrics ? 'On' : 'Off'}
+          onClick={onToggleKaraoke}
+        />
         <Row label="Devices" value={currentDevice ?? 'Switch'} onClick={onOpenDevices} />
         <Row label="Bluetooth Pairing" value="" onClick={onOpenBluetooth} />
         <Row label="Settings" value="" onClick={onOpenSettings} />

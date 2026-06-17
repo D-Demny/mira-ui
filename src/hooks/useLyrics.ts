@@ -10,6 +10,7 @@ interface LyricsParams {
   durationMs?: number
   episode?: boolean
   enabled?: boolean
+  karaoke?: boolean
 }
 
 interface LyricsState {
@@ -67,7 +68,16 @@ export function useLyrics(params: LyricsParams): LyricsState {
     error: null,
   })
 
-  const { trackId, trackName, artist, album, durationMs, episode, enabled = true } = params
+  const {
+    trackId,
+    trackName,
+    artist,
+    album,
+    durationMs,
+    episode,
+    enabled = true,
+    karaoke = true,
+  } = params
   const debounceRef = useRef(0)
 
   useEffect(() => {
@@ -83,7 +93,7 @@ export function useLyrics(params: LyricsParams): LyricsState {
     const ac = new AbortController()
 
     const upgradeToWordByWord = () => {
-      if (episode || richsyncTried.has(trackId)) return
+      if (episode || !karaoke || richsyncTried.has(trackId)) return
       fetchLyrics(
         trackId,
         { track: trackName, artist, album, durationMs, richsync: true },
@@ -134,7 +144,7 @@ export function useLyrics(params: LyricsParams): LyricsState {
       ac.abort()
       window.clearTimeout(debounceRef.current)
     }
-  }, [trackId, trackName, artist, album, durationMs, episode, enabled])
+  }, [trackId, trackName, artist, album, durationMs, episode, enabled, karaoke])
 
   return state
 }
