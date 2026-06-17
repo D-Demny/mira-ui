@@ -119,8 +119,8 @@ describe('useLyrics module-scope LRU cache', () => {
   it('skips the network fetch when the same track is requested twice', async () => {
     let requested = 0
     server.use(
-      http.get('*/lyrics/abc', () => {
-        requested++
+      http.get('*/lyrics/abc', ({ request }) => {
+        if (!new URL(request.url).searchParams.get('richsync')) requested++
         return HttpResponse.json(sampleLyrics)
       }),
     )
@@ -157,7 +157,7 @@ describe('useLyrics module-scope LRU cache', () => {
       http.get('*/lyrics/*', ({ request }) => {
         const url = new URL(request.url)
         const id = url.pathname.replace('/lyrics/', '')
-        requestedIds.push(id)
+        if (!url.searchParams.get('richsync')) requestedIds.push(id)
         return HttpResponse.json({
           syncType: 'LINE_SYNCED',
           lines: [{ startTimeMs: '0', words: id }],
@@ -198,7 +198,7 @@ describe('useLyrics module-scope LRU cache', () => {
       http.get('*/lyrics/*', ({ request }) => {
         const url = new URL(request.url)
         const id = url.pathname.replace('/lyrics/', '')
-        requestedIds.push(id)
+        if (!url.searchParams.get('richsync')) requestedIds.push(id)
         return HttpResponse.json({
           syncType: 'LINE_SYNCED',
           lines: [{ startTimeMs: '0', words: id }],
@@ -235,5 +235,56 @@ describe('useLyrics module-scope LRU cache', () => {
     requestedIds.length = 0
     await cycleTrack(rerender, 't1')
     expect(requestedIds).toEqual(['t1'])
+  })
+})
+
+describe('useLyrics word-by-word upgrade', () => {
+  const lineOnly: LyricsResult = {
+    syncType: 'LINE_SYNCED',
+    lines: [{ startTimeMs: '0', words: 'Hello world' }],
+  }
+  const wordLevel: LyricsResult = {
+    syncType: 'LINE_SYNCED',
+    lines: [
+      {
+        startTimeMs: '0',
+        words: 'Hello world',
+        syllables: [
+          { startTimeMs: '0', word: 'Hello' },
+          { startTimeMs: '500', word: ' world' },
+        ],
+      },
+    ],
+  }
+
+  it('shows line-synced lyrics first, then upgrades to word-by-word', async () => {
+    server.use(
+      http.get('*/lyrics/abc', async ({ request }) => {
+        const richsync = new URL(request.url).searchParams.get('richsync')
+        if (richsync) {
+          await new Promise((r) => setTimeout(r, 150))
+          return HttpResponse.json(wordLevel)
+        }
+        return HttpResponse.json(lineOnly)
+      }),
+    )
+
+    const { result } = renderHook(() => useLyrics(TRACK_META))
+
+    // line synced appears fast (no word timing yet), loading done
+    await waitFor(() => expect(result.current.lyrics).toEqual(lineOnly))
+    expect(result.current.loading).toBe(false)
+
+    // upgrade to word by word
+    await waitFor(() => expect(result.current.lyrics).toEqual(wordLevel))
+  })
+
+  it('keeps the line-synced lyrics when the track has no word-by-word', async () => {
+    server.use(http.get('*/lyrics/abc', () => HttpResponse.json(lineOnly)))
+
+    const { result } = renderHook(() => useLyrics(TRACK_META))
+    await waitFor(() => expect(result.current.lyrics).toEqual(lineOnly))
+    await new Promise((r) => setTimeout(r, 250))
+    expect(result.current.lyrics).toEqual(lineOnly)
   })
 })

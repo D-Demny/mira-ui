@@ -35,10 +35,15 @@ const KaraokeLine = memo(function KaraokeLine({
   onClick?: () => void
 }) {
   const [sung, setSung] = useState(() => sungCount(syllables, currentPosMs(status)))
+  const maxSung = useRef(sung)
   useEffect(() => {
     let raf = 0
     const tick = () => {
-      setSung(sungCount(syllables, currentPosMs(status)))
+      const n = sungCount(syllables, currentPosMs(status))
+      if (n > maxSung.current) {
+        maxSung.current = n
+        setSung(n)
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)

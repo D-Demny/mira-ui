@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { API_BASE } from '@/config'
+import { fetchLyrics } from '@/api/client'
+import { primeLyricsCache } from '@/hooks/useLyrics'
 import type { ObserverStatus, QueueTrack } from '@/api/types'
 
 const PREFETCH_NEXT = 5
@@ -30,14 +31,12 @@ function prefetchLyrics(t: QueueTrack) {
   if (!t.track_id || !t.name || !t.artist) return
   // skip podcast episodes
   if (t.uri?.startsWith('spotify:episode:')) return
-  const params = new URLSearchParams({
-    track: t.name,
-    artist: t.artist,
-  })
-  if (t.album) params.set('album', t.album)
-  void fetch(`${API_BASE}/lyrics/${encodeURIComponent(t.track_id)}?${params.toString()}`).catch(
-    () => {},
-  )
+  const id = t.track_id
+  void fetchLyrics(id, { track: t.name, artist: t.artist, album: t.album })
+    .then((lyrics) => {
+      if (lyrics) primeLyricsCache(id, lyrics)
+    })
+    .catch(() => {})
 }
 
 function runPrefetch(status: ObserverStatus) {

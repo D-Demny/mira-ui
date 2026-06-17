@@ -23,9 +23,12 @@ const CACHE_LIMIT = 50
 // LRU keyed by track id, map insertion order = recency, evict from the front
 const cache = new Map<string, LyricsResult>()
 
+const richsyncTried = new Set<string>()
+
 // test-only escape hatch
 export function __resetLyricsCache(): void {
   cache.clear()
+  richsyncTried.clear()
 }
 
 function cacheGet(id: string): LyricsResult | undefined {
@@ -47,7 +50,15 @@ function cacheSet(id: string, lyrics: LyricsResult): void {
   }
 }
 
+export function primeLyricsCache(id: string, lyrics: LyricsResult): void {
+  if (!cache.has(id)) cacheSet(id, lyrics)
+}
+
 const FETCH_DEBOUNCE_MS = 150
+
+function hasWordTiming(lyrics: LyricsResult): boolean {
+  return lyrics.lines.some((l) => (l.syllables?.length ?? 0) > 0)
+}
 
 export function useLyrics(params: LyricsParams): LyricsState {
   const [state, setState] = useState<LyricsState>({
@@ -69,28 +80,49 @@ export function useLyrics(params: LyricsParams): LyricsState {
       return
     }
 
-    // podcasts aren't cached
+    const ac = new AbortController()
+
+    const upgradeToWordByWord = () => {
+      if (episode || richsyncTried.has(trackId)) return
+      fetchLyrics(
+        trackId,
+        { track: trackName, artist, album, durationMs, richsync: true },
+        ac.signal,
+      )
+        .then((rich) => {
+          if (ac.signal.aborted || !rich) return
+          if (hasWordTiming(rich)) {
+            cacheSet(trackId, rich)
+            setState({ lyrics: rich, loading: false, error: null })
+          } else {
+            richsyncTried.add(trackId)
+          }
+        })
+        .catch(() => {
+          // word by word is a bonus
+        })
+    }
+
+    // show cache and upgrade to karaoke if possible after
     if (!episode) {
       const cached = cacheGet(trackId)
       if (cached) {
         setState({ lyrics: cached, loading: false, error: null })
-        return
+        if (!hasWordTiming(cached)) upgradeToWordByWord()
+        return () => ac.abort()
       }
     }
 
-    const ac = new AbortController()
     setState((s) => ({ ...s, loading: true, error: null }))
 
     window.clearTimeout(debounceRef.current)
     debounceRef.current = window.setTimeout(() => {
-      fetchLyrics(
-        trackId,
-        { track: trackName, artist, album, durationMs, episode, richsync: !episode },
-        ac.signal,
-      )
+      fetchLyrics(trackId, { track: trackName, artist, album, durationMs, episode }, ac.signal)
         .then((lyrics) => {
+          if (ac.signal.aborted) return
           if (lyrics && !episode) cacheSet(trackId, lyrics)
           setState({ lyrics, loading: false, error: null })
+          if (lyrics && !episode && !hasWordTiming(lyrics)) upgradeToWordByWord()
         })
         .catch((err: unknown) => {
           if (err instanceof DOMException && err.name === 'AbortError') return
