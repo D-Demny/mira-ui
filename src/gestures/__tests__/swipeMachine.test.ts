@@ -158,4 +158,14 @@ describe('swipeMachine', () => {
     ])
     expect(state.kind).toBe('tracking')
   })
+
+  it('recovers after a missed terminal touchend', () => {
+    const { actions } = run([
+      { type: 'start', x: 200, y: 100, touches: 1 },
+      { type: 'move', x: 130, y: 100, touches: 1 },
+      { type: 'start', x: 200, y: 100, touches: 1 },
+      { type: 'move', x: 130, y: 100, touches: 1 },
+    ])
+    expect(actions).toEqual(['next', 'next'])
+  })
 })

@@ -57,6 +57,7 @@ export function useSwipeGestures<T extends HTMLElement>(
     }
 
     const onStart = (e: TouchEvent): void => {
+      if (e.touches.length <= 1) multiTouch = false
       if (e.touches.length >= 2) multiTouch = true
       const c = centroid(e.touches)
       state = classify(state, { type: 'start', x: c.x, y: c.y, touches: e.touches.length }).next

@@ -101,6 +101,10 @@ function sample(state: SwipeState, x: number, y: number, touches: number): Swipe
 export function classify(state: SwipeState, event: SwipeEvent): SwipeResult {
   switch (event.type) {
     case 'start':
+      if (event.touches <= 1) {
+        return sample(INITIAL_SWIPE_STATE, event.x, event.y, event.touches)
+      }
+      return sample(state, event.x, event.y, event.touches)
     case 'move':
       return sample(state, event.x, event.y, event.touches)
     case 'end':
