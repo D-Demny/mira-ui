@@ -98,11 +98,18 @@ export type ApiEventType =
   | 'bluetooth/network/connect'
   | 'bluetooth/network/disconnect'
   | 'network_status'
+  | 'voice'
   | string
 
 export interface ApiEvent<T = unknown> {
   type: ApiEventType
   data: T
+}
+
+// 'voice' event payload
+export interface VoiceEventData {
+  state: 'listening' | 'thinking' | 'playing' | 'done' | 'error' | 'idle'
+  text?: string
 }
 
 // must match daemon/bluetooth/types.go

@@ -12,6 +12,7 @@ export interface Settings {
   volumeStepPct: number
   autoBrightness: boolean
   brightness: number
+  voiceMic: boolean
   presets: Record<number, PresetConfig>
 }
 
@@ -31,6 +32,7 @@ const DEFAULTS: Settings = {
   volumeStepPct: 2,
   autoBrightness: true,
   brightness: 5,
+  voiceMic: true,
   presets: {},
 }
 
@@ -50,6 +52,7 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     ),
     autoBrightness: partial?.autoBrightness ?? DEFAULTS.autoBrightness,
     brightness: clamp(partial?.brightness ?? DEFAULTS.brightness, BRIGHTNESS_MIN, BRIGHTNESS_MAX),
+    voiceMic: partial?.voiceMic ?? DEFAULTS.voiceMic,
     presets: partial?.presets ?? {},
   }
 }

@@ -112,6 +112,10 @@ export default function App() {
     updateSettings({ karaokeLyrics: !getSettings().karaokeLyrics })
   }, [])
 
+  const toggleVoiceMic = useCallback(() => {
+    updateSettings({ voiceMic: !getSettings().voiceMic })
+  }, [])
+
   // get settings from the daemon
   useEffect(() => {
     void initSettings()
@@ -585,6 +589,16 @@ export default function App() {
       )
     }
 
+    // "setting things up" during the FIRST-EVER boot to fetch a library catalog
+    if (!reconnecting && status != null && !status.active && status.message === 'setting things up') {
+      return (
+        <div className={styles.app}>
+          <BootSplash caption="setting things up" />
+          {globalOverlays}
+        </div>
+      )
+    }
+
     if (!reconnecting && (!status || !status.active)) {
       return (
         <div className={styles.app}>
@@ -666,6 +680,8 @@ export default function App() {
         onToggleLyrics={toggleLyrics}
         karaokeLyrics={settings.karaokeLyrics}
         onToggleKaraoke={toggleKaraoke}
+        voiceMic={settings.voiceMic}
+        onToggleVoiceMic={toggleVoiceMic}
         currentDevice={playerStatus.device_name}
         onOpenDevices={() => {
           setMenuOpen(false)

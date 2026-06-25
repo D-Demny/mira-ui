@@ -9,6 +9,8 @@ const baseProps = () => ({
   onToggleLyrics: vi.fn(),
   karaokeLyrics: true,
   onToggleKaraoke: vi.fn(),
+  voiceMic: true,
+  onToggleVoiceMic: vi.fn(),
   onOpenDevices: vi.fn(),
   onOpenBluetooth: vi.fn(),
   onOpenSettings: vi.fn(),
@@ -39,6 +41,13 @@ describe('Menu', () => {
     render(<Menu {...props} />)
     fireEvent.click(screen.getByText('Karaoke Lyrics'))
     expect(props.onToggleKaraoke).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onToggleVoiceMic when the Voice mic row is clicked', () => {
+    const props = baseProps()
+    render(<Menu {...props} />)
+    fireEvent.click(screen.getByText('Voice mic'))
+    expect(props.onToggleVoiceMic).toHaveBeenCalledTimes(1)
   })
 
   it('fires onOpenSettings when the Settings row is clicked', () => {

@@ -13,6 +13,9 @@ interface Props {
   karaokeLyrics: boolean
   onToggleKaraoke: () => void
 
+  voiceMic: boolean
+  onToggleVoiceMic: () => void
+
   currentDevice?: string
   onOpenDevices: () => void
 
@@ -27,6 +30,8 @@ function MenuImpl({
   onToggleLyrics,
   karaokeLyrics,
   onToggleKaraoke,
+  voiceMic,
+  onToggleVoiceMic,
   currentDevice,
   onOpenDevices,
   onOpenBluetooth,
@@ -51,6 +56,7 @@ function MenuImpl({
           value={karaokeLyrics ? 'On' : 'Off'}
           onClick={onToggleKaraoke}
         />
+        <Row label="Mic" value={voiceMic ? 'On' : 'Off'} onClick={onToggleVoiceMic} />
         <Row label="Devices" value={currentDevice ?? 'Switch'} onClick={onOpenDevices} />
         <Row label="Bluetooth Pairing" value="" onClick={onOpenBluetooth} />
         <Row label="Settings" value="" onClick={onOpenSettings} />

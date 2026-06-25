@@ -4,11 +4,16 @@ export type RGB = [number, number, number]
 
 // gray fallback for missing art or a bad image
 const DEFAULT: RGB = [70, 75, 95]
-const SAMPLE = 20
-const HUE_BINS = 18
-const MIN_CHROMA = 22
-const MIN_VALUE = 0.1 // skip near-black pixels
-const MIN_DOMINANT = 1
+const SAMPLE = 32
+
+const TARGET_S = 1
+const TARGET_L = 0.5
+const MIN_S = 0.35 
+const MIN_L = 0.3
+const MAX_L = 0.7
+const W_S = 3 
+const W_L = 1
+const W_POP = 1
 
 const cache = new Map<string, RGB>()
 
@@ -24,6 +29,13 @@ function ensureCanvas(): CanvasRenderingContext2D | null {
   return sharedCtx
 }
 
+interface Bucket {
+  n: number
+  r: number
+  g: number
+  b: number
+}
+
 function extract(img: HTMLImageElement): RGB | null {
   const ctx = ensureCanvas()
   if (!ctx) return null
@@ -32,54 +44,59 @@ function extract(img: HTMLImageElement): RGB | null {
     ctx.drawImage(img, 0, 0, SAMPLE, SAMPLE)
     const { data } = ctx.getImageData(0, 0, SAMPLE, SAMPLE)
 
-    const binW = new Float64Array(HUE_BINS)
-    const binR = new Float64Array(HUE_BINS)
-    const binG = new Float64Array(HUE_BINS)
-    const binB = new Float64Array(HUE_BINS)
-
+    const buckets = new Map<number, Bucket>()
+    let maxPop = 0
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] < 16) continue
+      if (data[i + 3] < 128) continue
       const r = data[i]
       const g = data[i + 1]
       const b = data[i + 2]
-      const max = Math.max(r, g, b)
-      const min = Math.min(r, g, b)
-      const chroma = max - min
-      if (chroma < MIN_CHROMA) continue // near-gray no usable hue
-      const value = max / 255
-      if (value < MIN_VALUE) continue // too dark to read as colour
-
-      let h: number
-      if (max === r) h = (g - b) / chroma + (g < b ? 6 : 0)
-      else if (max === g) h = (b - r) / chroma + 2
-      else h = (r - g) / chroma + 4
-      h /= 6 // 0..1
-
-      const chromaNorm = chroma / 255
-      const w = chromaNorm * chromaNorm * value // colourful AND bright wins
-
-      let bin = (h * HUE_BINS) | 0
-      if (bin >= HUE_BINS) bin = HUE_BINS - 1
-      binW[bin] += w
-      binR[bin] += r * w
-      binG[bin] += g * w
-      binB[bin] += b * w
+      const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+      let bkt = buckets.get(key)
+      if (!bkt) {
+        bkt = { n: 0, r: 0, g: 0, b: 0 }
+        buckets.set(key, bkt)
+      }
+      bkt.n++
+      bkt.r += r
+      bkt.g += g
+      bkt.b += b
+      if (bkt.n > maxPop) maxPop = bkt.n
     }
+    if (maxPop === 0) return null
 
-    let best = -1
-    let bestW = 0
-    for (let i = 0; i < HUE_BINS; i++) {
-      if (binW[i] > bestW) {
-        bestW = binW[i]
-        best = i
+    // try to get the most vibrant color from art
+    let bestScore = -1
+    let best: RGB | null = null
+    let fbScore = -1
+    let fallback: RGB | null = null
+    const norm = W_S + W_L + W_POP
+    for (const bkt of buckets.values()) {
+      const r = bkt.r / bkt.n
+      const g = bkt.g / bkt.n
+      const b = bkt.b / bkt.n
+      const [, s, l] = rgbToHsl(r, g, b)
+      const pop = bkt.n / maxPop
+      const swatch: RGB = [Math.round(r), Math.round(g), Math.round(b)]
+
+      if (s >= MIN_S && l >= MIN_L && l <= MAX_L) {
+        const score =
+          ((1 - Math.abs(s - TARGET_S)) * W_S + (1 - Math.abs(l - TARGET_L)) * W_L + pop * W_POP) /
+          norm
+        if (score > bestScore) {
+          bestScore = score
+          best = swatch
+        }
+      }
+
+      const fb = s * 0.7 + pop * 0.3
+      if (fb > fbScore) {
+        fbScore = fb
+        fallback = swatch
       }
     }
-    if (best < 0 || bestW < MIN_DOMINANT) return null
-    return [
-      Math.round(binR[best] / bestW),
-      Math.round(binG[best] / bestW),
-      Math.round(binB[best] / bestW),
-    ]
+
+    return best ?? fallback
   } catch {
     return null
   }
