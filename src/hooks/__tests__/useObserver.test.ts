@@ -207,6 +207,28 @@ describe('useObserver', () => {
     expect(result.current.connected).toBe(false)
   })
 
+  it('drops a stale poll response that lands after a WS snapshot arrived mid-flight', async () => {
+    server.use(
+      http.get('*/observer/status', async () => {
+        await new Promise((r) => setTimeout(r, 60))
+        return HttpResponse.json(activeStatus)
+      }),
+    )
+
+    const { result } = renderHook(() => useObserver())
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10))
+      fireEvent({ type: 'observer_state_changed', data: { ...baseWire, TrackName: 'Fresh from WS' } })
+    })
+    expect(result.current.status).toMatchObject({ track_name: 'Fresh from WS' })
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100))
+    })
+    expect(result.current.status).toMatchObject({ track_name: 'Fresh from WS' })
+  })
+
   it('polls again after POLL_MS even if WS events keep state fresh', async () => {
     vi.useFakeTimers({
       toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],

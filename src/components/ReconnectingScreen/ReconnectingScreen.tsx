@@ -4,12 +4,13 @@ import { BT_DEVICE_NAME } from '@/brand'
 import type { Carriers } from '@/hooks/useBluetooth'
 import styles from './ReconnectingScreen.module.scss'
 
-type Phase = 'checking' | 'reconnecting' | 'no-internet'
+type Phase = 'checking' | 'reconnecting' | 'no-internet' | 'spotify-unreachable'
 
 interface Props {
   // 'checking'    = brief grace while a link is still handshaking
   // 'reconnecting'= a known phone/USB is offline we aree actively retrying
   // 'no-internet' = show the prolonged "lost connection + Restart" view
+  // 'spotify-unreachable' = the link is up (pings work) but no answer from spotify
   phase?: Phase
   // the phone we are paging (priority device), if known
   deviceName?: string | null
@@ -39,7 +40,7 @@ function ReconnectingScreenImpl({
   }, [phase])
 
   const checking = phase === 'checking'
-  const prolonged = phase === 'no-internet' || timedOut
+  const prolonged = phase === 'no-internet' || phase === 'spotify-unreachable' || timedOut
 
   const onRestart = () => {
     if (restarting) return
@@ -54,6 +55,9 @@ function ReconnectingScreenImpl({
   if (checking) {
     title = 'Checking connection...'
     body = 'Finishing the connection, one moment.'
+  } else if (phase === 'spotify-unreachable') {
+    title = "Can't reach Spotify"
+    body = `The connection works, but Spotify isn't responding. Turn internet sharing off and on again on the connected phone or PC, or restart ${BT_DEVICE_NAME}.`
   } else if (prolonged) {
     title = 'No internet'
     body = causeMessage(deviceName, carriers)

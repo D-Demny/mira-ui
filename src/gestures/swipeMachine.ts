@@ -13,6 +13,43 @@ export const AXIS_DECIDE_PX = 12
 
 export type SwipeAction = 'next' | 'prev' | 'toggleView'
 
+export const PHANTOM_TOUCH_MS = 3000
+
+export interface TouchPoint {
+  identifier: number
+  clientX: number
+  clientY: number
+}
+
+// stateful filter that drops phantom touches; feed it every touch event
+export function createPhantomFilter(
+  now: () => number = Date.now,
+): (touches: readonly TouchPoint[], changed: readonly TouchPoint[]) => TouchPoint[] {
+  const lastSeen = new Map<number, number>()
+  return (touches, changed) => {
+    const t = now()
+    for (const c of changed) lastSeen.set(c.identifier, t)
+    const present = new Set<number>()
+    const live: TouchPoint[] = []
+    for (const p of touches) {
+      present.add(p.identifier)
+      const seen = lastSeen.get(p.identifier)
+      if (seen == null) {
+        // an id we never saw start (listener attached mid-gesture): count it live
+        lastSeen.set(p.identifier, t)
+        live.push(p)
+      } else if (t - seen <= PHANTOM_TOUCH_MS) {
+        live.push(p)
+      }
+    }
+    // ids gone from the list are really up; forget them so a reused id is fresh
+    for (const id of Array.from(lastSeen.keys())) {
+      if (!present.has(id)) lastSeen.delete(id)
+    }
+    return live
+  }
+}
+
 export type SwipeState =
   | { kind: 'idle' }
   | {

@@ -43,10 +43,10 @@ describe('Menu', () => {
     expect(props.onToggleKaraoke).toHaveBeenCalledTimes(1)
   })
 
-  it('fires onToggleVoiceMic when the Voice mic row is clicked', () => {
+  it('fires onToggleVoiceMic when the Mic row is clicked', () => {
     const props = baseProps()
     render(<Menu {...props} />)
-    fireEvent.click(screen.getByText('Voice mic'))
+    fireEvent.click(screen.getByText('Mic'))
     expect(props.onToggleVoiceMic).toHaveBeenCalledTimes(1)
   })
 

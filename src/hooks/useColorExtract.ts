@@ -15,7 +15,16 @@ const W_S = 3
 const W_L = 1
 const W_POP = 1
 
+const CACHE_MAX = 500
 const cache = new Map<string, RGB>()
+
+function remember(url: string, rgb: RGB) {
+  if (!cache.has(url) && cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
+  cache.set(url, rgb)
+}
 
 let sharedCanvas: HTMLCanvasElement | null = null
 let sharedCtx: CanvasRenderingContext2D | null = null
@@ -135,7 +144,7 @@ export function useColorExtract(url: string | undefined): RGB {
     img.onload = () => {
       if (cancelled) return
       const rgb = extract(img) ?? DEFAULT
-      cache.set(url, rgb)
+      remember(url, rgb)
       apply(rgb)
     }
     img.onerror = () => {

@@ -24,7 +24,16 @@ const CACHE_LIMIT = 50
 // LRU keyed by track id, map insertion order = recency, evict from the front
 const cache = new Map<string, LyricsResult>()
 
+const RICHSYNC_TRIED_LIMIT = 500
 const richsyncTried = new Set<string>()
+
+function richsyncMarkTried(id: string): void {
+  if (!richsyncTried.has(id) && richsyncTried.size >= RICHSYNC_TRIED_LIMIT) {
+    const oldest = richsyncTried.values().next().value
+    if (oldest !== undefined) richsyncTried.delete(oldest)
+  }
+  richsyncTried.add(id)
+}
 
 // test-only escape hatch
 export function __resetLyricsCache(): void {
@@ -105,7 +114,7 @@ export function useLyrics(params: LyricsParams): LyricsState {
             cacheSet(trackId, rich)
             setState({ lyrics: rich, loading: false, error: null })
           } else {
-            richsyncTried.add(trackId)
+            richsyncMarkTried(trackId)
           }
         })
         .catch(() => {

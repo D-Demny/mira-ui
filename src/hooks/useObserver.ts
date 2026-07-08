@@ -44,13 +44,15 @@ export function useObserver() {
 
   useEffect(() => {
     let cancelled = false
+    let lastEventAt = 0
 
     const poll = async () => {
+      const startedAt = Date.now()
       const ac = new AbortController()
       const timeoutId = window.setTimeout(() => ac.abort(), POLL_TIMEOUT_MS)
       try {
         const next = await fetchObserverStatus(ac.signal)
-        if (!cancelled) dispatch({ type: 'status', status: next })
+        if (!cancelled && lastEventAt < startedAt) dispatch({ type: 'status', status: next })
       } catch (err) {
         if (cancelled || (err instanceof DOMException && err.name === 'AbortError')) return
         dispatch({ type: 'error', error: (err as Error).message })
@@ -67,12 +69,14 @@ export function useObserver() {
         const rs = evt.data as RemoteStateWire
         if (!rs || typeof rs !== 'object') return
         const status = remoteStateToStatus(rs)
+        lastEventAt = Date.now()
         dispatch({ type: 'status', status })
         return
       }
 
       // no device is active anymore, flip to idle immediately
       if (evt.type === 'observer_inactive') {
+        lastEventAt = Date.now()
         dispatch({
           type: 'status',
           status: { active: false, message: 'no remote device is currently playing' },

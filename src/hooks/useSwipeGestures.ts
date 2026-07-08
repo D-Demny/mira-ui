@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react'
 import {
   classify,
+  createPhantomFilter,
   INITIAL_SWIPE_STATE,
   type SwipeAction,
   type SwipeState,
+  type TouchPoint,
 } from '@/gestures/swipeMachine'
 
 // prevent accidental seeks
@@ -35,13 +37,16 @@ export function useSwipeGestures<T extends HTMLElement>(
     let suppressClickUntil = 0
     // once a 2nd finger appears we stop it from reaching the lyrics
     let multiTouch = false
+    // drop ghost fingers
+    const liveTouches = createPhantomFilter()
+    const listOf = (l: TouchList): TouchPoint[] => Array.from(l)
 
-    const centroid = (touches: TouchList): { x: number; y: number } => {
+    const centroid = (touches: readonly TouchPoint[]): { x: number; y: number } => {
       let x = 0
       let y = 0
-      for (let i = 0; i < touches.length; i++) {
-        x += touches[i].clientX
-        y += touches[i].clientY
+      for (const t of touches) {
+        x += t.clientX
+        y += t.clientY
       }
       const n = touches.length || 1
       return { x: x / n, y: y / n }
@@ -57,24 +62,27 @@ export function useSwipeGestures<T extends HTMLElement>(
     }
 
     const onStart = (e: TouchEvent): void => {
-      if (e.touches.length <= 1) multiTouch = false
-      if (e.touches.length >= 2) multiTouch = true
-      const c = centroid(e.touches)
-      state = classify(state, { type: 'start', x: c.x, y: c.y, touches: e.touches.length }).next
+      const live = liveTouches(listOf(e.touches), listOf(e.changedTouches))
+      if (live.length <= 1) multiTouch = false
+      if (live.length >= 2) multiTouch = true
+      const c = centroid(live)
+      state = classify(state, { type: 'start', x: c.x, y: c.y, touches: live.length }).next
       if (multiTouch) e.stopPropagation()
     }
     const onMove = (e: TouchEvent): void => {
-      if (e.touches.length >= 2) multiTouch = true
-      const c = centroid(e.touches)
-      const r = classify(state, { type: 'move', x: c.x, y: c.y, touches: e.touches.length })
+      const live = liveTouches(listOf(e.touches), listOf(e.changedTouches))
+      if (live.length >= 2) multiTouch = true
+      const c = centroid(live)
+      const r = classify(state, { type: 'move', x: c.x, y: c.y, touches: live.length })
       state = r.next
       if (multiTouch) e.stopPropagation()
       fire(r.action)
     }
     const onEnd = (e: TouchEvent): void => {
+      const live = liveTouches(listOf(e.touches), listOf(e.changedTouches))
       if (multiTouch) e.stopPropagation()
-      state = classify(state, { type: 'end', touches: e.touches.length }).next
-      if (e.touches.length === 0) multiTouch = false
+      state = classify(state, { type: 'end', touches: live.length }).next
+      if (live.length === 0) multiTouch = false
     }
     const onClickCapture = (e: MouseEvent): void => {
       if (Date.now() >= suppressClickUntil) return

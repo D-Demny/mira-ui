@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thing-project/thing-ui.git"
+    "url": "git+https://github.com/mira-thing/mira-ui.git"
   },
   "private": true,
   "version": "0.0.0",

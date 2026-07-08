@@ -169,3 +169,58 @@ describe('swipeMachine', () => {
     expect(actions).toEqual(['next', 'next'])
   })
 })
+
+describe('createPhantomFilter', () => {
+  const tp = (identifier: number, x = 0, y = 0) => ({ identifier, clientX: x, clientY: y })
+
+  it('passes fresh touches through', async () => {
+    const { createPhantomFilter } = await import('@/gestures/swipeMachine')
+    const now = 1000
+    const filter = createPhantomFilter(() => now)
+    expect(filter([tp(1), tp(2)], [tp(1), tp(2)])).toHaveLength(2)
+  })
+
+  it('drops a ghost finger that stopped producing events (the swipe-latch bug)', async () => {
+    const { createPhantomFilter, PHANTOM_TOUCH_MS } = await import('@/gestures/swipeMachine')
+    let now = 1000
+    const filter = createPhantomFilter(() => now)
+
+    // ghost id 7 goes down and its touchend is lost
+    filter([tp(7)], [tp(7)])
+
+    // a real finger arrives
+    now += PHANTOM_TOUCH_MS + 1
+    const live = filter([tp(7), tp(8)], [tp(8)])
+    expect(live.map((t) => t.identifier)).toEqual([8])
+  })
+
+  it('keeps a second finger alive while it keeps producing events', async () => {
+    const { createPhantomFilter, PHANTOM_TOUCH_MS } = await import('@/gestures/swipeMachine')
+    let now = 1000
+    const filter = createPhantomFilter(() => now)
+
+    filter([tp(1), tp(2)], [tp(1), tp(2)])
+    // both fingers move periodically
+    for (let i = 0; i < 5; i++) {
+      now += PHANTOM_TOUCH_MS - 100
+      const live = filter([tp(1), tp(2)], [tp(1), tp(2)])
+      expect(live).toHaveLength(2)
+    }
+  })
+
+  it('re-demotes only the stale finger, and a lifted id comes back fresh', async () => {
+    const { createPhantomFilter, PHANTOM_TOUCH_MS } = await import('@/gestures/swipeMachine')
+    let now = 1000
+    const filter = createPhantomFilter(() => now)
+
+    filter([tp(1), tp(2)], [tp(1), tp(2)])
+    // only finger 1 keeps moving
+    now += PHANTOM_TOUCH_MS + 1
+    expect(filter([tp(1), tp(2)], [tp(1)]).map((t) => t.identifier)).toEqual([1])
+
+    // finger 2 lifts
+    filter([tp(1)], [tp(1)])
+    now += 10
+    expect(filter([tp(1), tp(2)], [tp(1), tp(2)])).toHaveLength(2)
+  })
+})

@@ -170,6 +170,19 @@ export default function App() {
       ? mockStatus
       : realStatus
 
+  const SPOTIFY_STUCK_MS = 60000
+  const playerStartingUp = status != null && !status.active && status.message === 'starting up'
+  const splashOnlineStuck = playerStartingUp && online === true && !auth.url
+  const [spotifyStuck, setSpotifyStuck] = useState(false)
+  useEffect(() => {
+    if (!splashOnlineStuck) {
+      setSpotifyStuck(false)
+      return
+    }
+    const t = window.setTimeout(() => setSpotifyStuck(true), SPOTIFY_STUCK_MS)
+    return () => window.clearTimeout(t)
+  }, [splashOnlineStuck])
+
   // hold the last now-playing through any small drops in network
   const [heldStatus, setHeldStatus] = useState<ObserverStatusActive | null>(null)
   useEffect(() => {
@@ -552,6 +565,15 @@ export default function App() {
       )
     }
 
+    if (spotifyStuck && splashOnlineStuck && !reconnecting) {
+      return (
+        <div className={styles.app}>
+          <ReconnectingScreen phase="spotify-unreachable" />
+          {globalOverlays}
+        </div>
+      )
+    }
+
     // used to hide the starting up screen on first boot after a sucessful bluetooth pairing with pan
     if (
       !reconnecting &&
@@ -572,7 +594,6 @@ export default function App() {
     }
 
     // the daemon reports "starting up" while the dealer is (re)connecting
-    const playerStartingUp = status != null && !status.active && status.message === 'starting up'
     if (
       !reconnecting &&
       ((loading && !status) || (auth.loading && (!status || !status.active)) || playerStartingUp)
