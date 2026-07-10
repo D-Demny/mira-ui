@@ -71,6 +71,13 @@
   }
 }
 
+.qrBox {
+  background: #fff;
+  border-radius: 12px;
+  padding: $s-2;
+  line-height: 0;
+}
+
 .hint {
   font-size: $fs-md;
   color: $text-tertiary;
