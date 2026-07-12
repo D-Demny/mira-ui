@@ -97,6 +97,8 @@ export type ApiEventType =
   | 'bluetooth/disconnect'
   | 'bluetooth/network/connect'
   | 'bluetooth/network/disconnect'
+  | 'bluetooth/network/unavailable'
+  | 'bluetooth/bond-lost'
   | 'network_status'
   | 'voice'
   | string

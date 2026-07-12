@@ -58,7 +58,7 @@ export default function App() {
     [notify, seek],
   )
   usePrefetch(realStatus)
-  const { online, carriers, pairing: realPairing, setDiscoverable } = useBluetooth()
+  const { online, carriers, pairing: realPairing, trouble: btTrouble, setDiscoverable } = useBluetooth()
   const connectDevices = useConnectDevices()
   const { devices: knownDevices } = useKnownDevices(true) // paired bt devices
   const hasKnownDevice = (knownDevices?.length ?? 0) > 0
@@ -407,7 +407,11 @@ export default function App() {
       {daemonDown || forced === 'daemon-error' ? <DaemonError /> : null}
       <VolumeOverlay state={hardware.volumeOverlay} />
       <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
-      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        phoneVolume={status !== null && status.active === true && status.volume_disabled === true}
+      />
       {deviceMenuOpen ? (
         <DevicePicker
           devices={connectDevices}
@@ -530,6 +534,7 @@ export default function App() {
               phase="reconnecting"
               deviceName={topKnownDeviceName}
               carriers={carriers}
+              trouble={btTrouble}
               onSetUpOther={() => setSetupOverride(true)}
             />
           )

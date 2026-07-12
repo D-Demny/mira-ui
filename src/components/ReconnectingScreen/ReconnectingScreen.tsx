@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { restartDevice } from '@/api/system'
 import { BT_DEVICE_NAME } from '@/brand'
-import type { Carriers } from '@/hooks/useBluetooth'
+import type { BtTroubleHint, Carriers } from '@/hooks/useBluetooth'
 import styles from './ReconnectingScreen.module.scss'
 
 type Phase = 'checking' | 'reconnecting' | 'no-internet' | 'spotify-unreachable'
@@ -16,6 +16,8 @@ interface Props {
   deviceName?: string | null
   // physical links that are up, for cause-aware messaging
   carriers?: Carriers | null
+  // hotspot off/phone deleted the pair
+  trouble?: BtTroubleHint
   // escape into the connection chooser to set up a different phone/PC
   onSetUpOther?: () => void
 }
@@ -28,6 +30,7 @@ function ReconnectingScreenImpl({
   phase = 'reconnecting',
   deviceName,
   carriers,
+  trouble,
   onSetUpOther,
 }: Props) {
   const [timedOut, setTimedOut] = useState(false)
@@ -52,7 +55,13 @@ function ReconnectingScreenImpl({
 
   let title: string
   let body: string
-  if (checking) {
+  if (trouble === 'bond-lost' && !checking) {
+    title = 'Pairing needed'
+    body = `${name.charAt(0).toUpperCase() + name.slice(1)} no longer remembers ${BT_DEVICE_NAME}. Forget ${BT_DEVICE_NAME} in your phone's Bluetooth settings, then pair again.`
+  } else if (trouble === 'hotspot-off' && !checking) {
+    title = 'Turn on hotspot'
+    body = `Connected to ${name}, but internet sharing is off. Turn on Personal Hotspot (iPhone) or Bluetooth tethering (Android) and it connects on its own.`
+  } else if (checking) {
     title = 'Checking connection...'
     body = 'Finishing the connection, one moment.'
   } else if (phase === 'spotify-unreachable') {

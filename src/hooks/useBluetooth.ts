@@ -39,11 +39,15 @@ export interface Carriers {
   bt: boolean
 }
 
+// offline screen hintt
+export type BtTroubleHint = 'hotspot-off' | 'bond-lost' | null
+
 export interface BluetoothState {
   online: boolean | null // null = havent heard yet
   carriers: Carriers | null // which physical links are up
   pairing: PairingPrompt | null
   lastDevice: string | null
+  trouble: BtTroubleHint
 }
 
 export interface BluetoothActions {
@@ -56,6 +60,7 @@ export function useBluetooth(): BluetoothState & BluetoothActions {
   const [carriers, setCarriers] = useState<Carriers | null>(null)
   const [pairing, setPairing] = useState<PairingPrompt | null>(null)
   const [lastDevice, setLastDevice] = useState<string | null>(() => readLastDevice())
+  const [trouble, setTrouble] = useState<BtTroubleHint>(null)
 
   const lastDeviceRef = useRef(lastDevice)
   lastDeviceRef.current = lastDevice
@@ -103,7 +108,9 @@ export function useBluetooth(): BluetoothState & BluetoothActions {
       switch (evt.type) {
         case 'network_status': {
           const p = evt.data as NetworkStatusPayload
-          setOnline(p?.status === 'online')
+          const isOnline = p?.status === 'online'
+          setOnline(isOnline)
+          if (isOnline) setTrouble(null)
           if (typeof p?.usb === 'boolean' || typeof p?.bt === 'boolean') {
             setCarriers({ usb: p.usb === true, bt: p.bt === true })
           }
@@ -127,6 +134,7 @@ export function useBluetooth(): BluetoothState & BluetoothActions {
             bt.connectNetwork(p.device.address).catch(() => {})
           }
           setPairing(null)
+          setTrouble(null) // fresh pair resolves a lost bond
           break
         }
         case 'bluetooth/connect': {
@@ -149,9 +157,18 @@ export function useBluetooth(): BluetoothState & BluetoothActions {
         case 'bluetooth/network/connect':
           // PAN up implies pair succeeded
           setPairing(null)
+          setTrouble(null)
           break
         case 'bluetooth/network/disconnect':
           break // network_status will follow
+        case 'bluetooth/network/unavailable':
+          // no hotspot
+          setTrouble((cur) => (cur === 'bond-lost' ? cur : 'hotspot-off'))
+          break
+        case 'bluetooth/bond-lost':
+          // the phone deleted the pairing; only a re-pair fixes this
+          setTrouble('bond-lost')
+          break
       }
     }
 
@@ -173,6 +190,7 @@ export function useBluetooth(): BluetoothState & BluetoothActions {
     carriers,
     pairing,
     lastDevice,
+    trouble,
     setDiscoverable,
     reconnectLast,
   }
