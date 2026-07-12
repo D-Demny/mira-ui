@@ -60,6 +60,8 @@ export interface VolumeOverlayState {
   value: number
   // true when the active device refuses remote volume like a phone
   disabled: boolean
+  phone?: boolean
+  dir?: 1 | -1
 }
 
 export interface UseHardwareButtonsResult {
@@ -122,23 +124,30 @@ export function useHardwareButtons({
     [setVolume],
   )
 
-  const showOverlay = useCallback((value01: number, disabled: boolean) => {
-    setVolumeOverlay({ visible: true, value: value01, disabled })
-    if (overlayTimerRef.current != null) window.clearTimeout(overlayTimerRef.current)
-    overlayTimerRef.current = window.setTimeout(() => {
-      setVolumeOverlay((o) => ({ ...o, visible: false }))
-    }, OVERLAY_MS)
-  }, [])
+  const showOverlay = useCallback(
+    (value01: number, disabled: boolean, extra?: Pick<VolumeOverlayState, 'phone' | 'dir'>) => {
+      setVolumeOverlay({ visible: true, value: value01, disabled, ...extra })
+      if (overlayTimerRef.current != null) window.clearTimeout(overlayTimerRef.current)
+      overlayTimerRef.current = window.setTimeout(() => {
+        setVolumeOverlay((o) => ({ ...o, visible: false }))
+      }, OVERLAY_MS)
+    },
+    [],
+  )
 
   // one knob click is one volume step.
   const stepVolume = useCallback(
     (dir: 1 | -1) => {
       if (volumeDisabledRef.current) {
-        const now = Date.now()
-        if (now - lastDisabledNotifyRef.current > DISABLED_VOLUME_NOTIFY_MS) {
-          lastDisabledNotifyRef.current = now
-          notify('Cannot control volume on this device', { variant: 'warning' })
-        }
+        showOverlay(dir > 0 ? 1 : 0.2, false, { phone: true, dir })
+        void Promise.resolve(setVolume(dir, true)).catch(() => {
+          setVolumeOverlay((o) => ({ ...o, visible: false }))
+          const now = Date.now()
+          if (now - lastDisabledNotifyRef.current > DISABLED_VOLUME_NOTIFY_MS) {
+            lastDisabledNotifyRef.current = now
+            notify('Cannot control volume on this device', { variant: 'warning' })
+          }
+        })
         return
       }
       // user adjustable
@@ -148,7 +157,7 @@ export function useHardwareButtons({
       showOverlay(next / VOLUME_MAX, false)
       queueSend(next)
     },
-    [showOverlay, queueSend, notify],
+    [showOverlay, queueSend, notify, setVolume],
   )
 
   // knob turn -> volume only when something is playing

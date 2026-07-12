@@ -41,6 +41,23 @@ function LockIcon() {
 export function VolumeOverlay({ state }: { state: VolumeOverlayState }) {
   const clamped = Math.max(0, Math.min(1, state.value))
 
+  // cant show the direct volume level so we show the direction
+  if (state.phone) {
+    return (
+      <div
+        className={`${styles.overlay} ${state.visible ? styles.visible : ''}`}
+        aria-hidden={!state.visible}
+      >
+        <span className={styles.icon}>
+          <VolumeIcon level={state.dir === -1 ? 0.2 : 1} />
+        </span>
+        <span className={styles.label}>
+          {state.dir === -1 ? 'Phone volume -' : 'Phone volume +'}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div
       className={`${styles.overlay} ${state.visible ? styles.visible : ''} ${

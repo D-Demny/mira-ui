@@ -13,6 +13,8 @@ import styles from './SettingsSheet.module.scss'
 interface Props {
   open: boolean
   onClose: () => void
+  // active device is a phone
+  phoneVolume?: boolean
 }
 
 const OFFSET_MIN = -500
@@ -24,7 +26,7 @@ function fmtOffset(ms: number): string {
   return `${ms > 0 ? '+' : ''}${ms} ms`
 }
 
-function SettingsSheetImpl({ open, onClose }: Props) {
+function SettingsSheetImpl({ open, onClose, phoneVolume = false }: Props) {
   const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness } = useSettings()
 
   return (
@@ -54,7 +56,11 @@ function SettingsSheetImpl({ open, onClose }: Props) {
           />
         </SettingRow>
 
-        <SettingRow icon={<SpeakerIcon />} label="Volume per turn" value={`${volumeStepPct}%`}>
+        <SettingRow
+          icon={<SpeakerIcon />}
+          label="Volume per turn"
+          value={phoneVolume ? 'Set by phone' : `${volumeStepPct}%`}
+        >
           <NotchedSlider
             ariaLabel="Volume per turn"
             value={volumeStepPct}
@@ -63,6 +69,7 @@ function SettingsSheetImpl({ open, onClose }: Props) {
             step={1}
             onChange={(v) => updateSettings({ volumeStepPct: v })}
             format={(v) => `${v}%`}
+            disabled={phoneVolume}
             defaultValue={2}
           />
         </SettingRow>
