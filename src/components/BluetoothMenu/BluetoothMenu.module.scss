@@ -40,7 +40,7 @@
 }
 
 .header {
-  font-size: $fs-sm;
+  font-size: $fs-md;
   font-weight: $fw-semibold;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -50,14 +50,15 @@
 
 .empty {
   padding: $s-3 $s-2 $s-3;
-  font-size: $fs-md;
-  color: $text-tertiary;
+  font-size: $fs-xl;
+  font-weight: $fw-medium;
+  color: $text-secondary;
   line-height: 1.4;
 }
 
 .emptySub {
   margin-top: $s-2;
-  font-size: $fs-sm;
+  font-size: $fs-md;
   color: $text-tertiary;
   opacity: 0.85;
 }
@@ -128,7 +129,7 @@
 }
 
 .state {
-  font-size: $fs-sm;
+  font-size: $fs-md;
   color: $text-tertiary;
 }
 
@@ -190,19 +191,21 @@
 
 .pairHint {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   @include flex-gap-x($s-2);
   margin-top: $s-3;
   padding: $s-3 $s-4;
   border-radius: $r-lg;
   background: rgba(255, 255, 255, 0.07);
   color: $text-secondary;
-  font-size: $fs-md;
+  font-size: $fs-lg;
   line-height: 1.4;
 }
 
 .pulseDot {
   flex: 0 0 auto;
+  margin-top: 6px;
+  margin-right: $s-3;
   width: 10px;
   height: 10px;
   border-radius: 50%;
