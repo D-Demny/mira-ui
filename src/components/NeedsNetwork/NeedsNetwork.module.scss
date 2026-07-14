@@ -53,6 +53,12 @@
   letter-spacing: -0.02em;
 }
 
+.guideRow {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-8);
+}
+
 .steps {
   list-style: none;
   padding: 0;
@@ -98,6 +104,26 @@
   padding: 1px 8px;
   border-radius: $r-sm;
   background: rgba(30, 215, 96, 0.12);
+}
+
+.qrCol {
+  @include column;
+  align-items: center;
+  @include flex-gap-y($s-3);
+  flex: 0 0 auto;
+}
+
+.qrBox {
+  background: #fff;
+  border-radius: 12px;
+  padding: $s-2;
+  line-height: 0;
+}
+
+.qrHint {
+  font-size: $fs-sm;
+  color: $text-tertiary;
+  line-height: 1.4;
 }
 
 .hint {

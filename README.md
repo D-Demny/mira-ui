@@ -1,14 +1,22 @@
 # mira-ui
 
-Frontend for Mira, a custom firmware for the Spotify Car Thing controller designed to be as stand alone as possible.
+Frontend for the Mira project, a free and open-source standalone firmware for the Spotify Car Thing.
 
 React + TypeScript + Vite.
 
-See the related projects:
+Part of [Mira](https://github.com/mira-thing).
 
-- **mira-daemon** - the on-device daemon that talks to Spotify
-- **mira-firmware** - the firmware build pipeline
-- **thing-releases** - firmware images
+## Related projects
+
+- [`mira-daemon`](https://github.com/mira-thing/mira-daemon) - daemon
+- [`mira-voice`](https://github.com/mira-thing/mira-voice) - on-device voice stack
+- [`mira-firmware`](https://github.com/mira-thing/mira-firmware) - image builder
+- [`mira-releases`](https://github.com/mira-thing/mira-releases) - prebuilt firmware images
+- [`mira-ui`](.) - Vite + React UI (this repo)
+
+## Support
+
+Mira is free and open source. If you'd like to support development, you can do so on [GitHub Sponsors](https://github.com/sponsors/MustakimK) or [Ko-fi](https://ko-fi.com/MustakimK). Questions and updates are on [Discord](https://discord.gg/SR2Pne7EPM).
 
 ## Development
 
@@ -30,4 +38,6 @@ The Car Thing's Chromium is Chrome 69 (2018), so the production bundle uses `@vi
 
 ## License
 
-Apache 2.0 see [LICENSE](LICENSE).
+Apache 2.0, see [LICENSE](LICENSE).
+
+> "Spotify" and "Car Thing" are trademarks of Spotify AB. This software is not affiliated with or endorsed by Spotify AB.

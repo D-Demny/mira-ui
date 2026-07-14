@@ -1,6 +1,7 @@
 export interface ObserverStatusInactive {
   active: false
   message?: string
+  setting_up?: boolean
 }
 
 // a selectable spotify connect device
@@ -57,6 +58,7 @@ export interface ObserverStatusActive {
   lyrics_url: string
   raw_metadata?: Record<string, string> | null
   received_at: number
+  setting_up?: boolean
 }
 
 export type ObserverStatus = ObserverStatusActive | ObserverStatusInactive

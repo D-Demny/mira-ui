@@ -53,17 +53,29 @@
   letter-spacing: -0.02em;
 }
 
+.guideRow {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-8);
+}
+
+.info {
+  @include column;
+  align-items: flex-start;
+  text-align: left;
+  @include flex-gap-y($s-4);
+  max-width: 420px;
+}
+
 .body {
   font-size: $fs-2xl;
   color: $text-primary;
   font-weight: $fw-medium;
-  max-width: 560px;
 }
 
 .caution {
   font-size: $fs-lg;
   color: $text-secondary;
-  max-width: 560px;
 
   strong {
     color: $text-primary;
@@ -71,11 +83,24 @@
   }
 }
 
+.qrCol {
+  @include column;
+  align-items: center;
+  @include flex-gap-y($s-3);
+  flex: 0 0 auto;
+}
+
 .qrBox {
   background: #fff;
   border-radius: 12px;
   padding: $s-2;
   line-height: 0;
+}
+
+.qrHint {
+  font-size: $fs-sm;
+  color: $text-tertiary;
+  line-height: 1.4;
 }
 
 .hint {

@@ -616,7 +616,7 @@ export default function App() {
     }
 
     // "setting things up" during the FIRST-EVER boot to fetch a library catalog
-    if (!reconnecting && status != null && !status.active && status.message === 'setting things up') {
+    if (!reconnecting && status?.setting_up) {
       return (
         <div className={styles.app}>
           <BootSplash caption="setting things up" />

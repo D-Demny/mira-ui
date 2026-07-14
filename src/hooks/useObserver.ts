@@ -27,8 +27,15 @@ function reducer(state: ObserverState, action: Action): ObserverState {
   switch (action.type) {
     case 'loading':
       return { ...state, loading: true }
-    case 'status':
-      return { ...state, status: action.status, loading: false, error: null }
+    case 'status': {
+      const incoming = action.status
+      const prev = state.status?.setting_up
+      const status: ObserverStatus =
+        incoming.setting_up === undefined && prev !== undefined
+          ? { ...incoming, setting_up: prev }
+          : incoming
+      return { ...state, status, loading: false, error: null }
+    }
     case 'error':
       return { ...state, error: action.error, loading: false }
     case 'ws':
