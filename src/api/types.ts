@@ -185,6 +185,7 @@ export interface RemoteStateWire {
   Duration: number
   PositionAsOfTimestamp: number
   Timestamp: number
+  Position?: number
   IsPlaying: boolean
   IsPaused: boolean
   PlaybackSpeed: number
