@@ -10,4 +10,8 @@ export const server = setupServer(
   http.get('*/bluetooth/known', () => HttpResponse.json([])),
   http.post('*/bluetooth/discover/*', () => HttpResponse.json({})),
   http.post('*/bluetooth/network/*', () => HttpResponse.json({})),
+  // the settings store PUTs on a 400ms debounce; without these any test that lets a
+  // timer run trips onUnhandledRequest: 'error' with a confusing failure
+  http.get('*/settings', () => HttpResponse.json({ v: 1 })),
+  http.put('*/settings', () => HttpResponse.json({ ok: true })),
 )

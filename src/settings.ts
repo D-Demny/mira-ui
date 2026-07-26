@@ -13,6 +13,7 @@ export interface Settings {
   autoBrightness: boolean
   brightness: number
   voiceMic: boolean
+  uiScalePct: number
   presets: Record<number, PresetConfig>
 }
 
@@ -20,6 +21,10 @@ export const VOLUME_STEP_MIN = 1
 export const VOLUME_STEP_MAX = 10
 export const BRIGHTNESS_MIN = 1
 export const BRIGHTNESS_MAX = 10
+export const UI_SCALE_MIN = 85
+export const UI_SCALE_MAX = 115
+export const UI_SCALE_STEP = 5
+export const UI_SCALE_DEFAULT = 100
 
 const SCHEMA_VERSION = 1
 const LS_KEY = 'mira.settings.v1'
@@ -33,11 +38,28 @@ const DEFAULTS: Settings = {
   autoBrightness: true,
   brightness: 5,
   voiceMic: true,
+  uiScalePct: UI_SCALE_DEFAULT,
   presets: {},
 }
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n))
+}
+
+// the ui scale feeds arithmetic that ends up as a css length, and initSettings replaces
+// the store wholesale from the daemon's opaque blob. a NaN here would render as "NaNpx"
+// and take the lyrics drag math with it, so reject anything non-finite and snap to a notch
+function coerceUiScale(raw: unknown): number {
+  // Number(null) and Number('') are both 0, which would silently clamp to the minimum
+  // rather than fall back, so only numbers and non-blank numeric strings get through
+  const n =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.trim() !== ''
+        ? Number(raw)
+        : NaN
+  if (!Number.isFinite(n)) return DEFAULTS.uiScalePct
+  return clamp(Math.round(n / UI_SCALE_STEP) * UI_SCALE_STEP, UI_SCALE_MIN, UI_SCALE_MAX)
 }
 
 function coerce(partial: Partial<Settings> | null | undefined): Settings {
@@ -53,6 +75,7 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     autoBrightness: partial?.autoBrightness ?? DEFAULTS.autoBrightness,
     brightness: clamp(partial?.brightness ?? DEFAULTS.brightness, BRIGHTNESS_MIN, BRIGHTNESS_MAX),
     voiceMic: partial?.voiceMic ?? DEFAULTS.voiceMic,
+    uiScalePct: coerceUiScale(partial?.uiScalePct),
     presets: partial?.presets ?? {},
   }
 }
@@ -111,14 +134,15 @@ export function updateSettings(patch: Partial<Settings>): void {
   schedulePut()
 }
 
+export function subscribeSettings(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => {
+    listeners.delete(cb)
+  }
+}
+
 export function useSettings(): Settings {
-  return useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb)
-      return () => listeners.delete(cb)
-    },
-    () => current,
-  )
+  return useSyncExternalStore(subscribeSettings, () => current)
 }
 
 // check with the daemon once at startup

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useReducer, useRef } from 'react'
 import { formatTime } from '@/utils/time'
+import { useUiScale } from '@/uiScale'
 import type { ObserverStatusActive } from '@/api/types'
 import styles from './ProgressBar.module.scss'
 import {
@@ -29,6 +30,9 @@ function reducer(state: ScrubState, event: ScrubEvent): ScrubState {
 
 function ProgressBarImpl({ status, onSeek }: Props) {
   const seekDisabled = !!status.disallow_seek
+  // the bar width below is measured once per effect run, so it has to re-measure when
+  // the display size changes — the status deps alone would leave it stale while paused
+  const uiScale = useUiScale()
   const fillRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<HTMLDivElement | null>(null)
   const barRef = useRef<HTMLDivElement | null>(null)
@@ -79,7 +83,10 @@ function ProgressBarImpl({ status, onSeek }: Props) {
     const bar = barRef.current
     if (!fill || !handle || !left || !bar) return
 
-    const barWidth = bar.getBoundingClientRect().width
+    // clientWidth, not getBoundingClientRect().width: the translate below is applied in
+    // the element's own space, so the measurement has to be layout space too. the rect
+    // is post-transform and would drift by the display scale
+    const barWidth = bar.clientWidth
 
     const playing = status.is_playing && !status.is_paused
 
@@ -129,6 +136,7 @@ function ProgressBarImpl({ status, onSeek }: Props) {
     status.is_playing,
     status.is_paused,
     scrubState,
+    uiScale,
   ])
 
   const computeRatio = useCallback((clientX: number): number => {

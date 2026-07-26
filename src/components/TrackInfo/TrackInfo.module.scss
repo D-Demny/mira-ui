@@ -1,6 +1,6 @@
 .info {
   @include column;
-  max-width: $art-size;
+  max-width: var(--art-size, #{$art-size});
   min-width: 0;
   @include flex-gap-y($s-1);
 }

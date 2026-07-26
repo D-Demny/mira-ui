@@ -41,6 +41,7 @@ import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { resumeLastDevice, transferToDevice } from '@/api/client'
 import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
+import { artSizeFor, heroArtSizeFor } from '@/uiScale'
 import styles from './App.module.scss'
 
 export default function App() {
@@ -96,6 +97,8 @@ export default function App() {
 
   const settings = useSettings()
   const showLyricsReal = settings.showLyrics
+  const artSize = artSizeFor(settings.uiScalePct)
+  const heroArtSize = heroArtSizeFor(settings.uiScalePct)
   const [menuOpenReal, setMenuOpen] = useState(false)
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [settingsOpenReal, setSettingsOpen] = useState(false)
@@ -649,7 +652,12 @@ export default function App() {
     forced === 'reconnect-banner' ? 'offline' : reconnecting ? dropReason : null
 
   return (
-    <div className={`${styles.app} ${styles.appPlaying}`}>
+    <div
+      className={`${styles.app} ${styles.appPlaying}`}
+      // the art is the only fixed-height block in the left column and never shrinks, so
+      // it has to give way when a larger display size shortens the logical viewport
+      style={{ '--art-size': `${artSize}px` } as React.CSSProperties}
+    >
       {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
       <div className={styles.stage} ref={stageRef}>
         <div
@@ -657,7 +665,7 @@ export default function App() {
         >
           <div className={styles.top}>
             <div className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}>
-              <AlbumArt src={playerStatus.track_image} size={200} />
+              <AlbumArt src={playerStatus.track_image} size={artSize} />
               <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
             </div>
             <div className={styles.right}>
@@ -671,7 +679,7 @@ export default function App() {
           <div
             className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
           >
-            <NoLyricsView status={playerStatus} active={!showLyrics} />
+            <NoLyricsView status={playerStatus} active={!showLyrics} artSize={heroArtSize} />
           </div>
         </div>
       </div>
