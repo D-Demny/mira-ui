@@ -1,5 +1,8 @@
 # mira-ui
 
+<img width="3824" height="912" alt="mira-ui-overview" src="https://github.com/user-attachments/assets/afe75e33-2c2f-496d-b29e-6c84b292d14f" />
+
+
 Frontend for the Mira project, a free and open-source standalone firmware for the Spotify Car Thing.
 
 React + TypeScript + Vite.
