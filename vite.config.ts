@@ -16,6 +16,7 @@ const apiProxy = {
   '/bluetooth': API_TARGET,
   '/network': API_TARGET,
   '/system': API_TARGET,
+  '/settings': API_TARGET,
   '/events': { target: API_TARGET, ws: true, changeOrigin: true },
 }
 

@@ -1,4 +1,5 @@
 import { memo, useLayoutEffect, useRef, useState } from 'react'
+import { useUiScale } from '@/uiScale'
 import styles from './Marquee.module.scss'
 
 // TODO: fine tune the speed for sliding
@@ -15,6 +16,9 @@ function MarqueeImpl({ text, className }: Props) {
   const wrapRef = useRef<HTMLDivElement | null>(null)
   const innerRef = useRef<HTMLDivElement | null>(null)
   const [animate, setAnimate] = useState(false)
+  // NoLyricsView's container is a shrinkable percentage width, so the overflow distance
+  // measured below changes with the display size
+  const uiScale = useUiScale()
 
   useLayoutEffect(() => {
     const wrap = wrapRef.current
@@ -33,7 +37,7 @@ function MarqueeImpl({ text, className }: Props) {
     } else {
       setAnimate(false)
     }
-  }, [text])
+  }, [text, uiScale])
 
   return (
     <div

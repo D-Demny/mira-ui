@@ -41,7 +41,7 @@
 
 .top {
   display: grid;
-  grid-template-columns: $art-size minmax(0, 1fr);
+  grid-template-columns: var(--art-size, #{$art-size}) minmax(0, 1fr);
   gap: $col-gap;
   min-height: 0;
   min-width: 0;
@@ -54,7 +54,7 @@
   @include column;
   align-items: stretch;
   justify-content: flex-start;
-  width: $art-size;
+  width: var(--art-size, #{$art-size});
   min-height: 0;
   @include flex-gap-y($s-3);
 }

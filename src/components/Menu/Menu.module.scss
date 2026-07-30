@@ -14,6 +14,12 @@
   transform: translate(-50%, calc(100% + 16px));
   width: 520px;
   max-width: calc(100% - #{$s-7});
+  // the sheet is 454px tall (padding 32 + border 2 + handle 12 + 6 rows 360 + gaps 48),
+  // which runs off the top of a shortened logical viewport. reserving $s-6 against the
+  // 16px bottom offset still leaves an 8px top inset at the largest display size
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  @include hide-scrollbar;
   padding: $s-4;
   background: $menu-bg;
   border: 1px solid $menu-border;

@@ -1,7 +1,11 @@
-import { memo, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import {
   BRIGHTNESS_MAX,
   BRIGHTNESS_MIN,
+  UI_SCALE_DEFAULT,
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
+  UI_SCALE_STEP,
   updateSettings,
   useSettings,
   VOLUME_STEP_MAX,
@@ -27,7 +31,19 @@ function fmtOffset(ms: number): string {
 }
 
 function SettingsSheetImpl({ open, onClose, phoneVolume = false }: Props) {
-  const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness } = useSettings()
+  const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness, uiScalePct } = useSettings()
+
+  // applying the scale mid-drag moves this very panel under the finger, which has no
+  // fixed point near a notch boundary and makes the whole ui flicker between two sizes.
+  // so track the drag locally and only commit on release
+  const [scalePreview, setScalePreview] = useState<number | null>(null)
+  // drop an uncommitted drag if the sheet is dismissed mid-gesture
+  const [wasOpen, setWasOpen] = useState(open)
+  if (wasOpen !== open) {
+    setWasOpen(open)
+    if (scalePreview !== null) setScalePreview(null)
+  }
+  const shownScale = scalePreview ?? uiScalePct
 
   return (
     <div
@@ -42,6 +58,29 @@ function SettingsSheetImpl({ open, onClose, phoneVolume = false }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.title}>Settings</div>
+
+        {/* first on purpose: at the largest display size the panel scrolls, and this is
+            the one control that has to stay reachable to get back down */}
+        <SettingRow icon={<DisplaySizeIcon />} label="Display size" value={`${shownScale}%`}>
+          <NotchedSlider
+            ariaLabel="Display size"
+            value={shownScale}
+            min={UI_SCALE_MIN}
+            max={UI_SCALE_MAX}
+            step={UI_SCALE_STEP}
+            onChange={setScalePreview}
+            onCommit={(v) => {
+              setScalePreview(null)
+              // the sheet was dismissed mid-gesture, so drop the drag instead of
+              // resizing the whole ui after it's gone
+              if (!open) return
+              updateSettings({ uiScalePct: v })
+            }}
+            onCancel={() => setScalePreview(null)}
+            format={(v) => `${v}%`}
+            defaultValue={UI_SCALE_DEFAULT}
+          />
+        </SettingRow>
 
         <SettingRow icon={<LyricsIcon />} label="Lyric sync" value={fmtOffset(lyricOffsetMs)}>
           <NotchedSlider
@@ -178,6 +217,20 @@ function SunIcon() {
         d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"
         stroke="currentColor"
         strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
+function DisplaySizeIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M8.5 15V9.8m0 0H6.9m1.6 0h1.6M15.5 15V8.2m0 0h-2.1m2.1 0h2.1"
+        stroke="currentColor"
+        strokeWidth="1.8"
         strokeLinecap="round"
       />
     </svg>

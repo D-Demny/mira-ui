@@ -73,7 +73,7 @@ const SCREENS: ScreenDef[] = [
     label: 'Bluetooth menu',
     hint: 'Known devices / pair (live daemon list)',
   },
-  { id: 'settings', label: 'Settings', hint: 'Lyric sync / volume / brightness' },
+  { id: 'settings', label: 'Settings', hint: 'Lyric sync / volume / brightness / display size' },
   {
     id: 'reconnecting',
     label: 'Reconnecting screen',
