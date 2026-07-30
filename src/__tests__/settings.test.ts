@@ -20,6 +20,7 @@ describe('settings store', () => {
     expect(getSettings().volumeStepPct).toBe(2)
     expect(getSettings().autoBrightness).toBe(true)
     expect(getSettings().brightness).toBe(5)
+    expect(getSettings().uiScalePct).toBe(100)
   })
 
   it('round-trips updates through localStorage', () => {
@@ -42,6 +43,37 @@ describe('settings store', () => {
     __resetSettings()
     expect(getSettings().autoBrightness).toBe(false)
     expect(getSettings().brightness).toBe(10)
+  })
+
+  it('round-trips the ui scale', () => {
+    updateSettings({ uiScalePct: 115 })
+    __resetSettings()
+    expect(getSettings().uiScalePct).toBe(115)
+  })
+
+  it('snaps an off-step ui scale to the nearest notch on load', () => {
+    localStorage.setItem('mira.settings.v1', JSON.stringify({ uiScalePct: 103 }))
+    __resetSettings()
+    expect(getSettings().uiScalePct).toBe(105)
+  })
+
+  // this one is load-bearing: the value becomes a css length and a divisor for the
+  // lyrics drag math, and initSettings replaces the store wholesale from the daemon
+  it.each([
+    ['out of range high', 999, 115],
+    ['out of range low', 10, 85],
+    ['a numeric string', '110', 110],
+    ['null', null, 100],
+    ['undefined', undefined, 100],
+    ['NaN (serialises to null)', Number.NaN, 100],
+    ['Infinity (serialises to null)', Number.POSITIVE_INFINITY, 100],
+    ['an empty string', '', 100],
+    ['a non-numeric string', 'big', 100],
+    ['an object', {}, 100],
+  ])('coerces %s to a usable ui scale', (_label, stored, expected) => {
+    localStorage.setItem('mira.settings.v1', JSON.stringify({ uiScalePct: stored }))
+    __resetSettings()
+    expect(getSettings().uiScalePct).toBe(expected)
   })
 
   it('preset get falls back to defaults; set overrides via the store', () => {

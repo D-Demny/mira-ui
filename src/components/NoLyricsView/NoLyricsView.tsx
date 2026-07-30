@@ -7,11 +7,13 @@ import styles from './NoLyricsView.module.scss'
 interface Props {
   status: ObserverStatusActive
   active?: boolean
+  // shrinks with the display size so the 130% glow stays inside the stage row
+  artSize?: number
 }
 
 const ART_SIZE = 220
 
-function NoLyricsViewImpl({ status, active = true }: Props) {
+function NoLyricsViewImpl({ status, active = true, artSize = ART_SIZE }: Props) {
   const art = status.track_image
   const glowStyle = art ? ({ '--art': `url("${art}")` } as React.CSSProperties) : undefined
 
@@ -29,7 +31,7 @@ function NoLyricsViewImpl({ status, active = true }: Props) {
           </div>
         ) : null}
         <div className={styles.cover}>
-          <AlbumArt src={status.track_image} size={ART_SIZE} />
+          <AlbumArt src={status.track_image} size={artSize} />
         </div>
       </div>
       <div className={styles.meta}>

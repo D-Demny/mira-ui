@@ -8,6 +8,11 @@ interface Props {
   max: number
   step: number
   onChange: (v: number) => void
+  // fires once the value settles: on pointer release, or immediately on a step button.
+  // lets a caller preview a value while dragging but only apply it on release
+  onCommit?: (v: number) => void
+  // the gesture was aborted rather than completed, so any preview should be discarded
+  onCancel?: () => void
   format: (v: number) => string
   disabled?: boolean
   defaultValue?: number
@@ -24,12 +29,16 @@ function NotchedSliderImpl({
   max,
   step,
   onChange,
+  onCommit,
+  onCancel,
   format,
   disabled,
   defaultValue,
 }: Props) {
   const barRef = useRef<HTMLDivElement | null>(null)
   const dragging = useRef(false)
+  // the value prop is still the pre-drag one inside the pointerup handler
+  const latest = useRef(value)
 
   const count = Math.round((max - min) / step) + 1
   const ratio = max > min ? (value - min) / (max - min) : 0
@@ -41,26 +50,54 @@ function NotchedSliderImpl({
     const rect = el.getBoundingClientRect()
     const r = clamp((clientX - rect.left) / rect.width, 0, 1)
     const snapped = clamp(Math.round((min + r * (max - min)) / step) * step, min, max)
+    latest.current = snapped
     if (snapped !== value) onChange(snapped)
   }
 
   const onPointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
     if (disabled) return
     dragging.current = true
+    latest.current = value
     e.currentTarget.setPointerCapture(e.pointerId)
     setFromX(e.clientX)
   }
   const onPointerMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
     if (dragging.current) setFromX(e.clientX)
   }
-  const onPointerUp: React.PointerEventHandler<HTMLDivElement> = (e) => {
-    dragging.current = false
+  const releaseCapture = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId)
     }
   }
 
-  const stepBy = (dir: 1 | -1) => onChange(clamp(value + dir * step, min, max))
+  const onPointerUp: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    const wasDragging = dragging.current
+    dragging.current = false
+    releaseCapture(e)
+    if (wasDragging) onCommit?.(latest.current)
+  }
+
+  // a cancelled gesture must not commit — same class of bug the ProgressBar scrub
+  // machine guards against, where an interrupted drag used to seek to wherever it died
+  const onPointerCancel: React.PointerEventHandler<HTMLDivElement> = (e) => {
+    const wasDragging = dragging.current
+    dragging.current = false
+    releaseCapture(e)
+    if (wasDragging) onCancel?.()
+  }
+
+  // nothing else clears the drag flag if pointerup never arrives, and the component
+  // outlives the sheet, so a stale flag would let a bare pointermove move the slider
+  const onLostPointerCapture = () => {
+    dragging.current = false
+  }
+
+  const stepBy = (dir: 1 | -1) => {
+    const next = clamp(value + dir * step, min, max)
+    latest.current = next
+    onChange(next)
+    onCommit?.(next)
+  }
 
   return (
     <div className={`${styles.row} ${disabled ? styles.disabled : ''}`}>
@@ -86,7 +123,8 @@ function NotchedSliderImpl({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onLostPointerCapture}
       >
         <div className={styles.notches} aria-hidden>
           {Array.from({ length: count }, (_, i) => (

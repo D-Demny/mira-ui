@@ -23,13 +23,17 @@
   max-width: calc(100% - #{$s-6});
   max-height: calc(100% - #{$s-7});
   overflow-y: auto;
-  padding: $s-6;
+  @include hide-scrollbar;
+  // four rows have to clear 448px at 100%: padding 40 + title 38.8 + 4 gaps 64
+  // + 4 rows 297.6 = 440.4. it scrolls at larger display sizes, hence hide-scrollbar
+  padding: $s-5;
   background: $bg;
   border-radius: $r-2xl;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
 
   @include column;
-  @include flex-gap-y($s-6);
+  // four rows at $s-6 overflow the panel even at 100%
+  @include flex-gap-y($s-4);
 
   transform: translateY(12px) scale(0.98);
   opacity: 0;

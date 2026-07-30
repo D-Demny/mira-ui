@@ -1,6 +1,11 @@
 .cardInline {
   width: 320px;
   max-width: calc(100% - #{$s-7});
+  // unlike .cardModal this sits inside the idle screen's fixed chrome, so a long device
+  // list on a shortened logical viewport would clip at both ends rather than scroll
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  @include hide-scrollbar;
   padding: $s-3;
   background: $surface-elev;
   border: 1px solid $divider;

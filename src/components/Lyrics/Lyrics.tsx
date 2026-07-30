@@ -3,6 +3,7 @@ import { darkBg, useColorExtract, type RGB } from '@/hooks/useColorExtract'
 import { useActiveLine } from '@/hooks/useActiveLine'
 import { useLyricStarts, useLyrics } from '@/hooks/useLyrics'
 import { useSettings } from '@/settings'
+import { getUiScaleY, useUiScale } from '@/uiScale'
 import type { LyricsWord, ObserverStatusActive } from '@/api/types'
 import styles from './Lyrics.module.scss'
 
@@ -117,6 +118,10 @@ const LyricLine = memo(function LyricLine({
 function LyricsImpl({ status, onSeek, active = true }: Props) {
   const isPodcast = status.track_uri.startsWith('spotify:episode:')
   const { lyricOffsetMs, karaokeLyrics } = useSettings()
+  // touch and wheel deltas arrive in viewport space; the scroll offset below is layout
+  // space. they only agree at 100%. the hook value is here to re-run the measuring
+  // effects; the handlers read the vertical scale directly at event time
+  const uiScale = useUiScale()
   const { lyrics, loading, error } = useLyrics({
     trackId: status.track_id || null,
     trackName: status.track_name,
@@ -210,13 +215,15 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
     }
     lineMetrics.current = metrics
     listHeight.current = list.scrollHeight
-  }, [lyrics])
+    // the lyrics column is a 1fr track of a scale-dependent width, so a scale change
+    // rewraps the lines and invalidates every cached top/height
+  }, [lyrics, uiScale])
 
   useLayoutEffect(() => {
     if (Date.now() - userActiveAt.current < SNAP_BACK_MS) return
     offset.current = computeAutoTarget()
     applyOffset()
-  }, [effIdx, lyrics, status.track_id])
+  }, [effIdx, lyrics, status.track_id, uiScale])
 
   useEffect(() => {
     if (seekHint == null) return
@@ -259,7 +266,7 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
       dragStartY.current = y
       dragStartOffset.current = offset.current
     }
-    offset.current = dragStartOffset.current + (dragStartY.current - y)
+    offset.current = dragStartOffset.current + (dragStartY.current - y) / getUiScaleY()
     applyOffset(true)
     userActiveAt.current = Date.now()
   }
@@ -279,7 +286,7 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
 
   const onWheel: React.WheelEventHandler<HTMLDivElement> = (e) => {
     e.preventDefault()
-    offset.current += e.deltaY
+    offset.current += e.deltaY / getUiScaleY()
     applyOffset(true)
     userActiveAt.current = Date.now()
     window.clearTimeout(snapBackTimer.current)
