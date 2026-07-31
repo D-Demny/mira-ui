@@ -22,7 +22,6 @@ export type DevForcedScreen =
   | 'no-internet'
   | 'checking'
   | 'reconnect-banner'
-  | 'daemon-error'
 
 export interface DevScreenCtx {
   forced: DevForcedScreen

@@ -5,7 +5,6 @@ import { BluetoothMenu } from '@/components/BluetoothMenu'
 import { BootSplash } from '@/components/BootSplash'
 import { ConnectionChooser } from '@/components/ConnectionChooser'
 import { Controls } from '@/components/Controls'
-import { DaemonError } from '@/components/DaemonError'
 import { DevicePicker } from '@/components/DevicePicker'
 import { IdleScreen } from '@/components/IdleScreen'
 import { Lyrics } from '@/components/Lyrics'
@@ -28,8 +27,6 @@ import { useBluetooth } from '@/hooks/useBluetooth'
 import { useConnectDevices } from '@/hooks/useConnectDevices'
 import { suspendDevice } from '@/api/system'
 import { useControls } from '@/hooks/useControls'
-// Disabled for now needs more testing
-// import { useDaemonHealth } from '@/hooks/useDaemonHealth'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
 import { useKnownDevices } from '@/hooks/useKnownDevices'
 import { useNotify } from '@/notify/notifyContext'
@@ -46,8 +43,6 @@ import styles from './App.module.scss'
 
 export default function App() {
   const auth = useAuth()
-  // TODO: currently broken so set to false
-  const daemonDown = false
   const { status: realStatus, loading, connected } = useObserver()
   const notify = useNotify()
   const { play, pause, next, prev, seek, playContext, setVolume, setShuffle, setRepeat } =
@@ -168,7 +163,6 @@ export default function App() {
     forced === 'power-menu' ||
     forced === 'bluetooth-menu' ||
     forced === 'reconnect-banner' ||
-    forced === 'daemon-error' ||
     forced === 'settings'
       ? mockStatus
       : realStatus
@@ -419,7 +413,6 @@ export default function App() {
 
   const globalOverlays = (
     <>
-      {daemonDown || forced === 'daemon-error' ? <DaemonError /> : null}
       <VolumeOverlay state={hardware.volumeOverlay} />
       <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
       <SettingsSheet
