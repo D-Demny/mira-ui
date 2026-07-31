@@ -34,7 +34,7 @@ describe('logicalSize', () => {
   })
 
   it('shrinks the logical viewport as the ui gets bigger', () => {
-    expect(logicalSize(115)).toEqual({ w: 696, h: 417 })
+    expect(logicalSize(115)).toEqual({ w: 696, h: 418 })
   })
 
   it('grows the logical viewport as the ui gets smaller', () => {
@@ -60,15 +60,15 @@ describe('artSizeFor', () => {
   })
 
   it('shrinks the art so the left column still fits the stage row', () => {
-    expect(artSizeFor(110)).toBe(173)
-    expect(artSizeFor(115)).toBe(154)
+    expect(artSizeFor(110)).toBe(174)
+    expect(artSizeFor(115)).toBe(155)
   })
 
   // pinned against the real scss rather than re-deriving from the same constant, which
   // would tautologically pass whatever the reserved height was set to
   it('pins the shrink curve across the range', () => {
     expect([85, 90, 95, 100, 105, 110, 115].map(artSizeFor)).toEqual([
-      200, 200, 200, 200, 194, 173, 154,
+      200, 200, 200, 200, 195, 174, 155,
     ])
   })
 })
@@ -91,33 +91,33 @@ describe('heroArtSizeFor', () => {
 })
 
 describe('applyUiScale', () => {
-  it('counter-sizes #root and scales it back onto the panel', () => {
+  it('counter-sizes #root and zooms it back onto the panel', () => {
     const el = mountRoot()
     applyUiScale(115)
     expect(el.style.width).toBe('696px')
-    expect(el.style.height).toBe('417px')
-    expect(el.style.transform).toMatch(/^scale\(/)
-    expect(el.style.transformOrigin).toBe('top left')
+    expect(el.style.height).toBe('418px')
+    expect(el.style.getPropertyValue('zoom')).toBe(String(800 / 696))
+    expect(el.style.transform).toBe('')
   })
 
-  it('lands the painted result on exactly 800x480', () => {
+  it('lands the painted width on exactly 800 and never leaves a bottom seam', () => {
     const el = mountRoot()
     for (const pct of [85, 90, 95, 105, 110, 115]) {
       applyUiScale(pct)
-      const [sx, sy] = /scale\(([\d.]+), ([\d.]+)\)/.exec(el.style.transform)!.slice(1).map(Number)
-      expect(parseFloat(el.style.width) * sx).toBeCloseTo(800, 6)
-      expect(parseFloat(el.style.height) * sy).toBeCloseTo(480, 6)
+      const z = Number(el.style.getPropertyValue('zoom'))
+      expect(parseFloat(el.style.width) * z).toBeCloseTo(800, 6)
+      const paintedH = parseFloat(el.style.height) * z
+      expect(paintedH).toBeGreaterThanOrEqual(480)
+      expect(paintedH).toBeLessThan(481)
     }
   })
 
-  it('clears a previous transform when returning to 100%', () => {
+  it('clears a previous zoom when returning to 100%', () => {
     const el = mountRoot()
     applyUiScale(115)
-    expect(el.style.transform).not.toBe('')
-    // skipping the assignment here would strand scale(1.15) on an 800px-wide root
+    expect(el.style.getPropertyValue('zoom')).not.toBe('')
     applyUiScale(100)
-    expect(el.style.transform).toBe('')
-    expect(el.style.transformOrigin).toBe('')
+    expect(el.style.getPropertyValue('zoom')).toBe('')
     expect(el.style.width).toBe('800px')
     expect(el.style.height).toBe('480px')
   })
@@ -127,7 +127,7 @@ describe('applyUiScale', () => {
     expect(() => applyUiScale(110)).not.toThrow()
   })
 
-  // updateSettings is a raw spread, so coerce() is not on this path — a NaN reaching the
+  // updateSettings is a raw spread, so coerce() is not on this path; a NaN reaching the
   // dom writes "NaNpx" and would otherwise strand getUiScale at NaN forever
   it.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -50, 100000])(
     'falls back to a usable scale for %p',
@@ -145,7 +145,7 @@ describe('applyUiScale', () => {
     applyUiScale(100)
     expect(getUiScale()).toBe(1)
     applyUiScale(115)
-    // 800/696, not 1.15 — the logical width was rounded
+    // 800/696, not 1.15: the logical width was rounded
     expect(getUiScale()).toBeCloseTo(800 / 696, 10)
   })
 })
