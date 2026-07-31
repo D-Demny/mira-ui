@@ -239,8 +239,20 @@ export default function App() {
   const pairing =
     forced === 'pairing' ? { address: 'AB:CD:EF:01:23:45', passkey: '123456' } : realPairing
 
+  const OFFLINE_HOLDOFF_MS = 10000
+  const [offlineHeld, setOfflineHeld] = useState(false)
+  useEffect(() => {
+    if (online !== false) {
+      setOfflineHeld(false)
+      return
+    }
+    const t = window.setTimeout(() => setOfflineHeld(true), OFFLINE_HOLDOFF_MS)
+    return () => window.clearTimeout(t)
+  }, [online])
+  const offlineConfirmed = online === false && (offlineHeld || !wasOnline)
+
   const offlineActive =
-    !forced && !reconnecting && (online === false || (bootStuck && online !== true))
+    !forced && !reconnecting && (offlineConfirmed || (bootStuck && online !== true))
   // hold a brief "checking connection"
   const offlineChecking = offlineActive && connecting && !graceElapsed
   const onOfflineSetup = offlineActive

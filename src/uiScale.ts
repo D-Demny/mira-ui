@@ -8,11 +8,14 @@ import {
 } from '@/settings'
 
 // the panel is a fixed 800x480 and every dimension in the app is a compile-time px
-// constant, so "display size" works by sizing #root to a *logical* viewport and scaling
-// it back onto the physical panel. the transform doesn't affect layout, so the whole
-// tree genuinely reflows at the logical size instead of just being magnified.
+// constant, so "display size" works by sizing #root to a *logical* viewport and zooming
+// it back onto the physical panel. zoom reflows AND rasterizes at the final size, so
+// text stays crisp at every notch (transform:scale stretched the finished raster).
 //
 // scale > 1 => smaller logical viewport => bigger ui, less content on screen.
+//
+// chrome 69 under zoom: rects are unzoomed layout px, pointer coords and wheel deltas
+// device px divide the latter by getUiScale() before mixing with rects
 
 const BASE_W = 800
 const BASE_H = 480
@@ -35,12 +38,14 @@ function stageHeight(pct: number): number {
   return logicalSize(pct).h - STAGE_RESERVED_H
 }
 
-// rounding the logical box to whole pixels keeps every layout box off subpixels, and
-// deriving the scale back from it guarantees the painted result lands on exactly
-// 800x480 with no seam at the edges
+// whole pixels keep layout off subpixels; zoom derives from the rounded width so the
+// paint lands on exactly 800 wide, and h ceils so the bottom overshoots by <1px
+// (clipped) instead of leaving a seam
 export function logicalSize(pct: number): { w: number; h: number } {
   const s = pct / 100
-  return { w: Math.round(BASE_W / s), h: Math.round(BASE_H / s) }
+  const w = Math.round(BASE_W / s)
+  const z = BASE_W / w
+  return { w, h: Math.ceil(BASE_H / z) }
 }
 
 export function artSizeFor(pct: number): number {
@@ -67,29 +72,27 @@ function safePct(pct: number): number {
 
 export function applyUiScale(pct: number): void {
   const { w, h } = logicalSize(safePct(pct))
-  const sx = BASE_W / w
-  const sy = BASE_H / h
+  const z = BASE_W / w
 
   // absent under jsdom, where testing-library mounts into its own container
   const el = document.getElementById('root')
   if (el) {
-    achievedX = sx
-    achievedY = sy
+    achievedX = z
+    achievedY = z
     el.style.width = `${w}px`
     el.style.height = `${h}px`
     // always assign, never skip: coming back down to 100 has to actively clear a
-    // previous scale() or the ui stays magnified with its width snapped back
-    const identity = sx === 1 && sy === 1
-    el.style.transform = identity ? '' : `scale(${sx}, ${sy})`
-    el.style.transformOrigin = identity ? '' : 'top left'
+    // previous zoom or the ui stays magnified with its width snapped back
+    el.style.setProperty('zoom', z === 1 ? '' : String(z))
+    el.style.transform = ''
+    el.style.transformOrigin = ''
   }
 
   for (const l of listeners) l()
 }
 
-// the scale actually applied to the dom, which is what viewport-space measurements have
-// to be converted with. not identical to pct/100 because of the rounding above, and the
-// two axes differ very slightly for the same reason
+// the zoom actually applied to the dom divide device-space coords and deltas by it.
+// not identical to pct/100 because of the width rounding above
 export function getUiScale(): number {
   return achievedX
 }

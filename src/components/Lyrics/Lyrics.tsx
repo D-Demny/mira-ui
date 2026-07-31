@@ -171,13 +171,15 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
     if (offset.current < 0) offset.current = 0
     else if (offset.current > maxOffset) offset.current = maxOffset
 
+    // 2d translate + whole-pixel offsets
+    const y = -Math.round(offset.current)
     if (instant) {
       list.style.transition = 'none'
-      list.style.transform = `translate3d(0, ${-offset.current}px, 0)`
+      list.style.transform = `translate(0, ${y}px)`
       void list.offsetHeight
       list.style.transition = ''
     } else {
-      list.style.transform = `translate3d(0, ${-offset.current}px, 0)`
+      list.style.transform = `translate(0, ${y}px)`
     }
   }
 

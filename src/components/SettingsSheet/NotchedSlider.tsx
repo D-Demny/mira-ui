@@ -1,4 +1,5 @@
 import { memo, useRef } from 'react'
+import { getUiScale } from '@/uiScale'
 import styles from './NotchedSlider.module.scss'
 
 interface Props {
@@ -48,7 +49,8 @@ function NotchedSliderImpl({
     const el = barRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
-    const r = clamp((clientX - rect.left) / rect.width, 0, 1)
+    // pointer coords are device px, rects are layout px under zoom
+    const r = clamp((clientX / getUiScale() - rect.left) / rect.width, 0, 1)
     const snapped = clamp(Math.round((min + r * (max - min)) / step) * step, min, max)
     latest.current = snapped
     if (snapped !== value) onChange(snapped)
@@ -77,7 +79,7 @@ function NotchedSliderImpl({
     if (wasDragging) onCommit?.(latest.current)
   }
 
-  // a cancelled gesture must not commit — same class of bug the ProgressBar scrub
+  // a cancelled gesture must not commit: same class of bug the ProgressBar scrub
   // machine guards against, where an interrupted drag used to seek to wherever it died
   const onPointerCancel: React.PointerEventHandler<HTMLDivElement> = (e) => {
     const wasDragging = dragging.current

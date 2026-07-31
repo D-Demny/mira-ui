@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useReducer, useRef } from 'react'
 import { formatTime } from '@/utils/time'
-import { useUiScale } from '@/uiScale'
+import { getUiScale, useUiScale } from '@/uiScale'
 import type { ObserverStatusActive } from '@/api/types'
 import styles from './ProgressBar.module.scss'
 import {
@@ -31,7 +31,7 @@ function reducer(state: ScrubState, event: ScrubEvent): ScrubState {
 function ProgressBarImpl({ status, onSeek }: Props) {
   const seekDisabled = !!status.disallow_seek
   // the bar width below is measured once per effect run, so it has to re-measure when
-  // the display size changes — the status deps alone would leave it stale while paused
+  // the display size changes; the status deps alone would leave it stale while paused
   const uiScale = useUiScale()
   const fillRef = useRef<HTMLDivElement | null>(null)
   const handleRef = useRef<HTMLDivElement | null>(null)
@@ -83,9 +83,7 @@ function ProgressBarImpl({ status, onSeek }: Props) {
     const bar = barRef.current
     if (!fill || !handle || !left || !bar) return
 
-    // clientWidth, not getBoundingClientRect().width: the translate below is applied in
-    // the element's own space, so the measurement has to be layout space too. the rect
-    // is post-transform and would drift by the display scale
+    // layout-space width
     const barWidth = bar.clientWidth
 
     const playing = status.is_playing && !status.is_paused
@@ -144,7 +142,8 @@ function ProgressBarImpl({ status, onSeek }: Props) {
     if (!el) return 0
     const rect = el.getBoundingClientRect()
     if (rect.width === 0) return 0
-    return clamp01((clientX - rect.left) / rect.width)
+    // pointer coords are device px, rects are layout px under zoom
+    return clamp01((clientX / getUiScale() - rect.left) / rect.width)
   }, [])
 
   const onPointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
