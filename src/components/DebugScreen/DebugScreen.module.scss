@@ -1,0 +1,162 @@
+.root {
+  @include absolute-fill;
+  z-index: $z-debug;
+  background: $bg;
+  color: $text-primary;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 26px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.headerBtns {
+  display: flex;
+  gap: 8px;
+}
+
+.close {
+  background: $surface-elev;
+  color: $text-secondary;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 15px;
+}
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 14px;
+}
+
+.section {
+  color: $accent;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin: 12px 0 3px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 3px 0;
+  border-bottom: 1px solid $divider;
+  font-size: 15px;
+}
+
+.logs {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 14px;
+  font-family: monospace;
+}
+
+.logline {
+  font-size: 11px;
+  line-height: 1.5;
+  color: $text-secondary;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 1px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.label {
+  color: $text-secondary;
+  white-space: pre;
+}
+
+.value {
+  font-weight: 600;
+  max-width: 62%;
+  text-align: right;
+  word-break: break-word;
+}
+
+.ok {
+  color: $accent;
+}
+.warn {
+  color: #e6b800;
+}
+.bad {
+  color: #ff5a5a;
+}
+.neutral {
+  color: $text-primary;
+}
+
+.problems {
+  margin-top: 14px;
+}
+
+.problemsTitle {
+  color: $text-tertiary;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.problemNone {
+  color: $accent;
+  font-size: 14px;
+}
+
+.problem {
+  color: #ff9a9a;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.errorLine {
+  color: #ff5a5a;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 2px 0 6px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.err {
+  color: #ff5a5a;
+  font-size: 16px;
+  margin: 20px 0;
+}
+
+.hint {
+  color: $text-tertiary;
+  font-size: 13px;
+  text-align: center;
+  margin-top: 8px;
+}
+
+.reportErr {
+  align-self: center;
+  color: #ff9d5a;
+  font-size: 13px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -7,11 +7,28 @@ import { NotifyProvider } from '@/notify/NotifyProvider'
 import { VoiceNotifier } from '@/voice/VoiceNotifier'
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
 import { startUiScaleSync } from '@/uiScale'
+import { API_BASE } from '@/config'
 
-window.addEventListener('error', (e) => console.error('uncaught:', e.error ?? e.message))
-window.addEventListener('unhandledrejection', (e) =>
-  console.error('unhandled rejection:', e.reason),
-)
+let uiErrorsSent = 0
+function reportUiError(message: string) {
+  if (uiErrorsSent >= 10) return
+  uiErrorsSent++
+  void fetch(`${API_BASE}/debug/ui-error`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: message.slice(0, 300) }),
+  }).catch(() => {})
+}
+
+window.addEventListener('error', (e) => {
+  console.error('uncaught:', e.error ?? e.message)
+  const where = e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : ''
+  reportUiError(String(e.error ?? e.message) + where)
+})
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('unhandled rejection:', e.reason)
+  reportUiError('unhandled rejection: ' + String(e.reason))
+})
 
 // before render, so the ui never paints at the wrong size
 startUiScaleSync()

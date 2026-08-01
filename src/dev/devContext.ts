@@ -22,6 +22,7 @@ export type DevForcedScreen =
   | 'no-internet'
   | 'checking'
   | 'reconnect-banner'
+  | 'debug'
 
 export interface DevScreenCtx {
   forced: DevForcedScreen

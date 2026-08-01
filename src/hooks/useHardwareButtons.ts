@@ -43,12 +43,17 @@ export interface UseHardwareButtonsParams {
   onTogglePowerMenu: () => void
   // power button double-press: sleep shortcut
   onSleep: () => void
+  // hold preset 1 + 4 together for 3s: open the debug screen
+  onOpenDebug: () => void
   // top banner message for playlist msgs
   notify: NotifyFn
 }
 
 // hold a preset this long to save the current context
 const PRESET_HOLD_MS = 2000
+
+// hold preset 1 + 4 together this long to open the debug screen
+const CHORD_MS = 3000
 
 // power button: a press held longer than this is ignored (no long-press action yet?)
 const POWER_LONG_PRESS_MS = 600
@@ -76,6 +81,7 @@ export function useHardwareButtons({
   onBack,
   onTogglePowerMenu,
   onSleep,
+  onOpenDebug,
   notify,
 }: UseHardwareButtonsParams): UseHardwareButtonsResult {
   const [volumeOverlay, setVolumeOverlay] = useState<VolumeOverlayState>({
@@ -209,6 +215,17 @@ export function useHardwareButtons({
   useEffect(() => {
     const holdTimers: Record<string, number> = {}
     const saved: Record<string, boolean> = {}
+    const down: Record<string, boolean> = {}
+    let chordTimer: number | undefined
+
+    const chordCodes = ['Digit1', 'Digit4']
+    const bothChordDown = () => chordCodes.every((c) => down[c])
+    const clearChord = () => {
+      if (chordTimer != null) {
+        window.clearTimeout(chordTimer)
+        chordTimer = undefined
+      }
+    }
 
     const saveCurrentToPreset = (idx: number) => {
       const cur = statusRef.current
@@ -225,17 +242,34 @@ export function useHardwareButtons({
       const idx = presetIndexFromCode(e.code)
       if (idx == null) return
       if (e.repeat) return
-      if (holdTimers[e.code] != null) return
-      saved[e.code] = false
-      holdTimers[e.code] = window.setTimeout(() => {
-        holdTimers[e.code] = undefined as unknown as number
-        saved[e.code] = true // suppress the play on release
-        saveCurrentToPreset(idx)
-      }, PRESET_HOLD_MS)
+      down[e.code] = true
+      if (holdTimers[e.code] == null) {
+        saved[e.code] = false
+        holdTimers[e.code] = window.setTimeout(() => {
+          holdTimers[e.code] = undefined as unknown as number
+          saved[e.code] = true // suppress the play on release
+          saveCurrentToPreset(idx)
+        }, PRESET_HOLD_MS)
+      }
+      if (chordCodes.includes(e.code) && bothChordDown() && chordTimer == null) {
+        for (const c of chordCodes) {
+          if (holdTimers[c] != null) {
+            window.clearTimeout(holdTimers[c])
+            holdTimers[c] = undefined as unknown as number
+          }
+          saved[c] = true
+        }
+        chordTimer = window.setTimeout(() => {
+          chordTimer = undefined
+          onOpenDebug()
+        }, CHORD_MS)
+      }
     }
     const onKeyUp = (e: KeyboardEvent) => {
       const idx = presetIndexFromCode(e.code)
       if (idx == null) return
+      down[e.code] = false
+      if (chordCodes.includes(e.code)) clearChord()
       if (holdTimers[e.code] != null) {
         window.clearTimeout(holdTimers[e.code])
         holdTimers[e.code] = undefined as unknown as number
@@ -260,8 +294,9 @@ export function useHardwareButtons({
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       for (const t of Object.values(holdTimers)) if (t != null) window.clearTimeout(t)
+      clearChord()
     }
-  }, [playContext, notify])
+  }, [playContext, notify, onOpenDebug])
 
   // power button controls
   useEffect(() => {

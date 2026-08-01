@@ -12,6 +12,7 @@ import { Menu } from '@/components/Menu'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
 import { NoLyricsView } from '@/components/NoLyricsView'
 import { PairingDialog } from '@/components/PairingDialog'
+import { ReportDialog } from '@/components/ReportDialog'
 import { PcConnect } from '@/components/PcConnect'
 import { PowerMenu } from '@/components/PowerMenu'
 import { ProgressBar } from '@/components/ProgressBar'
@@ -20,6 +21,7 @@ import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TrackInfo } from '@/components/TrackInfo'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
+import { DebugScreen } from '@/components/DebugScreen'
 import { useDevScreen } from '@/dev/devContext'
 import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
@@ -98,6 +100,9 @@ export default function App() {
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [settingsOpenReal, setSettingsOpen] = useState(false)
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
+  const [debugOpen, setDebugOpen] = useState(false)
+  // support report id dialog
+  const [reportId, setReportId] = useState<string | null>(null)
   const [offlineMethod, setOfflineMethod] = useState<'chooser' | 'bluetooth' | 'pc'>('chooser')
   const [setupOverride, setSetupOverride] = useState(false)
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -310,6 +315,14 @@ export default function App() {
 
   // hardware back button
   const goBack = useCallback(() => {
+    if (reportId) {
+      setReportId(null)
+      return
+    }
+    if (debugOpen) {
+      setDebugOpen(false)
+      return
+    }
     if (deviceMenuOpen) {
       setDeviceMenuOpen(false)
       return
@@ -341,6 +354,8 @@ export default function App() {
     }
     // nothing to go back to
   }, [
+    reportId,
+    debugOpen,
     deviceMenuOpen,
     btMenuOpen,
     settingsOpen,
@@ -384,6 +399,10 @@ export default function App() {
     else resumeLast()
   }, [statusActive, onPlayPauseActive, resumeLast])
 
+  // stable ref so the preset/chord effect isn't torn down on every re-render
+  // (an unstable handler would clear the 1+4 chord timer before it fires)
+  const openDebug = useCallback(() => setDebugOpen(true), [])
+
   const hardware = useHardwareButtons({
     status: status && status.active ? status : null,
     onPlayPause: onHardwarePlayPause,
@@ -392,6 +411,7 @@ export default function App() {
     onBack: goBack,
     onTogglePowerMenu: () => setPowerMenuOpen((v) => !v),
     onSleep,
+    onOpenDebug: openDebug,
     notify,
   })
 
@@ -429,7 +449,9 @@ export default function App() {
         />
       ) : null}
       {btMenuOpen ? <BluetoothMenu online={online} onClose={() => setBtMenuOpen(false)} /> : null}
+      <DebugScreen open={debugOpen} onClose={() => setDebugOpen(false)} onReport={setReportId} />
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
+      {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
     </>
   )
 
@@ -473,6 +495,14 @@ export default function App() {
       <div className={styles.app}>
         <BootSplash />
         {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'debug') {
+    return (
+      <div className={styles.app}>
+        <DebugScreen open onClose={() => setForced(null)} onReport={setReportId} />
+        {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
       </div>
     )
   }
