@@ -55,6 +55,7 @@ const KaraokeLine = memo(function KaraokeLine({
   return (
     <div
       className={cls}
+      dir="auto"
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
@@ -106,10 +107,20 @@ const LyricLine = memo(function LyricLine({
           ? `${styles.line} ${styles.lineFar}`
           : `${styles.line} ${styles.lineUnsynced}`
   if (!onClick) {
-    return <div className={cls}>{text}</div>
+    return (
+      <div className={cls} dir="auto">
+        {text}
+      </div>
+    )
   }
   return (
-    <div className={`${cls} ${styles.lineClickable}`} role="button" tabIndex={0} onClick={onClick}>
+    <div
+      className={`${cls} ${styles.lineClickable}`}
+      dir="auto"
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+    >
       {text}
     </div>
   )
