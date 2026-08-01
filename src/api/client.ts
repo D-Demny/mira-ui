@@ -1,6 +1,7 @@
 import { API_BASE, WS_URL } from '@/config'
 import type {
   ConnectDevice,
+  DebugStatus,
   LyricsResult,
   ObserverStatus,
   ObserverStatusActive,
@@ -74,6 +75,21 @@ export async function fetchObserverStatus(signal?: AbortSignal): Promise<Observe
     return { ...(body as Omit<ObserverStatusActive, 'received_at'>), received_at: Date.now() }
   }
   return body as ObserverStatus
+}
+
+export async function fetchDebugStatus(signal?: AbortSignal): Promise<DebugStatus> {
+  const res = await fetch(`${API_BASE}/debug/status`, { signal, cache: 'no-store' })
+  if (!res.ok) throw new Error(`debug/status ${res.status}`)
+  return (await res.json()) as DebugStatus
+}
+
+// uploads the support bundle via the daemon
+export async function sendDebugReport(signal?: AbortSignal): Promise<string> {
+  const res = await fetch(`${API_BASE}/debug/report`, { method: 'POST', signal })
+  const body = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(body?.error || `debug/report ${res.status}`)
+  if (!body?.id) throw new Error('no report id')
+  return body.id as string
 }
 
 export async function fetchConnectDevices(signal?: AbortSignal): Promise<ConnectDevice[]> {

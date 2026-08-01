@@ -82,6 +82,7 @@ const SCREENS: ScreenDef[] = [
   { id: 'no-internet', label: 'No internet (prolonged)', hint: 'Reconnecting escalated + Restart' },
   { id: 'checking', label: 'Checking connection', hint: 'Grace splash before no-internet' },
   { id: 'reconnect-banner', label: 'Reconnect banner', hint: 'Transient drop over the player' },
+  { id: 'debug', label: 'Debug screen', hint: 'Diagnostics (hold presets 1+4 on device)' },
 ]
 
 export function DevOverlay() {

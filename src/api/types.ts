@@ -202,3 +202,35 @@ export interface RemoteStateWire {
   NextTracks?: QueueTrack[]
   RawMetadata?: Record<string, string> | null
 }
+
+// debug screen snapshot
+export interface DebugStatus {
+  firmware_version: string
+  daemon_version: string
+  uptime_secs: number
+  daemon_uptime_secs: number
+  clock_time: string
+  clock_ok: boolean
+  ram_free_mb: number
+  ram_total_mb: number
+  disk_free_mb: number
+  temp_c: number
+  load_1m: string
+  ws_clients: number
+  online: boolean
+  network_path: string
+  ip: string
+  dns_servers: number
+  usb_bounces: number
+  internet_drops: number
+  tether_health: string
+  spotify: string
+  bluetooth_device: string
+  phone_volume: string
+  phone_volume_err: string
+  android_volume: string
+  voice_enabled: boolean
+  voice_ready: boolean
+  recent_problems: string[]
+  previous_problems: string[]
+}

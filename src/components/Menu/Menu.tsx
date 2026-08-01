@@ -1,5 +1,6 @@
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import styles from './Menu.module.scss'
+import { fetchDebugStatus } from '@/api/client'
 
 export type RepeatMode = 'off' | 'context' | 'track'
 
@@ -57,6 +58,7 @@ function MenuImpl({
           onClick={onToggleKaraoke}
         />
         <Row label="Mic" value={voiceMic ? 'On' : 'Off'} onClick={onToggleVoiceMic} />
+        <PhoneVolumeRow open={open} />
         <Row label="Devices" value={currentDevice ?? 'Switch'} onClick={onOpenDevices} />
         <Row label="Bluetooth Pairing" value="" onClick={onOpenBluetooth} />
         <Row label="Settings" value="" onClick={onOpenSettings} />
@@ -71,6 +73,47 @@ function Row({ label, value, onClick }: { label: string; value: string; onClick:
       <span className={styles.rowLabel}>{label}</span>
       <span className={styles.rowValue}>{value}</span>
     </button>
+  )
+}
+
+// read iPhone volume (iAP2) status
+function PhoneVolumeRow({ open }: { open: boolean }) {
+  const [state, setState] = useState('')
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    const load = async () => {
+      try {
+        const s = await fetchDebugStatus()
+        if (alive) setState(s.phone_volume)
+      } catch {
+        // menu still works without it
+      }
+    }
+    void load()
+    const id = window.setInterval(load, 2000)
+    return () => {
+      alive = false
+      window.clearInterval(id)
+    }
+  }, [open])
+
+  if (!state || state === 'idle' || state === 'no bluetooth') return null
+  const label =
+    state === 'connected'
+      ? 'Connected'
+      : state === 'connecting'
+        ? 'Connecting'
+        : state === 'disconnected'
+          ? 'Not connected'
+          : state.startsWith('unavailable')
+            ? 'Unavailable'
+            : state
+  return (
+    <div className={styles.row}>
+      <span className={styles.rowLabel}>iPhone volume</span>
+      <span className={styles.rowValue}>{label}</span>
+    </div>
   )
 }
 
