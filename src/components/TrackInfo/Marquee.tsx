@@ -44,7 +44,7 @@ function MarqueeImpl({ text, className }: Props) {
       ref={wrapRef}
       className={`${styles.wrap} ${animate ? styles.animating : ''} ${className ?? ''}`}
     >
-      <div ref={innerRef} className={styles.inner}>
+      <div ref={innerRef} className={styles.inner} dir="auto">
         {text}
       </div>
     </div>
