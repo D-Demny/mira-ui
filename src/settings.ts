@@ -53,11 +53,7 @@ function coerceUiScale(raw: unknown): number {
   // Number(null) and Number('') are both 0, which would silently clamp to the minimum
   // rather than fall back, so only numbers and non-blank numeric strings get through
   const n =
-    typeof raw === 'number'
-      ? raw
-      : typeof raw === 'string' && raw.trim() !== ''
-        ? Number(raw)
-        : NaN
+    typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN
   if (!Number.isFinite(n)) return DEFAULTS.uiScalePct
   return clamp(Math.round(n / UI_SCALE_STEP) * UI_SCALE_STEP, UI_SCALE_MIN, UI_SCALE_MAX)
 }

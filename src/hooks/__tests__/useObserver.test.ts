@@ -219,7 +219,10 @@ describe('useObserver', () => {
 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 10))
-      fireEvent({ type: 'observer_state_changed', data: { ...baseWire, TrackName: 'Fresh from WS' } })
+      fireEvent({
+        type: 'observer_state_changed',
+        data: { ...baseWire, TrackName: 'Fresh from WS' },
+      })
     })
     expect(result.current.status).toMatchObject({ track_name: 'Fresh from WS' })
 

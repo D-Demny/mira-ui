@@ -97,13 +97,21 @@ function StatusView({ status }: { status: DebugStatus }) {
       />
 
       <Section title="Network" />
-      <Row label="Internet" value={status.online ? 'online' : 'offline'} tone={status.online ? 'ok' : 'bad'} />
+      <Row
+        label="Internet"
+        value={status.online ? 'online' : 'offline'}
+        tone={status.online ? 'ok' : 'bad'}
+      />
       <Row
         label="Path"
         value={status.network_path === 'none' ? 'none' : `${status.network_path} ${status.ip}`}
         tone={status.network_path === 'none' ? 'bad' : 'ok'}
       />
-      <Row label="DNS servers" value={String(status.dns_servers)} tone={status.dns_servers > 0 ? 'ok' : 'bad'} />
+      <Row
+        label="DNS servers"
+        value={String(status.dns_servers)}
+        tone={status.dns_servers > 0 ? 'ok' : 'bad'}
+      />
       <Row
         label="Internet drops"
         value={String(status.internet_drops)}
@@ -136,15 +144,29 @@ function StatusView({ status }: { status: DebugStatus }) {
       />
 
       <Section title="Phone volume" />
-      <Row label="Connected phone" value={status.bluetooth_device || 'none'} tone={status.bluetooth_device ? 'ok' : 'neutral'} />
-      <Row label="iPhone (iAP2)" value={status.phone_volume} tone={phoneTone(status.phone_volume)} />
+      <Row
+        label="Connected phone"
+        value={status.bluetooth_device || 'none'}
+        tone={status.bluetooth_device ? 'ok' : 'neutral'}
+      />
+      <Row
+        label="iPhone (iAP2)"
+        value={status.phone_volume}
+        tone={phoneTone(status.phone_volume)}
+      />
       {status.phone_volume_err && (
         <div className={styles.errorLine}>iAP2 error: {status.phone_volume_err}</div>
       )}
       <Row
         label="Android (HID)"
         value={status.android_volume}
-        tone={status.android_volume === 'ready' ? 'ok' : status.android_volume === 'off' ? 'neutral' : 'warn'}
+        tone={
+          status.android_volume === 'ready'
+            ? 'ok'
+            : status.android_volume === 'off'
+              ? 'neutral'
+              : 'warn'
+        }
       />
 
       <Section title="Voice" />

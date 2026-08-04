@@ -83,7 +83,7 @@ function open() {
     } catch {
       return
     }
-    if (evt.type === 'ping') return 
+    if (evt.type === 'ping') return
     for (const fn of [...listeners]) {
       try {
         fn(evt)
