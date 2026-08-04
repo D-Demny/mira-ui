@@ -56,7 +56,13 @@ export default function App() {
     [notify, seek],
   )
   usePrefetch(realStatus)
-  const { online, carriers, pairing: realPairing, trouble: btTrouble, setDiscoverable } = useBluetooth()
+  const {
+    online,
+    carriers,
+    pairing: realPairing,
+    trouble: btTrouble,
+    setDiscoverable,
+  } = useBluetooth()
   const connectDevices = useConnectDevices()
   const { devices: knownDevices } = useKnownDevices(true) // paired bt devices
   const hasKnownDevice = (knownDevices?.length ?? 0) > 0
