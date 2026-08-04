@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: install
+        run: npm ci
+      - name: prettier
+        run: npx prettier --check .
+      - name: typecheck
+        run: npm run typecheck
+      - name: lint
+        run: npm run lint
+      - name: test
+        run: npm test
+      - name: build
+        run: npm run build
+
+  trigger-firmware-build:
+    if: github.event_name == 'push'
+    needs: [ci]
+    runs-on: ubuntu-latest
+    steps:
+      - name: dispatch to mira-firmware
+        env:
+          TOKEN: ${{ secrets.FIRMWARE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "FIRMWARE_DISPATCH_TOKEN not set - skipping"
+            exit 0
+          fi
+          curl -sf -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/mira-thing/mira-firmware/dispatches \
+            -d '{"event_type":"upstream-push","client_payload":{"repo":"${{ github.repository }}","sha":"${{ github.sha }}"}}'
