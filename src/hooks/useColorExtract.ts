@@ -8,10 +8,10 @@ const SAMPLE = 32
 
 const TARGET_S = 1
 const TARGET_L = 0.5
-const MIN_S = 0.35 
+const MIN_S = 0.35
 const MIN_L = 0.3
 const MAX_L = 0.7
-const W_S = 3 
+const W_S = 3
 const W_L = 1
 const W_POP = 1
 
