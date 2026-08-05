@@ -232,6 +232,56 @@ describe('useObserver', () => {
     expect(result.current.status).toMatchObject({ track_name: 'Fresh from WS' })
   })
 
+  it('tracks setup_progress events monotonically', async () => {
+    server.use(http.get('*/observer/status', () => new Promise(() => undefined)))
+
+    const { result } = renderHook(() => useObserver())
+    expect(result.current.setupProgress).toBeNull()
+
+    await act(async () => {
+      fireEvent({
+        type: 'setup_progress',
+        data: { stage: 'liked', done: 100, total: 400, percent: 6.25 },
+      })
+    })
+    expect(result.current.setupProgress).toMatchObject({ stage: 'liked', percent: 6.25 })
+
+    await act(async () => {
+      fireEvent({
+        type: 'setup_progress',
+        data: { stage: 'playlists', done: 10, total: 20, percent: 27.5 },
+      })
+    })
+    expect(result.current.setupProgress).toMatchObject({ stage: 'playlists', percent: 27.5 })
+
+    // a lower percent must never move the bar backwards
+    await act(async () => {
+      fireEvent({
+        type: 'setup_progress',
+        data: { stage: 'playlists', done: 5, total: 20, percent: 26 },
+      })
+    })
+    expect(result.current.setupProgress).toMatchObject({ percent: 27.5 })
+  })
+
+  it('picks up setting_up_progress from the polled status', async () => {
+    server.use(
+      http.get('*/observer/status', () =>
+        HttpResponse.json({
+          active: false,
+          message: 'setting things up',
+          setting_up: true,
+          setting_up_progress: { stage: 'liked', done: 50, total: 400, percent: 3.1 },
+        }),
+      ),
+    )
+
+    const { result } = renderHook(() => useObserver())
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.setupProgress).toMatchObject({ stage: 'liked', percent: 3.1 })
+  })
+
   it('polls again after POLL_MS even if WS events keep state fresh', async () => {
     vi.useFakeTimers({
       toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],

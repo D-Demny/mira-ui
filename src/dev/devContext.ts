@@ -8,6 +8,7 @@ export type DevForcedScreen =
   | 'pc-connect'
   | 'needs-network'
   | 'starting'
+  | 'setting-up'
   | 'boot-splash'
   | 'auth'
   | 'idle'

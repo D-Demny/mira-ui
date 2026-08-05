@@ -2,6 +2,15 @@ export interface ObserverStatusInactive {
   active: false
   message?: string
   setting_up?: boolean
+  setting_up_progress?: SetupProgress
+}
+
+// first-run library indexing progress ('setup_progress' event + status field)
+export interface SetupProgress {
+  stage: string
+  done: number
+  total: number
+  percent: number
 }
 
 // a selectable spotify connect device
@@ -59,6 +68,7 @@ export interface ObserverStatusActive {
   raw_metadata?: Record<string, string> | null
   received_at: number
   setting_up?: boolean
+  setting_up_progress?: SetupProgress
 }
 
 export type ObserverStatus = ObserverStatusActive | ObserverStatusInactive
@@ -103,6 +113,7 @@ export type ApiEventType =
   | 'bluetooth/bond-lost'
   | 'network_status'
   | 'voice'
+  | 'setup_progress'
   | string
 
 export interface ApiEvent<T = unknown> {
