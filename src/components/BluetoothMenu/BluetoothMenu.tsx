@@ -45,6 +45,14 @@ function BluetoothMenuImpl({ online, onClose }: Props) {
     }
   }, [])
 
+  useEffect(() => {
+    if (!pairMode) return
+    const id = window.setInterval(() => {
+      bt.setDiscoverable(true).catch(() => {})
+    }, 3000)
+    return () => window.clearInterval(id)
+  }, [pairMode])
+
   // a successful pair completes pair mode
   useEffect(() => {
     return subscribeEvents((evt) => {
