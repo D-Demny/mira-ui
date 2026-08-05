@@ -126,6 +126,22 @@ $bar-color: $accent;
   line-height: 1.5;
 }
 
+.progressTrack {
+  width: 340px;
+  height: 6px;
+  border-radius: $r-pill;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: $r-pill;
+  background: $accent;
+  box-shadow: 0 0 10px rgba(30, 215, 96, 0.4);
+  transition: width $dur-slow $ease-standard;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bar {
     animation: none;

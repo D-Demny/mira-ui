@@ -1,13 +1,14 @@
 import { useEffect, useReducer } from 'react'
 import { fetchObserverStatus, remoteStateToStatus } from '@/api/client'
 import { subscribeConnection, subscribeEvents } from '@/api/eventBus'
-import type { ApiEvent, ObserverStatus, RemoteStateWire } from '@/api/types'
+import type { ApiEvent, ObserverStatus, RemoteStateWire, SetupProgress } from '@/api/types'
 
 interface ObserverState {
   status: ObserverStatus | null
   loading: boolean
   error: string | null
   connected: boolean
+  setupProgress: SetupProgress | null
 }
 
 type Action =
@@ -15,12 +16,23 @@ type Action =
   | { type: 'status'; status: ObserverStatus }
   | { type: 'error'; error: string }
   | { type: 'ws'; connected: boolean }
+  | { type: 'setup_progress'; progress: SetupProgress }
 
 const initial: ObserverState = {
   status: null,
   loading: true,
   error: null,
   connected: false,
+  setupProgress: null,
+}
+
+function mergeProgress(
+  prev: SetupProgress | null,
+  next: SetupProgress | undefined,
+): SetupProgress | null {
+  if (!next) return prev
+  if (prev && next.percent < prev.percent) return prev
+  return next
 }
 
 function reducer(state: ObserverState, action: Action): ObserverState {
@@ -34,12 +46,20 @@ function reducer(state: ObserverState, action: Action): ObserverState {
         incoming.setting_up === undefined && prev !== undefined
           ? { ...incoming, setting_up: prev }
           : incoming
-      return { ...state, status, loading: false, error: null }
+      return {
+        ...state,
+        status,
+        loading: false,
+        error: null,
+        setupProgress: mergeProgress(state.setupProgress, incoming.setting_up_progress),
+      }
     }
     case 'error':
       return { ...state, error: action.error, loading: false }
     case 'ws':
       return { ...state, connected: action.connected }
+    case 'setup_progress':
+      return { ...state, setupProgress: mergeProgress(state.setupProgress, action.progress) }
   }
 }
 
@@ -78,6 +98,12 @@ export function useObserver() {
         const status = remoteStateToStatus(rs)
         lastEventAt = Date.now()
         dispatch({ type: 'status', status })
+        return
+      }
+
+      if (evt.type === 'setup_progress') {
+        const p = evt.data as SetupProgress
+        if (p && typeof p.percent === 'number') dispatch({ type: 'setup_progress', progress: p })
         return
       }
 

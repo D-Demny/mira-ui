@@ -61,6 +61,7 @@ const SCREENS: ScreenDef[] = [
   { id: 'needs-network', label: 'Bluetooth connect', hint: 'BT pairing sub-screen' },
   { id: 'boot-splash', label: 'Boot splash', hint: 'Animated brand splash' },
   { id: 'starting', label: 'Starting up', hint: 'Boot splash w/ caption' },
+  { id: 'setting-up', label: 'Setting up', hint: 'First-run indexing w/ progress bar' },
   { id: 'auth', label: 'Auth (QR code)', hint: 'OAuth pairing screen' },
   { id: 'idle', label: 'Idle (no playback)' },
   { id: 'playing-lyrics', label: 'Playing: lyrics' },
