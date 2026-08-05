@@ -19,6 +19,7 @@ import { ProgressBar } from '@/components/ProgressBar'
 import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBanner'
 import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { SettingsSheet } from '@/components/SettingsSheet'
+import { SponsorScreen } from '@/components/SponsorScreen'
 import { TrackInfo } from '@/components/TrackInfo'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
 import { DebugScreen } from '@/components/DebugScreen'
@@ -42,6 +43,9 @@ import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
 import { artSizeFor, heroArtSizeFor } from '@/uiScale'
 import styles from './App.module.scss'
+
+const SPONSOR_SHOWN_KEY = 'mira.sponsorShown'
+const SPONSOR_AFTER_PLAY_MS = 3 * 60 * 1000
 
 export default function App() {
   const auth = useAuth()
@@ -109,6 +113,26 @@ export default function App() {
   const [debugOpen, setDebugOpen] = useState(false)
   // support report id dialog
   const [reportId, setReportId] = useState<string | null>(null)
+
+  // one-time sponsor screen
+  const [sponsorOpenReal, setSponsorOpen] = useState(false)
+  const sponsorShownRef = useRef(false)
+  useEffect(() => {
+    try {
+      sponsorShownRef.current = window.localStorage.getItem(SPONSOR_SHOWN_KEY) === '1'
+    } catch {
+      sponsorShownRef.current = true
+    }
+  }, [])
+  const closeSponsor = useCallback(() => {
+    sponsorShownRef.current = true
+    try {
+      window.localStorage.setItem(SPONSOR_SHOWN_KEY, '1')
+    } catch {
+      // ignore
+    }
+    setSponsorOpen(false)
+  }, [])
   const [offlineMethod, setOfflineMethod] = useState<'chooser' | 'bluetooth' | 'pc'>('chooser')
   const [setupOverride, setSetupOverride] = useState(false)
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -313,10 +337,38 @@ export default function App() {
     void suspendDevice().catch(() => {})
   }, [closePowerMenu])
 
+  // show the sponsor screen once the first-run indexing finishes
+  const wasSettingUpRef = useRef(false)
+  useEffect(() => {
+    if (realStatus?.setting_up === true) {
+      wasSettingUpRef.current = true
+      return
+    }
+    if (wasSettingUpRef.current && realStatus != null) {
+      wasSettingUpRef.current = false
+      if (!sponsorShownRef.current) setSponsorOpen(true)
+    }
+  }, [realStatus])
+
+  // devices set up before this existed never see the setting_up transition
+  const playbackActive = realStatus?.active === true
+  const stillSettingUp = realStatus?.setting_up === true
+  useEffect(() => {
+    if (!playbackActive || stillSettingUp || sponsorShownRef.current) return
+    const t = window.setTimeout(() => {
+      if (!sponsorShownRef.current) setSponsorOpen(true)
+    }, SPONSOR_AFTER_PLAY_MS)
+    return () => window.clearTimeout(t)
+  }, [playbackActive, stillSettingUp])
+
   // hardware back button
   const goBack = useCallback(() => {
     if (reportId) {
       setReportId(null)
+      return
+    }
+    if (sponsorOpenReal) {
+      closeSponsor()
       return
     }
     if (debugOpen) {
@@ -355,6 +407,8 @@ export default function App() {
     // nothing to go back to
   }, [
     reportId,
+    sponsorOpenReal,
+    closeSponsor,
     debugOpen,
     deviceMenuOpen,
     btMenuOpen,
@@ -434,7 +488,14 @@ export default function App() {
   const globalOverlays = (
     <>
       <VolumeOverlay state={hardware.volumeOverlay} />
-      <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
+      <PowerMenu
+        open={powerMenuOpen}
+        onClose={closePowerMenu}
+        onSupport={() => {
+          closePowerMenu()
+          setSponsorOpen(true)
+        }}
+      />
       <SettingsSheet
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -452,6 +513,7 @@ export default function App() {
       <DebugScreen open={debugOpen} onClose={() => setDebugOpen(false)} onReport={setReportId} />
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
       {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
+      {sponsorOpenReal ? <SponsorScreen onClose={closeSponsor} /> : null}
     </>
   )
 
@@ -495,6 +557,13 @@ export default function App() {
       <div className={styles.app}>
         <BootSplash />
         {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'sponsor') {
+    return (
+      <div className={styles.app}>
+        <SponsorScreen onClose={() => setForced(null)} />
       </div>
     )
   }

@@ -23,6 +23,7 @@ export type DevForcedScreen =
   | 'checking'
   | 'reconnect-banner'
   | 'debug'
+  | 'sponsor'
 
 export interface DevScreenCtx {
   forced: DevForcedScreen

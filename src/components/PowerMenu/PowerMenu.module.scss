@@ -78,6 +78,15 @@
   color: #e25b5b;
 }
 
+.support {
+  color: #f06db4;
+  background: rgba(240, 109, 180, 0.1);
+
+  &:active:not(:disabled) {
+    background: rgba(240, 109, 180, 0.18);
+  }
+}
+
 .confirm {
   width: 100%;
   @include column;
