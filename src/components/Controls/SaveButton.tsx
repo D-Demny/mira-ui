@@ -48,10 +48,10 @@ function SaveButtonImpl({ saved, onToggle }: Props) {
     >
       <span className={styles.icons}>
         <span className={styles.outline}>
-          <SaveOutlineIcon size={32} />
+          <SaveOutlineIcon size={36} />
         </span>
         <span className={styles.filled}>
-          <SaveFilledIcon size={32} />
+          <SaveFilledIcon size={36} />
         </span>
       </span>
       {burst > 0 ? (

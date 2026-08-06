@@ -72,7 +72,7 @@ function ControlsImpl({
             aria-label="Rewind 15 seconds"
             onClick={onRewind15}
           >
-            <SeekBack15Icon size={28} />
+            <SeekBack15Icon size={32} />
           </button>
         ) : (
           <button
@@ -82,7 +82,7 @@ function ControlsImpl({
             aria-pressed={shuffle}
             onClick={onToggleShuffle}
           >
-            <ShuffleIcon size={28} />
+            <ShuffleIcon size={32} />
           </button>
         )}
 
@@ -94,7 +94,7 @@ function ControlsImpl({
           disabled={disallowPrev}
           onClick={disallowPrev ? undefined : onPrev}
         >
-          <PrevIcon size={36} />
+          <PrevIcon size={40} />
         </button>
 
         <button
@@ -103,7 +103,7 @@ function ControlsImpl({
           aria-label={isPaused ? 'Play' : 'Pause'}
           onClick={onPlayPause}
         >
-          {isPaused ? <PlayIcon size={32} /> : <PauseIcon size={32} />}
+          {isPaused ? <PlayIcon size={36} /> : <PauseIcon size={36} />}
         </button>
 
         <button
@@ -114,7 +114,7 @@ function ControlsImpl({
           disabled={disallowNext}
           onClick={disallowNext ? undefined : onNext}
         >
-          <NextIcon size={36} />
+          <NextIcon size={40} />
         </button>
 
         {isPodcast ? (
@@ -124,7 +124,7 @@ function ControlsImpl({
             aria-label="Forward 15 seconds"
             onClick={onForward15}
           >
-            <SeekForward15Icon size={28} />
+            <SeekForward15Icon size={32} />
           </button>
         ) : (
           <button
@@ -134,7 +134,7 @@ function ControlsImpl({
             aria-pressed={repeatActive}
             onClick={onCycleRepeat}
           >
-            {repeat === 'track' ? <RepeatOneIcon size={28} /> : <RepeatIcon size={28} />}
+            {repeat === 'track' ? <RepeatOneIcon size={32} /> : <RepeatIcon size={32} />}
           </button>
         )}
       </div>
@@ -146,7 +146,7 @@ function ControlsImpl({
           aria-label="More"
           onClick={onMore}
         >
-          <MoreIcon size={24} />
+          <MoreIcon size={28} />
         </button>
       </div>
     </div>
