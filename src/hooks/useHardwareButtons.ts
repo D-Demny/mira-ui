@@ -41,8 +41,8 @@ export interface UseHardwareButtonsParams {
   onBack: () => void
   // power button (KeyM): short press opens the power menu
   onTogglePowerMenu: () => void
-  // power button double-press: sleep shortcut
-  onSleep: () => void
+  // power button double-press: opens the clock screensaver
+  onScreensaver: () => void
   // hold preset 1 + 4 together for 3s: open the debug screen
   onOpenDebug: () => void
   // top banner message for playlist msgs
@@ -80,7 +80,7 @@ export function useHardwareButtons({
   playContext,
   onBack,
   onTogglePowerMenu,
-  onSleep,
+  onScreensaver,
   onOpenDebug,
   notify,
 }: UseHardwareButtonsParams): UseHardwareButtonsResult {
@@ -319,10 +319,10 @@ export function useHardwareButtons({
       // a deliberate hold does nothing yet?
       if (held >= POWER_LONG_PRESS_MS) return
       if (pendingSingle != null) {
-        // second tap within the window -> double press -> sleep
+        // second tap within the window -> double press -> screensaver
         window.clearTimeout(pendingSingle)
         pendingSingle = undefined
-        onSleep()
+        onScreensaver()
       } else {
         pendingSingle = window.setTimeout(() => {
           pendingSingle = undefined
@@ -337,7 +337,7 @@ export function useHardwareButtons({
       window.removeEventListener('keyup', onKeyUp)
       if (pendingSingle != null) window.clearTimeout(pendingSingle)
     }
-  }, [onTogglePowerMenu, onSleep])
+  }, [onTogglePowerMenu, onScreensaver])
 
   // clean up timers
   useEffect(

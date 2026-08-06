@@ -85,6 +85,7 @@ const SCREENS: ScreenDef[] = [
   { id: 'reconnect-banner', label: 'Reconnect banner', hint: 'Transient drop over the player' },
   { id: 'debug', label: 'Debug screen', hint: 'Diagnostics (hold presets 1+4 on device)' },
   { id: 'sponsor', label: 'Sponsor screen', hint: 'One-time support QR after setup' },
+  { id: 'screensaver', label: 'Screensaver', hint: 'Clock over ambient art (double power press)' },
 ]
 
 export function DevOverlay() {
