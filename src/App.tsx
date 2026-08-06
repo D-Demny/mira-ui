@@ -18,6 +18,7 @@ import { PowerMenu } from '@/components/PowerMenu'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBanner'
 import { ReconnectingScreen } from '@/components/ReconnectingScreen'
+import { Screensaver } from '@/components/Screensaver'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { SponsorScreen } from '@/components/SponsorScreen'
 import { TrackInfo } from '@/components/TrackInfo'
@@ -28,7 +29,6 @@ import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
 import { useBluetooth } from '@/hooks/useBluetooth'
 import { useConnectDevices } from '@/hooks/useConnectDevices'
-import { suspendDevice } from '@/api/system'
 import { useControls } from '@/hooks/useControls'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
 import { useKnownDevices } from '@/hooks/useKnownDevices'
@@ -46,6 +46,8 @@ import styles from './App.module.scss'
 
 const SPONSOR_SHOWN_KEY = 'mira.sponsorShown'
 const SPONSOR_AFTER_PLAY_MS = 3 * 60 * 1000
+const LAST_ART_KEY = 'mira.lastArtUrl'
+const UTC_OFFSET_KEY = 'mira.utcOffsetMin'
 
 export default function App() {
   const auth = useAuth()
@@ -113,6 +115,10 @@ export default function App() {
   const [debugOpen, setDebugOpen] = useState(false)
   // support report id dialog
   const [reportId, setReportId] = useState<string | null>(null)
+
+  const [screensaverOpen, setScreensaverOpen] = useState(false)
+  // 'auto' = opened by the idle timer
+  const [screensaverBy, setScreensaverBy] = useState<'manual' | 'auto'>('manual')
 
   // one-time sponsor screen
   const [sponsorOpenReal, setSponsorOpen] = useState(false)
@@ -268,6 +274,57 @@ export default function App() {
   const pairing =
     forced === 'pairing' ? { address: 'AB:CD:EF:01:23:45', passkey: '123456' } : realPairing
 
+  // auto screensaver: only ever from the true idle screen, after 10 quiet
+  // minutes; any user input resets the countdown. Not a setting on purpose.
+  const SCREENSAVER_AUTO_MS = 10 * 60 * 1000
+  const screensaverAutoEligible =
+    !screensaverOpen &&
+    !forced &&
+    !loading &&
+    !auth.required &&
+    !reconnecting &&
+    realStatus != null &&
+    realStatus.active !== true &&
+    realStatus.setting_up !== true &&
+    !menuOpen &&
+    !powerMenuOpen &&
+    !btMenuOpen &&
+    !settingsOpen &&
+    !deviceMenuOpen &&
+    !debugOpen &&
+    !sponsorOpenReal &&
+    !reportId &&
+    !pairing
+  useEffect(() => {
+    if (!screensaverAutoEligible) return
+    const open = () => {
+      setScreensaverBy('auto')
+      setScreensaverOpen(true)
+    }
+    let t = window.setTimeout(open, SCREENSAVER_AUTO_MS)
+    const reset = () => {
+      window.clearTimeout(t)
+      t = window.setTimeout(open, SCREENSAVER_AUTO_MS)
+    }
+    window.addEventListener('pointerdown', reset, { capture: true })
+    window.addEventListener('keydown', reset, { capture: true })
+    window.addEventListener('wheel', reset, { capture: true })
+    return () => {
+      window.clearTimeout(t)
+      window.removeEventListener('pointerdown', reset, { capture: true })
+      window.removeEventListener('keydown', reset, { capture: true })
+      window.removeEventListener('wheel', reset, { capture: true })
+    }
+  }, [screensaverAutoEligible, SCREENSAVER_AUTO_MS])
+
+  // an auto-opened saver yields to real playback; a manual one stays (desk
+  // mode) and cross-fades its art instead
+  useEffect(() => {
+    if (screensaverOpen && screensaverBy === 'auto' && realStatus?.active === true) {
+      setScreensaverOpen(false)
+    }
+  }, [screensaverOpen, screensaverBy, realStatus])
+
   const OFFLINE_HOLDOFF_MS = 10000
   const [offlineHeld, setOfflineHeld] = useState(false)
   useEffect(() => {
@@ -332,10 +389,40 @@ export default function App() {
     if (forced === 'power-menu') setForced('playing-lyrics')
   }, [forced, setForced])
 
-  const onSleep = useCallback(() => {
+  const onOpenScreensaver = useCallback(() => {
     closePowerMenu()
-    void suspendDevice().catch(() => {})
+    setScreensaverBy('manual')
+    setScreensaverOpen(true)
   }, [closePowerMenu])
+
+  // remember the last album art for the screensavers ambient background
+  useEffect(() => {
+    if (realStatus?.active !== true || !realStatus.track_image) return
+    try {
+      window.localStorage.setItem(LAST_ART_KEY, realStatus.track_image)
+    } catch {
+      // ignore
+    }
+  }, [realStatus])
+
+  const [utcOffsetMin, setUtcOffsetMin] = useState<number | null>(() => {
+    try {
+      const v = window.localStorage.getItem(UTC_OFFSET_KEY)
+      return v == null ? null : Number(v)
+    } catch {
+      return null
+    }
+  })
+  useEffect(() => {
+    const v = realStatus?.utc_offset_min
+    if (typeof v !== 'number') return
+    setUtcOffsetMin(v)
+    try {
+      window.localStorage.setItem(UTC_OFFSET_KEY, String(v))
+    } catch {
+      // ignore
+    }
+  }, [realStatus])
 
   // show the sponsor screen once the first-run indexing finishes
   const wasSettingUpRef = useRef(false)
@@ -363,6 +450,10 @@ export default function App() {
 
   // hardware back button
   const goBack = useCallback(() => {
+    if (screensaverOpen) {
+      setScreensaverOpen(false)
+      return
+    }
     if (reportId) {
       setReportId(null)
       return
@@ -406,6 +497,7 @@ export default function App() {
     }
     // nothing to go back to
   }, [
+    screensaverOpen,
     reportId,
     sponsorOpenReal,
     closeSponsor,
@@ -463,8 +555,14 @@ export default function App() {
     setVolume,
     playContext,
     onBack: goBack,
-    onTogglePowerMenu: () => setPowerMenuOpen((v) => !v),
-    onSleep,
+    onTogglePowerMenu: () => {
+      if (screensaverOpen) {
+        setScreensaverOpen(false)
+        return
+      }
+      setPowerMenuOpen((v) => !v)
+    },
+    onScreensaver: onOpenScreensaver,
     onOpenDebug: openDebug,
     notify,
   })
@@ -484,6 +582,19 @@ export default function App() {
     onToggleView: toggleLyrics,
     enabled: swipeEnabled,
   })
+
+  // ambient screensaver background
+  let screensaverArt: string | null = null
+  if (screensaverOpen || forced === 'screensaver') {
+    let storedArt: string | null = null
+    try {
+      storedArt = window.localStorage.getItem(LAST_ART_KEY)
+    } catch {
+      // ignore
+    }
+    screensaverArt =
+      (status?.active === true ? status.track_image : '') || heldStatus?.track_image || storedArt
+  }
 
   const globalOverlays = (
     <>
@@ -514,6 +625,13 @@ export default function App() {
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
       {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
       {sponsorOpenReal ? <SponsorScreen onClose={closeSponsor} /> : null}
+      {screensaverOpen ? (
+        <Screensaver
+          artUrl={screensaverArt}
+          utcOffsetMin={utcOffsetMin}
+          onClose={() => setScreensaverOpen(false)}
+        />
+      ) : null}
     </>
   )
 
@@ -572,6 +690,17 @@ export default function App() {
     return (
       <div className={styles.app}>
         <SponsorScreen onClose={() => setForced(null)} />
+      </div>
+    )
+  }
+  if (forced === 'screensaver') {
+    return (
+      <div className={styles.app}>
+        <Screensaver
+          artUrl={mockStatus.track_image}
+          utcOffsetMin={utcOffsetMin}
+          onClose={() => setForced(null)}
+        />
       </div>
     )
   }

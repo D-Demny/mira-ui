@@ -3,6 +3,8 @@ export interface ObserverStatusInactive {
   message?: string
   setting_up?: boolean
   setting_up_progress?: SetupProgress
+  // clock offset resolved by the daemon, null until first lookup
+  utc_offset_min?: number | null
 }
 
 // first-run library indexing progress ('setup_progress' event + status field)
@@ -69,6 +71,7 @@ export interface ObserverStatusActive {
   received_at: number
   setting_up?: boolean
   setting_up_progress?: SetupProgress
+  utc_offset_min?: number | null
 }
 
 export type ObserverStatus = ObserverStatusActive | ObserverStatusInactive
