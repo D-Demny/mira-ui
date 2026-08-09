@@ -65,6 +65,9 @@ function UpdateCardImpl({
             ))}
           </ul>
         ) : null}
+        <p className={styles.hint}>
+          Flash from <span className={styles.hintUrl}>terbium.app</span> on your computer
+        </p>
         <div className={styles.buttons}>
           <button
             type="button"

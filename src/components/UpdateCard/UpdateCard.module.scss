@@ -18,10 +18,11 @@
 .card {
   @include column;
   background: $bg;
-  padding: $s-7 $s-8;
+  padding: $s-6 $s-8;
   border-radius: $r-2xl;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
-  max-width: 520px;
+  width: 560px;
+  max-width: 100%;
   @include flex-gap-y($s-4);
 }
 
@@ -49,11 +50,15 @@
   list-style: none;
 }
 
+.card > .highlights {
+  margin-top: $s-1;
+}
+
 .highlight {
   font-size: $fs-md;
   color: $text-secondary;
   line-height: 1.45;
-  @include truncate(1);
+  @include truncate(2);
 
   &::before {
     content: '+ ';
@@ -62,16 +67,28 @@
   }
 }
 
+.hint {
+  font-size: $fs-md;
+  color: $text-tertiary;
+  text-align: center;
+}
+
+.hintUrl {
+  color: $accent;
+  font-weight: $fw-medium;
+}
+
 .buttons {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   padding-top: $s-2;
   @include flex-gap-x($s-4);
 }
 
 .btn {
-  padding: $s-3 $s-6;
+  padding: $s-3 $s-5;
   border-radius: $r-pill;
+  white-space: nowrap;
   background: $surface-elev;
   color: $text-primary;
   font-size: $fs-lg;
