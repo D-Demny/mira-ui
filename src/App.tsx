@@ -22,6 +22,7 @@ import { Screensaver } from '@/components/Screensaver'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { SponsorScreen } from '@/components/SponsorScreen'
 import { TrackInfo } from '@/components/TrackInfo'
+import { UpdateCard } from '@/components/UpdateCard'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
 import { DebugScreen } from '@/components/DebugScreen'
 import { useDevScreen } from '@/dev/devContext'
@@ -48,6 +49,8 @@ const SPONSOR_SHOWN_KEY = 'mira.sponsorShown'
 const SPONSOR_AFTER_PLAY_MS = 3 * 60 * 1000
 const LAST_ART_KEY = 'mira.lastArtUrl'
 const UTC_OFFSET_KEY = 'mira.utcOffsetMin'
+const UPDATE_REMIND_MS = 24 * 60 * 60 * 1000
+const SKIPPED_VERSION_KEY = 'mira.skippedVersion'
 
 export default function App() {
   const auth = useAuth()
@@ -274,6 +277,10 @@ export default function App() {
   const pairing =
     forced === 'pairing' ? { address: 'AB:CD:EF:01:23:45', passkey: '123456' } : realPairing
 
+  // update notifier
+  const [updateCardOpen, setUpdateCardOpen] = useState(false)
+  const updateRemindAtRef = useRef(0)
+
   // auto screensaver: only ever from the true idle screen, after 10 quiet
   // minutes; any user input resets the countdown. Not a setting on purpose.
   const SCREENSAVER_AUTO_MS = 10 * 60 * 1000
@@ -293,6 +300,7 @@ export default function App() {
     !deviceMenuOpen &&
     !debugOpen &&
     !sponsorOpenReal &&
+    !updateCardOpen &&
     !reportId &&
     !pairing
   useEffect(() => {
@@ -448,10 +456,82 @@ export default function App() {
     return () => window.clearTimeout(t)
   }, [playbackActive, stillSettingUp])
 
+  const [latestVersion, setLatestVersion] = useState('')
+  const [latestHighlights, setLatestHighlights] = useState<string[]>([])
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [updateMandatory, setUpdateMandatory] = useState(false)
+  useEffect(() => {
+    if (realStatus == null) return
+    if (typeof realStatus.update_available === 'boolean')
+      setUpdateAvailable(realStatus.update_available)
+    if (realStatus.latest_version) setLatestVersion(realStatus.latest_version)
+    if (realStatus.latest_highlights?.length) setLatestHighlights(realStatus.latest_highlights)
+    if (typeof realStatus.update_mandatory === 'boolean')
+      setUpdateMandatory(realStatus.update_mandatory)
+  }, [realStatus])
+
+  // a skipped version stays skipped until a newer one ships
+  const [skippedVersion, setSkippedVersion] = useState(() => {
+    try {
+      return window.localStorage.getItem(SKIPPED_VERSION_KEY) ?? ''
+    } catch {
+      return ''
+    }
+  })
+  const skipVersion = useCallback(() => {
+    setSkippedVersion(latestVersion)
+    try {
+      window.localStorage.setItem(SKIPPED_VERSION_KEY, latestVersion)
+    } catch {
+      // storage broken
+    }
+    setUpdateCardOpen(false)
+  }, [latestVersion])
+
+  // update card
+  const updateCardEligible =
+    updateAvailable &&
+    (updateMandatory || latestVersion !== skippedVersion) &&
+    !updateCardOpen &&
+    !screensaverOpen &&
+    !forced &&
+    !loading &&
+    !auth.required &&
+    !reconnecting &&
+    realStatus != null &&
+    realStatus.active !== true &&
+    realStatus.setting_up !== true &&
+    !menuOpen &&
+    !powerMenuOpen &&
+    !btMenuOpen &&
+    !settingsOpen &&
+    !deviceMenuOpen &&
+    !debugOpen &&
+    !sponsorOpenReal &&
+    !reportId &&
+    !pairing
+  useEffect(() => {
+    if (!updateCardEligible) return
+    const delay = Math.max(1500, updateRemindAtRef.current - Date.now())
+    const t = window.setTimeout(() => setUpdateCardOpen(true), delay)
+    return () => window.clearTimeout(t)
+  }, [updateCardEligible])
+  const remindLater = useCallback(() => {
+    updateRemindAtRef.current = Date.now() + UPDATE_REMIND_MS
+    setUpdateCardOpen(false)
+  }, [])
+  useEffect(() => {
+    if (updateCardOpen && realStatus?.active === true) setUpdateCardOpen(false)
+  }, [updateCardOpen, realStatus])
+
   // hardware back button
   const goBack = useCallback(() => {
     if (screensaverOpen) {
       setScreensaverOpen(false)
+      return
+    }
+    if (updateCardOpen) {
+      remindLater()
       return
     }
     if (reportId) {
@@ -498,6 +578,8 @@ export default function App() {
     // nothing to go back to
   }, [
     screensaverOpen,
+    updateCardOpen,
+    remindLater,
     reportId,
     sponsorOpenReal,
     closeSponsor,
@@ -625,6 +707,15 @@ export default function App() {
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
       {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
       {sponsorOpenReal ? <SponsorScreen onClose={closeSponsor} /> : null}
+      {updateCardOpen ? (
+        <UpdateCard
+          latest={latestVersion}
+          highlights={latestHighlights}
+          mandatory={updateMandatory}
+          onRemindLater={remindLater}
+          onSkip={skipVersion}
+        />
+      ) : null}
       {screensaverOpen ? (
         <Screensaver
           artUrl={screensaverArt}
@@ -700,6 +791,22 @@ export default function App() {
           artUrl={mockStatus.track_image}
           utcOffsetMin={utcOffsetMin}
           onClose={() => setForced(null)}
+        />
+      </div>
+    )
+  }
+  if (forced === 'update-card') {
+    return (
+      <div className={styles.app}>
+        <UpdateCard
+          latest="1.1.0"
+          highlights={[
+            'Clock screensaver (double-press power)',
+            'Setup progress bar',
+            'Bluetooth pairing fixes',
+          ]}
+          onRemindLater={() => setForced(null)}
+          onSkip={() => setForced(null)}
         />
       </div>
     )
