@@ -97,7 +97,7 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
   })
 
   return (
-    <div className={styles.container} onPointerDown={onClose}>
+    <div className={styles.container} onClick={onClose}>
       {prevArt ? (
         <div className={styles.art} style={{ backgroundImage: `url(${prevArt})` }} aria-hidden />
       ) : null}
