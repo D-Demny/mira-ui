@@ -432,20 +432,6 @@ export default function App() {
     }
   }, [realStatus])
 
-  // show the sponsor screen once the first-run indexing finishes
-  const wasSettingUpRef = useRef(false)
-  useEffect(() => {
-    if (realStatus?.setting_up === true) {
-      wasSettingUpRef.current = true
-      return
-    }
-    if (wasSettingUpRef.current && realStatus != null) {
-      wasSettingUpRef.current = false
-      if (!sponsorShownRef.current) setSponsorOpen(true)
-    }
-  }, [realStatus])
-
-  // devices set up before this existed never see the setting_up transition
   const playbackActive = realStatus?.active === true
   const stillSettingUp = realStatus?.setting_up === true
   useEffect(() => {
