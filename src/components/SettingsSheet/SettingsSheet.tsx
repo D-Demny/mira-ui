@@ -12,6 +12,8 @@ import {
   VOLUME_STEP_MIN,
 } from '@/settings'
 import { NotchedSlider } from './NotchedSlider'
+import { DefaultDeviceRow } from './DefaultDeviceRow'
+import type { ConnectDevice } from '@/api/types'
 import styles from './SettingsSheet.module.scss'
 
 interface Props {
@@ -19,6 +21,12 @@ interface Props {
   onClose: () => void
   // active device is a phone
   phoneVolume?: boolean
+  // available connect devices for default device selection
+  devices?: ConnectDevice[]
+  // whether there is active playback somewhere
+  isActiveDevice?: boolean
+  // transfer function for default device selection
+  onTransfer?: () => Promise<void>
 }
 
 const OFFSET_MIN = -500
@@ -30,8 +38,16 @@ function fmtOffset(ms: number): string {
   return `${ms > 0 ? '+' : ''}${ms} ms`
 }
 
-function SettingsSheetImpl({ open, onClose, phoneVolume = false }: Props) {
-  const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness, uiScalePct } = useSettings()
+function SettingsSheetImpl({
+  open,
+  onClose,
+  phoneVolume = false,
+  devices = [],
+  isActiveDevice = false,
+  onTransfer,
+}: Props) {
+  const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness, uiScalePct, defaultDeviceId } =
+    useSettings()
 
   // applying the scale mid-drag moves this very panel under the finger, which has no
   // fixed point near a notch boundary and makes the whole ui flicker between two sizes.
@@ -58,6 +74,14 @@ function SettingsSheetImpl({ open, onClose, phoneVolume = false }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.title}>Settings</div>
+
+        <DefaultDeviceRow
+          devices={devices}
+          currentDefaultId={defaultDeviceId}
+          isActiveDevice={isActiveDevice}
+          onTransfer={onTransfer ?? (() => Promise.resolve())}
+          onChange={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
+        />
 
         {/* first on purpose: at the largest display size the panel scrolls, and this is
             the one control that has to stay reachable to get back down */}

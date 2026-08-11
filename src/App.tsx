@@ -679,6 +679,17 @@ export default function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         phoneVolume={status !== null && status.active === true && status.volume_disabled === true}
+        devices={connectDevices}
+        isActiveDevice={status?.active === true}
+        onTransfer={
+          status
+            ? () => {
+                const target = connectDevices.find((d) => d.is_active) || connectDevices[0]
+                if (target) onPickDevice(target)
+                return Promise.resolve()
+              }
+            : undefined
+        }
       />
       {deviceMenuOpen ? (
         <DevicePicker

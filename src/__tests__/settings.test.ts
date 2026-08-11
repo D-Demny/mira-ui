@@ -76,6 +76,23 @@ describe('settings store', () => {
     expect(getSettings().uiScalePct).toBe(expected)
   })
 
+  it('default device id is null by default', () => {
+    expect(getSettings().defaultDeviceId).toBeNull()
+  })
+
+  it('round-trips default device id', () => {
+    updateSettings({ defaultDeviceId: 'device-abc-123' })
+    expect(getSettings().defaultDeviceId).toBe('device-abc-123')
+    __resetSettings()
+    expect(getSettings().defaultDeviceId).toBe('device-abc-123')
+  })
+
+  it('clears default device id to null', () => {
+    updateSettings({ defaultDeviceId: 'device-abc-123' })
+    updateSettings({ defaultDeviceId: null })
+    expect(getSettings().defaultDeviceId).toBeNull()
+  })
+
   it('preset get falls back to defaults; set overrides via the store', () => {
     expect(getPreset(1)?.contextUri).toBe('spotify:collection:tracks') // default
     expect(getPreset(2)?.contextUri).toBeNull()
