@@ -8,9 +8,15 @@ interface Props {
   connected: boolean
   devices: ConnectDevice[]
   onSelectDevice?: (device: ConnectDevice) => void
+  defaultDeviceId?: string | null
 }
 
-function IdleScreenImpl({ connected, devices, onSelectDevice }: Props) {
+function IdleScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId }: Props) {
+  const filteredDevices =
+    defaultDeviceId && defaultDeviceId !== ''
+      ? devices.filter((d) => d.id === defaultDeviceId)
+      : devices
+
   const subtitle =
     devices.length > 0
       ? 'No remote device is currently playing. \n Select one below'
@@ -23,7 +29,7 @@ function IdleScreenImpl({ connected, devices, onSelectDevice }: Props) {
       </div>
       <div className={styles.title}>Nothing playing</div>
       <div className={styles.hint}>{subtitle}</div>
-      <DevicePicker devices={devices} onSelect={onSelectDevice} placement="inline" />
+      <DevicePicker devices={filteredDevices} onSelect={onSelectDevice} placement="inline" />
       {!connected ? (
         <div className={styles.status}>
           <span className={`${styles.dot} ${styles.dotOff}`} aria-hidden />
