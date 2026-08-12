@@ -22,10 +22,6 @@ interface Props {
   phoneVolume?: boolean
   // available connect devices for default device selection
   devices?: ConnectDevice[]
-  // whether there is active playback somewhere
-  isActiveDevice?: boolean
-  // transfer function for default device selection
-  onTransfer?: () => Promise<void>
   // open default device modal
   onOpenDefaultDevice?: () => void
 }
@@ -44,8 +40,6 @@ function SettingsSheetImpl({
   onClose,
   phoneVolume = false,
   devices = [],
-  isActiveDevice = false,
-  onTransfer,
   onOpenDefaultDevice,
 }: Props) {
   const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness, uiScalePct, defaultDeviceId } =
