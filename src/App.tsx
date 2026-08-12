@@ -19,6 +19,7 @@ import { ProgressBar } from '@/components/ProgressBar'
 import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBanner'
 import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { Screensaver } from '@/components/Screensaver'
+import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { SponsorScreen } from '@/components/SponsorScreen'
 import { TrackInfo } from '@/components/TrackInfo'
@@ -114,6 +115,7 @@ export default function App() {
   const [menuOpenReal, setMenuOpen] = useState(false)
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [settingsOpenReal, setSettingsOpen] = useState(false)
+  const [defaultDeviceModalOpen, setDefaultDeviceModalOpen] = useState(false)
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   // support report id dialog
@@ -298,6 +300,7 @@ export default function App() {
     !btMenuOpen &&
     !settingsOpen &&
     !deviceMenuOpen &&
+    !defaultDeviceModalOpen &&
     !debugOpen &&
     !sponsorOpenReal &&
     !updateCardOpen &&
@@ -492,6 +495,7 @@ export default function App() {
     !btMenuOpen &&
     !settingsOpen &&
     !deviceMenuOpen &&
+    !defaultDeviceModalOpen &&
     !debugOpen &&
     !sponsorOpenReal &&
     !reportId &&
@@ -534,6 +538,10 @@ export default function App() {
     }
     if (deviceMenuOpen) {
       setDeviceMenuOpen(false)
+      return
+    }
+    if (defaultDeviceModalOpen) {
+      setDefaultDeviceModalOpen(false)
       return
     }
     if (btMenuOpen) {
@@ -641,6 +649,7 @@ export default function App() {
     !menuOpen &&
     !powerMenuOpen &&
     !deviceMenuOpen &&
+    !defaultDeviceModalOpen &&
     !btMenuOpen &&
     !settingsOpen &&
     !pairing
@@ -690,7 +699,26 @@ export default function App() {
               }
             : undefined
         }
+        onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
       />
+      {defaultDeviceModalOpen ? (
+        <DefaultDeviceModal
+          devices={connectDevices}
+          currentDefaultId={settings.defaultDeviceId}
+          isActiveDevice={status?.active === true}
+          onTransfer={
+            status
+              ? () => {
+                  const target = connectDevices.find((d) => d.is_active) || connectDevices[0]
+                  if (target) onPickDevice(target)
+                  return Promise.resolve()
+                }
+              : () => Promise.resolve()
+          }
+          onChange={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
+          onClose={() => setDefaultDeviceModalOpen(false)}
+        />
+      ) : null}
       {deviceMenuOpen ? (
         <DevicePicker
           devices={connectDevices}
