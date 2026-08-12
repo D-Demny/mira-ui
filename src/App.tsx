@@ -827,7 +827,7 @@ export default function App() {
   if (forced === 'idle') {
     return (
       <div className={styles.app}>
-        <IdleScreen connected={connected} devices={connectDevices} onSelectDevice={onPickDevice} />
+        <IdleScreen connected={connected} devices={connectDevices} onSelectDevice={onPickDevice} defaultDeviceId={settings.defaultDeviceId} />
         {globalOverlays}
       </div>
     )
@@ -983,6 +983,7 @@ export default function App() {
             connected={connected}
             devices={connectDevices}
             onSelectDevice={onPickDevice}
+            defaultDeviceId={settings.defaultDeviceId}
           />
           {globalOverlays}
         </div>
