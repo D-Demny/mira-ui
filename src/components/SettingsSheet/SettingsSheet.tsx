@@ -12,7 +12,6 @@ import {
   VOLUME_STEP_MIN,
 } from '@/settings'
 import { NotchedSlider } from './NotchedSlider'
-import { DefaultDeviceRow } from './DefaultDeviceRow'
 import type { ConnectDevice } from '@/api/types'
 import styles from './SettingsSheet.module.scss'
 
@@ -27,6 +26,8 @@ interface Props {
   isActiveDevice?: boolean
   // transfer function for default device selection
   onTransfer?: () => Promise<void>
+  // open default device modal
+  onOpenDefaultDevice?: () => void
 }
 
 const OFFSET_MIN = -500
@@ -45,6 +46,7 @@ function SettingsSheetImpl({
   devices = [],
   isActiveDevice = false,
   onTransfer,
+  onOpenDefaultDevice,
 }: Props) {
   const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness, uiScalePct, defaultDeviceId } =
     useSettings()
@@ -75,13 +77,32 @@ function SettingsSheetImpl({
       >
         <div className={styles.title}>Settings</div>
 
-        <DefaultDeviceRow
-          devices={devices}
-          currentDefaultId={defaultDeviceId}
-          isActiveDevice={isActiveDevice}
-          onTransfer={onTransfer ?? (() => Promise.resolve())}
-          onChange={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
-        />
+        <div
+          className={styles.row}
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpenDefaultDevice?.()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onOpenDefaultDevice?.()
+            }
+          }}
+        >
+          <span className={styles.chip} aria-hidden>
+            <SpeakerIcon />
+          </span>
+          <div className={styles.rowMain}>
+            <div className={styles.rowHead}>
+              <span className={styles.label}>Default Device</span>
+              <span className={styles.value}>
+                {defaultDeviceId
+                  ? devices.find((d) => d.id === defaultDeviceId)?.name ?? 'Unknown'
+                  : 'None'}
+              </span>
+            </div>
+          </div>
+        </div>
 
         {/* first on purpose: at the largest display size the panel scrolls, and this is
             the one control that has to stay reachable to get back down */}
