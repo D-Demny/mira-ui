@@ -21,6 +21,7 @@ import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { Screensaver } from '@/components/Screensaver'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
+import { TransferPrompt } from '@/components/TransferPrompt'
 import { SponsorScreen } from '@/components/SponsorScreen'
 import { TrackInfo } from '@/components/TrackInfo'
 import { UpdateCard } from '@/components/UpdateCard'
@@ -118,6 +119,8 @@ export default function App() {
   const [defaultDeviceModalOpen, setDefaultDeviceModalOpen] = useState(false)
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
+  const [transferPromptActive, setTransferPromptActive] = useState(false)
+  const [transferPromptAction, setTransferPromptAction] = useState<(() => void) | null>(null)
   // support report id dialog
   const [reportId, setReportId] = useState<string | null>(null)
 
@@ -159,6 +162,47 @@ export default function App() {
   const toggleVoiceMic = useCallback(() => {
     updateSettings({ voiceMic: !getSettings().voiceMic })
   }, [])
+
+  const defaultDeviceId = settings.defaultDeviceId
+  const needsTransfer =
+    defaultDeviceId != null &&
+    defaultDeviceId !== '' &&
+    realStatus?.active === true &&
+    realStatus.device_id !== defaultDeviceId
+
+  const wrapActionWithTransfer = useCallback(
+    (action: () => void) => {
+      if (!needsTransfer) {
+        action()
+        return
+      }
+      setTransferPromptAction(() => action)
+      setTransferPromptActive(true)
+    },
+    [needsTransfer],
+  )
+
+  const handleTransferConfirm = useCallback(() => {
+    if (defaultDeviceId == null) return
+    void transferToDevice(defaultDeviceId)
+      .then(() => {
+        transferPromptAction?.()
+      })
+      .catch((err) => {
+        console.warn('transfer failed', err)
+        notify('Couldn\'t transfer to ' + defaultDeviceId, { variant: 'error' })
+      })
+      .finally(() => {
+        setTransferPromptActive(false)
+        setTransferPromptAction(null)
+      })
+  }, [defaultDeviceId, transferPromptAction, notify])
+
+  const handleTransferDismiss = useCallback(() => {
+    transferPromptAction?.()
+    setTransferPromptActive(false)
+    setTransferPromptAction(null)
+  }, [transferPromptAction])
 
   // get settings from the daemon
   useEffect(() => {
@@ -600,6 +644,7 @@ export default function App() {
     setShuffle,
     setRepeat,
     onCommandError: (message) => notify(message, { variant: 'error' }),
+    wrapActionWithTransfer,
   })
 
   const savableStatus = status && status.active ? status : reconnecting ? heldStatus : null
@@ -641,6 +686,7 @@ export default function App() {
     onScreensaver: onOpenScreensaver,
     onOpenDebug: openDebug,
     notify,
+    wrapActionWithTransfer,
   })
 
   // touch gestures
@@ -676,6 +722,16 @@ export default function App() {
   const globalOverlays = (
     <>
       <VolumeOverlay state={hardware.volumeOverlay} />
+      {transferPromptActive && realStatus ? (
+        <TransferPrompt
+          active={transferPromptActive}
+          deviceName={
+            connectDevices.find((d) => d.id === defaultDeviceId)?.name ?? defaultDeviceId ?? ''
+          }
+          onTransfer={handleTransferConfirm}
+          onDismiss={handleTransferDismiss}
+        />
+      ) : null}
       <PowerMenu
         open={powerMenuOpen}
         onClose={closePowerMenu}
