@@ -199,10 +199,9 @@ export default function App() {
   }, [defaultDeviceId, transferPromptAction, notify])
 
   const handleTransferDismiss = useCallback(() => {
-    transferPromptAction?.()
     setTransferPromptActive(false)
     setTransferPromptAction(null)
-  }, [transferPromptAction])
+  }, [])
 
   // get settings from the daemon
   useEffect(() => {

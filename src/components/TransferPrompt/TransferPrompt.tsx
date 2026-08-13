@@ -40,16 +40,25 @@ function TransferPromptImpl({ active, deviceName, onTransfer, onDismiss }: Props
     >
       <div className={styles.card} onClick={(e) => e.stopPropagation()}>
         <div className={styles.title}>Wiedergabe auf {deviceName}?</div>
-        <button
-          type="button"
-          className={styles.transferBtn}
-          onClick={() => {
-            onTransfer()
-            onDismiss()
-          }}
-        >
-          Auf {deviceName} abspielen
-        </button>
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={`${styles.transferBtn} ${styles.primary}`}
+            onClick={() => {
+              onTransfer()
+              onDismiss()
+            }}
+          >
+            Auf {deviceName} abspielen
+          </button>
+          <button
+            type="button"
+            className={`${styles.transferBtn} ${styles.secondary}`}
+            onClick={onDismiss}
+          >
+            Nein
+          </button>
+        </div>
       </div>
     </div>
   )

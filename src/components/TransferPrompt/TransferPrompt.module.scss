@@ -39,6 +39,12 @@
   text-align: center;
 }
 
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: $s-2;
+}
+
 .title {
   font-size: $fs-2xl;
   font-weight: $fw-semibold;
@@ -52,8 +58,6 @@
   padding: $s-4 $s-6;
   border: none;
   border-radius: $r-lg;
-  background: $accent;
-  color: #000;
   font-size: $fs-lg;
   font-weight: $fw-semibold;
   cursor: pointer;
@@ -63,5 +67,20 @@
 
   &:active {
     transform: scale(0.98);
+  }
+
+  &.primary {
+    background: $accent;
+    color: #000;
+  }
+
+  &.secondary {
+    background: transparent;
+    color: $text-secondary;
+    border: 1px solid $divider;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
   }
 }
