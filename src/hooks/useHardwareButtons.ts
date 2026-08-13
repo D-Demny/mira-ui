@@ -289,14 +289,16 @@ export function useHardwareButtons({
       const preset = getPreset(idx)
       if (preset?.contextUri) {
         // only claim success once the play actually lands
+        const uri = preset.contextUri
+        if (uri == null) return
         if (wrapActionWithTransfer) {
           wrapActionWithTransfer(() => {
-            void Promise.resolve(playContext(preset.contextUri))
+            void Promise.resolve(playContext(uri))
               .then(() => notify(`Playing from ${preset.label}`))
               .catch(() => notify(`Couldn't play ${preset.label}`, { variant: 'error' }))
           })
         } else {
-          void Promise.resolve(playContext(preset.contextUri))
+          void Promise.resolve(playContext(uri))
             .then(() => notify(`Playing from ${preset.label}`))
             .catch(() => notify(`Couldn't play ${preset.label}`, { variant: 'error' }))
         }
