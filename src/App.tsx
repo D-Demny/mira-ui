@@ -166,32 +166,35 @@ export default function App() {
   }, [])
 
   const defaultDeviceId = settings.defaultDeviceId
-  const lastDismissedAt = useMemo(() => {
+  const [dismissedAt, setDismissedAt] = useState<number | null>(() => {
     try {
       const raw = localStorage.getItem(TRANSFER_DISMISS_KEY)
-      return raw ? Number(raw) : 0
+      return raw ? Number(raw) : null
     } catch {
-      return 0
+      return null
     }
-  }, [])
-  const transferDismissed = lastDismissedAt > 0 && Date.now() - lastDismissedAt < TRANSFER_DISMISS_MS
+  })
+  const transferDismissed =
+    dismissedAt != null && Date.now() - dismissedAt < TRANSFER_DISMISS_MS
   const needsTransfer =
     defaultDeviceId != null &&
     defaultDeviceId !== '' &&
     realStatus?.active === true &&
     realStatus.device_id !== defaultDeviceId &&
     !transferDismissed
+  const needsTransferRef = useRef(needsTransfer)
+  needsTransferRef.current = needsTransfer
 
   const wrapActionWithTransfer = useCallback(
     (action: () => void) => {
-      if (!needsTransfer) {
+      if (!needsTransferRef.current) {
         action()
         return
       }
       setTransferPromptAction(() => action)
       setTransferPromptActive(true)
     },
-    [needsTransfer],
+    [],
   )
 
   const handleTransferConfirm = useCallback(() => {
@@ -211,11 +214,13 @@ export default function App() {
   }, [defaultDeviceId, transferPromptAction, notify])
 
   const handleTransferDismiss = useCallback(() => {
+    const now = Date.now()
     try {
-      localStorage.setItem(TRANSFER_DISMISS_KEY, String(Date.now()))
+      localStorage.setItem(TRANSFER_DISMISS_KEY, String(now))
     } catch {
       // ignore
     }
+    setDismissedAt(now)
     setTransferPromptActive(false)
     setTransferPromptAction(null)
   }, [])
