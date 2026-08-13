@@ -44,10 +44,7 @@ function TransferPromptImpl({ active, deviceName, onTransfer, onDismiss }: Props
           <button
             type="button"
             className={`${styles.transferBtn} ${styles.primary}`}
-            onClick={() => {
-              onTransfer()
-              onDismiss()
-            }}
+            onClick={onTransfer}
           >
             Auf {deviceName} abspielen
           </button>
