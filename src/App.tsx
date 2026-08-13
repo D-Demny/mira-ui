@@ -53,6 +53,8 @@ const LAST_ART_KEY = 'mira.lastArtUrl'
 const UTC_OFFSET_KEY = 'mira.utcOffsetMin'
 const UPDATE_REMIND_MS = 24 * 60 * 60 * 1000
 const SKIPPED_VERSION_KEY = 'mira.skippedVersion'
+const TRANSFER_DISMISS_KEY = 'mira.transferDismissedAt'
+const TRANSFER_DISMISS_MS = 2 * 60 * 60 * 1000
 
 export default function App() {
   const auth = useAuth()
@@ -164,11 +166,21 @@ export default function App() {
   }, [])
 
   const defaultDeviceId = settings.defaultDeviceId
+  const lastDismissedAt = useMemo(() => {
+    try {
+      const raw = localStorage.getItem(TRANSFER_DISMISS_KEY)
+      return raw ? Number(raw) : 0
+    } catch {
+      return 0
+    }
+  }, [])
+  const transferDismissed = lastDismissedAt > 0 && Date.now() - lastDismissedAt < TRANSFER_DISMISS_MS
   const needsTransfer =
     defaultDeviceId != null &&
     defaultDeviceId !== '' &&
     realStatus?.active === true &&
-    realStatus.device_id !== defaultDeviceId
+    realStatus.device_id !== defaultDeviceId &&
+    !transferDismissed
 
   const wrapActionWithTransfer = useCallback(
     (action: () => void) => {
@@ -199,6 +211,11 @@ export default function App() {
   }, [defaultDeviceId, transferPromptAction, notify])
 
   const handleTransferDismiss = useCallback(() => {
+    try {
+      localStorage.setItem(TRANSFER_DISMISS_KEY, String(Date.now()))
+    } catch {
+      // ignore
+    }
     setTransferPromptActive(false)
     setTransferPromptAction(null)
   }, [])
