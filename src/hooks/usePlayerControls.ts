@@ -26,6 +26,7 @@ export interface UsePlayerControlsParams {
   setShuffle: (on: boolean) => Promise<void> | void
   setRepeat: (mode: RepeatMode) => Promise<void> | void
   onCommandError?: (message: string) => void
+  wrapActionWithTransfer?: (action: () => void) => void
 }
 
 export interface UsePlayerControlsResult {
@@ -42,7 +43,18 @@ export interface UsePlayerControlsResult {
 }
 
 export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerControlsResult {
-  const { status, play, pause, next, prev, seek, setShuffle, setRepeat, onCommandError } = params
+  const {
+    status,
+    play,
+    pause,
+    next,
+    prev,
+    seek,
+    setShuffle,
+    setRepeat,
+    onCommandError,
+    wrapActionWithTransfer,
+  } = params
 
   const [optimisticPause, setOptimisticPause] = useState<OptimisticValue<boolean> | null>(null)
   const [optimisticShuffle, setOptimisticShuffle] = useState<OptimisticValue<boolean> | null>(null)
@@ -112,11 +124,20 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     const nextPaused = !isPaused
     setOptimisticPause({ value: nextPaused, at: Date.now() })
     const command = nextPaused ? pause : play
-    void Promise.resolve(command()).catch((err) => {
-      setOptimisticPause(null)
-      reportCommandError('Play/pause failed', err)
-    })
-  }, [isPaused, pause, play, reportCommandError])
+    if (wrapActionWithTransfer) {
+      wrapActionWithTransfer(() => {
+        void Promise.resolve(command()).catch((err) => {
+          setOptimisticPause(null)
+          reportCommandError('Play/pause failed', err)
+        })
+      })
+    } else {
+      void Promise.resolve(command()).catch((err) => {
+        setOptimisticPause(null)
+        reportCommandError('Play/pause failed', err)
+      })
+    }
+  }, [isPaused, pause, play, reportCommandError, wrapActionWithTransfer])
 
   const onPrev = useCallback(() => {
     const now = Date.now()
@@ -125,50 +146,101 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     if (recent) {
       // second press within window > actual prev
       setTrackTransition({ fromTrackId: status?.track_id ?? '', at: now })
+      if (wrapActionWithTransfer) {
+        wrapActionWithTransfer(() => {
+          void Promise.resolve(prev()).catch((err) => {
+            setTrackTransition(null)
+            reportCommandError('Previous failed', err)
+          })
+        })
+      } else {
+        void Promise.resolve(prev()).catch((err) => {
+          setTrackTransition(null)
+          reportCommandError('Previous failed', err)
+        })
+      }
+    } else {
+      // first press > rewind to start of current track
+      if (wrapActionWithTransfer) {
+        wrapActionWithTransfer(() => {
+          void Promise.resolve(seek(0)).catch((err) => reportCommandError('Seek failed', err))
+        })
+      } else {
+        void Promise.resolve(seek(0)).catch((err) => reportCommandError('Seek failed', err))
+      }
+    }
+  }, [prev, reportCommandError, seek, status?.track_id, wrapActionWithTransfer])
+
+  const onPrevTrack = useCallback(() => {
+    setTrackTransition({ fromTrackId: status?.track_id ?? '', at: Date.now() })
+    if (wrapActionWithTransfer) {
+      wrapActionWithTransfer(() => {
+        void Promise.resolve(prev()).catch((err) => {
+          setTrackTransition(null)
+          reportCommandError('Previous failed', err)
+        })
+      })
+    } else {
       void Promise.resolve(prev()).catch((err) => {
         setTrackTransition(null)
         reportCommandError('Previous failed', err)
       })
-    } else {
-      // first press > rewind to start of current track
-      void Promise.resolve(seek(0)).catch((err) => reportCommandError('Seek failed', err))
     }
-  }, [prev, reportCommandError, seek, status?.track_id])
-
-  const onPrevTrack = useCallback(() => {
-    setTrackTransition({ fromTrackId: status?.track_id ?? '', at: Date.now() })
-    void Promise.resolve(prev()).catch((err) => {
-      setTrackTransition(null)
-      reportCommandError('Previous failed', err)
-    })
-  }, [prev, reportCommandError, status?.track_id])
+  }, [prev, reportCommandError, status?.track_id, wrapActionWithTransfer])
 
   const onNext = useCallback(() => {
     setTrackTransition({ fromTrackId: status?.track_id ?? '', at: Date.now() })
-    void Promise.resolve(next()).catch((err) => {
-      setTrackTransition(null)
-      reportCommandError('Next failed', err)
-    })
-  }, [next, reportCommandError, status?.track_id])
+    if (wrapActionWithTransfer) {
+      wrapActionWithTransfer(() => {
+        void Promise.resolve(next()).catch((err) => {
+          setTrackTransition(null)
+          reportCommandError('Next failed', err)
+        })
+      })
+    } else {
+      void Promise.resolve(next()).catch((err) => {
+        setTrackTransition(null)
+        reportCommandError('Next failed', err)
+      })
+    }
+  }, [next, reportCommandError, status?.track_id, wrapActionWithTransfer])
 
   const onToggleShuffle = useCallback(() => {
     const nextShuffle = !shuffle
     setOptimisticShuffle({ value: nextShuffle, at: Date.now() })
-    void Promise.resolve(setShuffle(nextShuffle)).catch((err) => {
-      setOptimisticShuffle(null)
-      reportCommandError('Shuffle failed', err)
-    })
-  }, [reportCommandError, setShuffle, shuffle])
+    if (wrapActionWithTransfer) {
+      wrapActionWithTransfer(() => {
+        void Promise.resolve(setShuffle(nextShuffle)).catch((err) => {
+          setOptimisticShuffle(null)
+          reportCommandError('Shuffle failed', err)
+        })
+      })
+    } else {
+      void Promise.resolve(setShuffle(nextShuffle)).catch((err) => {
+        setOptimisticShuffle(null)
+        reportCommandError('Shuffle failed', err)
+      })
+    }
+  }, [reportCommandError, setShuffle, shuffle, wrapActionWithTransfer])
 
   const onCycleRepeat = useCallback(() => {
     const nextMode: RepeatMode =
       repeat === 'off' ? 'context' : repeat === 'context' ? 'track' : 'off'
     setOptimisticRepeat({ value: nextMode, at: Date.now() })
-    void Promise.resolve(setRepeat(nextMode)).catch((err) => {
-      setOptimisticRepeat(null)
-      reportCommandError('Repeat failed', err)
-    })
-  }, [repeat, reportCommandError, setRepeat])
+    if (wrapActionWithTransfer) {
+      wrapActionWithTransfer(() => {
+        void Promise.resolve(setRepeat(nextMode)).catch((err) => {
+          setOptimisticRepeat(null)
+          reportCommandError('Repeat failed', err)
+        })
+      })
+    } else {
+      void Promise.resolve(setRepeat(nextMode)).catch((err) => {
+        setOptimisticRepeat(null)
+        reportCommandError('Repeat failed', err)
+      })
+    }
+  }, [repeat, reportCommandError, setRepeat, wrapActionWithTransfer])
 
   return {
     isPaused,
