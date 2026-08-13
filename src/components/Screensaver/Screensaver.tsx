@@ -87,13 +87,11 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
     }
   }, [onClose])
 
-  let hours = now.getHours() % 12
-  if (hours === 0) hours = 12
-  const ampm = now.getHours() < 12 ? 'AM' : 'PM'
-  const date = now.toLocaleDateString(undefined, {
+  const date = now.toLocaleDateString('de-DE', {
     weekday: 'long',
-    month: 'long',
-    day: 'numeric',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
   })
 
   return (
@@ -114,8 +112,7 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
       <div className={styles.scrim} aria-hidden />
       <div className={styles.content}>
         <div className={styles.clock}>
-          {hours}:{pad2(now.getMinutes())}
-          <span className={styles.ampm}>{ampm}</span>
+          {pad2(now.getHours())}:{pad2(now.getMinutes())}
         </div>
         <div className={styles.date}>{date}</div>
       </div>

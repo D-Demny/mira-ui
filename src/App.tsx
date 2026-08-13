@@ -471,6 +471,16 @@ export default function App() {
     setScreensaverOpen(true)
   }, [closePowerMenu])
 
+  const handleScreensaverClose = useCallback(() => {
+    setScreensaverOpen(false)
+    if (screensaverBy === 'manual' && defaultDeviceId && defaultDeviceId !== '') {
+      void transferToDevice(defaultDeviceId).catch((err) => {
+        console.warn('transfer failed', err)
+        notify('Couldn\'t switch to default device', { variant: 'error' })
+      })
+    }
+  }, [screensaverBy, defaultDeviceId, notify])
+
   // remember the last album art for the screensavers ambient background
   useEffect(() => {
     if (realStatus?.active !== true || !realStatus.track_image) return
@@ -812,7 +822,7 @@ export default function App() {
         <Screensaver
           artUrl={screensaverArt}
           utcOffsetMin={utcOffsetMin}
-          onClose={() => setScreensaverOpen(false)}
+          onClose={handleScreensaverClose}
         />
       ) : null}
     </>
