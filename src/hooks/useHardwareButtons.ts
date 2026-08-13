@@ -47,6 +47,8 @@ export interface UseHardwareButtonsParams {
   onOpenDebug: () => void
   // top banner message for playlist msgs
   notify: NotifyFn
+  // wrap action with transfer prompt
+  wrapActionWithTransfer?: (action: () => void) => void
 }
 
 // hold a preset this long to save the current context
@@ -83,6 +85,7 @@ export function useHardwareButtons({
   onScreensaver,
   onOpenDebug,
   notify,
+  wrapActionWithTransfer,
 }: UseHardwareButtonsParams): UseHardwareButtonsResult {
   const [volumeOverlay, setVolumeOverlay] = useState<VolumeOverlayState>({
     visible: false,
@@ -199,7 +202,11 @@ export function useHardwareButtons({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.preventDefault()
-        onPlayPause()
+        if (wrapActionWithTransfer) {
+          wrapActionWithTransfer(onPlayPause)
+        } else {
+          onPlayPause()
+        }
       } else if (e.key === 'Escape') {
         e.preventDefault()
         onBack()
@@ -207,7 +214,7 @@ export function useHardwareButtons({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onPlayPause, onBack])
+  }, [onPlayPause, onBack, wrapActionWithTransfer])
 
   // preset buttons
   // short press = play the assigned context
@@ -282,9 +289,17 @@ export function useHardwareButtons({
       const preset = getPreset(idx)
       if (preset?.contextUri) {
         // only claim success once the play actually lands
-        void Promise.resolve(playContext(preset.contextUri))
-          .then(() => notify(`Playing from ${preset.label}`))
-          .catch(() => notify(`Couldn't play ${preset.label}`, { variant: 'error' }))
+        if (wrapActionWithTransfer) {
+          wrapActionWithTransfer(() => {
+            void Promise.resolve(playContext(preset.contextUri))
+              .then(() => notify(`Playing from ${preset.label}`))
+              .catch(() => notify(`Couldn't play ${preset.label}`, { variant: 'error' }))
+          })
+        } else {
+          void Promise.resolve(playContext(preset.contextUri))
+            .then(() => notify(`Playing from ${preset.label}`))
+            .catch(() => notify(`Couldn't play ${preset.label}`, { variant: 'error' }))
+        }
       }
       // unassigned slots (2-4 until saved) just do nothing
     }
@@ -296,7 +311,7 @@ export function useHardwareButtons({
       for (const t of Object.values(holdTimers)) if (t != null) window.clearTimeout(t)
       clearChord()
     }
-  }, [playContext, notify, onOpenDebug])
+  }, [playContext, notify, onOpenDebug, wrapActionWithTransfer])
 
   // power button controls
   useEffect(() => {
