@@ -657,8 +657,8 @@ export default function App() {
     setVolume,
     playContext,
     onBack: goBack,
-    onTogglePowerMenu: onOpenScreensaver,
-    onScreensaver: () => {
+    onOpenClock: onOpenScreensaver,
+    onTogglePowerMenu: () => {
       if (screensaverOpen) {
         setScreensaverOpen(false)
         return

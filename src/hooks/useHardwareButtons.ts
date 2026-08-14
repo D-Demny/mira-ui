@@ -39,10 +39,10 @@ export interface UseHardwareButtonsParams {
   playContext: (uri: string) => Promise<void> | void
   // back button (esc), go back one step, or no-op
   onBack: () => void
-  // power button (KeyM): short press opens the clock screensaver
-  onTogglePowerMenu: () => void
+  // power button (KeyM): single press opens the clock screensaver
+  onOpenClock: () => void
   // power button double-press: opens the power menu
-  onScreensaver: () => void
+  onTogglePowerMenu: () => void
   // power button long press (2s): puts device to sleep
   onSleep: () => void
   // hold preset 1 + 4 together for 3s: open the debug screen
@@ -83,8 +83,8 @@ export function useHardwareButtons({
   setVolume,
   playContext,
   onBack,
+  onOpenClock,
   onTogglePowerMenu,
-  onScreensaver,
   onSleep,
   onOpenDebug,
   notify,
@@ -353,10 +353,10 @@ export function useHardwareButtons({
         singlePressTimer = undefined
         onTogglePowerMenu()
       } else {
-        // single press: delay before screensaver
+        // single press: delay before clock screensaver
         singlePressTimer = window.setTimeout(() => {
           singlePressTimer = undefined
-          onScreensaver()
+          onOpenClock()
         }, POWER_SINGLE_PRESS_MS)
       }
     }
@@ -368,7 +368,7 @@ export function useHardwareButtons({
       if (longPressTimer != null) window.clearTimeout(longPressTimer)
       if (singlePressTimer != null) window.clearTimeout(singlePressTimer)
     }
-  }, [onTogglePowerMenu, onScreensaver, onSleep])
+  }, [onOpenClock, onTogglePowerMenu, onSleep])
 
   // clean up timers
   useEffect(
