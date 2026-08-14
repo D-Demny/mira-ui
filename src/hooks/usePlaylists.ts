@@ -49,6 +49,7 @@ export function usePlaylists() {
     } catch (err: unknown) {
       if (!controller.signal.aborted) {
         const message = err instanceof Error ? err.message : 'Failed to load playlists'
+        console.warn('usePlaylists error:', message)
         setError(message)
         setLoading(false)
       }

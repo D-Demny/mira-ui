@@ -45,22 +45,22 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
           <ul className={styles.list}>
             {playlists.map((playlist) => (
               <li
-                key={playlist.id}
+                key={playlist.id ?? Math.random().toString(36)}
                 className={styles.listItem}
                 role="button"
                 tabIndex={0}
                 onClick={() => {
-                  if (onPlay) {
+                  onNavigate('playlist')
+                  if (onPlay && playlist.uri) {
                     onPlay(playlist.uri)
                   }
-                  onNavigate('playlist')
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
-                    if (onPlay) {
+                    onNavigate('playlist')
+                    if (onPlay && playlist.uri) {
                       onPlay(playlist.uri)
                     }
-                    onNavigate('playlist')
                   }
                 }}
               >
@@ -73,9 +73,9 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
                   />
                 )}
                 <span className={styles.listItemText}>
-                  {playlist.name}
+                  <span>{playlist.name ?? 'Untitled'}</span>
                   <span className={styles.meta}>
-                    {playlist.tracks.total} tracks
+                    {playlist.tracks?.total ?? 0} tracks
                   </span>
                 </span>
               </li>

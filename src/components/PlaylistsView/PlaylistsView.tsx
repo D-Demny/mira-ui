@@ -43,22 +43,22 @@ function PlaylistsViewImpl({ onNavigate, onPlay }: Props) {
         <ul className={styles.list}>
           {playlists.map((playlist) => (
             <li
-              key={playlist.id}
+              key={playlist.id ?? Math.random().toString(36)}
               className={styles.listItem}
               role="button"
               tabIndex={0}
               onClick={() => {
-                if (onPlay) {
+                onNavigate('playlist-detail')
+                if (onPlay && playlist.uri) {
                   onPlay(playlist.uri)
                 }
-                onNavigate('playlist-detail')
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
-                  if (onPlay) {
+                  onNavigate('playlist-detail')
+                  if (onPlay && playlist.uri) {
                     onPlay(playlist.uri)
                   }
-                  onNavigate('playlist-detail')
                 }
               }}
             >
@@ -71,11 +71,11 @@ function PlaylistsViewImpl({ onNavigate, onPlay }: Props) {
                 />
               )}
               <div className={styles.listItemInfo}>
-                <span className={styles.listItemText}>{playlist.name}</span>
+                <span className={styles.listItemText}>{playlist.name ?? 'Untitled'}</span>
                 <span className={styles.meta}>
-                  {playlist.owner.display_name}
+                  {playlist.owner?.display_name ?? ''}
                   {' · '}
-                  {playlist.tracks.total} tracks
+                  {playlist.tracks?.total ?? 0} tracks
                 </span>
               </div>
               {onPlay && (
