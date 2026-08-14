@@ -39,9 +39,9 @@ export interface UseHardwareButtonsParams {
   playContext: (uri: string) => Promise<void> | void
   // back button (esc), go back one step, or no-op
   onBack: () => void
-  // power button (KeyM): short press opens the power menu
+  // power button (KeyM): short press opens the clock screensaver
   onTogglePowerMenu: () => void
-  // power button double-press: opens the clock screensaver
+  // power button double-press: opens the power menu
   onScreensaver: () => void
   // hold preset 1 + 4 together for 3s: open the debug screen
   onOpenDebug: () => void
@@ -59,8 +59,9 @@ const CHORD_MS = 3000
 
 // power button: a press held longer than this is ignored (no long-press action yet?)
 const POWER_LONG_PRESS_MS = 600
-// power button: a second press within this window counts as a double-press
-const POWER_DOUBLE_MS = 350
+  // power button: a second press within this window counts as a double-press
+  const POWER_DOUBLE_MS = 350
+  // power button: single press opens screensaver (clock), double press opens power menu
 
 export interface VolumeOverlayState {
   visible: boolean
@@ -336,14 +337,14 @@ export function useHardwareButtons({
       // a deliberate hold does nothing yet?
       if (held >= POWER_LONG_PRESS_MS) return
       if (pendingSingle != null) {
-        // second tap within the window -> double press -> screensaver
+        // second tap within the window -> double press -> power menu
         window.clearTimeout(pendingSingle)
         pendingSingle = undefined
-        onScreensaver()
+        onTogglePowerMenu()
       } else {
         pendingSingle = window.setTimeout(() => {
           pendingSingle = undefined
-          onTogglePowerMenu()
+          onScreensaver()
         }, POWER_DOUBLE_MS)
       }
     }

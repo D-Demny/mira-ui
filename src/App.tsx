@@ -656,14 +656,14 @@ export default function App() {
     setVolume,
     playContext,
     onBack: goBack,
-    onTogglePowerMenu: () => {
+    onTogglePowerMenu: onOpenScreensaver,
+    onScreensaver: () => {
       if (screensaverOpen) {
         setScreensaverOpen(false)
         return
       }
       setPowerMenuOpen((v) => !v)
     },
-    onScreensaver: onOpenScreensaver,
     onOpenDebug: openDebug,
     notify,
     wrapActionWithTransfer,
@@ -840,7 +840,7 @@ export default function App() {
         <UpdateCard
           latest="1.1.0"
           highlights={[
-            'Clock screensaver (double-press power)',
+            'Clock screensaver (single-press power)',
             'Setup progress bar',
             'Bluetooth pairing fixes',
           ]}
