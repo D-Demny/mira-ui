@@ -59,10 +59,10 @@ const PRESET_HOLD_MS = 2000
 // hold preset 1 + 4 together this long to open the debug screen
 const CHORD_MS = 3000
 
-// power button: long press (2s) puts device to sleep
+// power button: delay before single press fires (350ms)
+const POWER_SINGLE_PRESS_MS = 350
+// power button: long press threshold (2s)
 const POWER_LONG_PRESS_MS = 2000
-// power button: a second press within this window counts as a double-press (1s)
-const POWER_DOUBLE_MS = 1000
 
 export interface VolumeOverlayState {
   visible: boolean
@@ -320,37 +320,44 @@ export function useHardwareButtons({
 
   // power button controls
   useEffect(() => {
+    let longPressTimer: number | undefined
+    let singlePressTimer: number | undefined
     let downAt = 0
-    let armed = false
-    let pendingSingle: number | undefined
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code !== 'KeyM') return
       if (e.repeat) return
       downAt = Date.now()
-      armed = true
+      // start long press timer on keydown
+      longPressTimer = window.setTimeout(() => {
+        longPressTimer = undefined
+        onSleep()
+        // cancel single press and double press detection
+        if (singlePressTimer != null) {
+          window.clearTimeout(singlePressTimer)
+          singlePressTimer = undefined
+        }
+      }, POWER_LONG_PRESS_MS)
     }
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code !== 'KeyM') return
-      // only count a keyup that had a matching keydown
-      if (!armed) return
-      armed = false
-      const held = downAt ? Date.now() - downAt : 0
-      downAt = 0
-      // long press (2s) -> sleep
-      if (held >= POWER_LONG_PRESS_MS) {
-        onSleep()
-        return
+      // cancel long press timer on keyup
+      if (longPressTimer != null) {
+        window.clearTimeout(longPressTimer)
+        longPressTimer = undefined
       }
-      if (pendingSingle != null) {
-        // second tap within the window -> double press -> power menu
-        window.clearTimeout(pendingSingle)
-        pendingSingle = undefined
+      const held = Date.now() - downAt
+      if (held >= POWER_LONG_PRESS_MS) return
+      // double press: second tap within window -> power menu
+      if (singlePressTimer != null) {
+        window.clearTimeout(singlePressTimer)
+        singlePressTimer = undefined
         onTogglePowerMenu()
       } else {
-        pendingSingle = window.setTimeout(() => {
-          pendingSingle = undefined
+        // single press: delay before screensaver
+        singlePressTimer = window.setTimeout(() => {
+          singlePressTimer = undefined
           onScreensaver()
-        }, POWER_DOUBLE_MS)
+        }, POWER_SINGLE_PRESS_MS)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -358,7 +365,8 @@ export function useHardwareButtons({
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
-      if (pendingSingle != null) window.clearTimeout(pendingSingle)
+      if (longPressTimer != null) window.clearTimeout(longPressTimer)
+      if (singlePressTimer != null) window.clearTimeout(singlePressTimer)
     }
   }, [onTogglePowerMenu, onScreensaver, onSleep])
 
