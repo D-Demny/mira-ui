@@ -1,6 +1,6 @@
-import { memo } from 'react'
 import styles from './LibraryView.module.scss'
 import { usePlaylists } from '@/hooks/usePlaylists'
+import { useListFocus } from '@/hooks/useListFocus'
 
 interface Props {
   onNavigate: (route: string) => void
@@ -9,6 +9,19 @@ interface Props {
 
 function LibraryViewImpl({ onNavigate, onPlay }: Props) {
   const { items: playlists, loading, error, refetch } = usePlaylists()
+
+  const { focusedIndex, handleWheel, tapItem, setFocusRef } = useListFocus({
+    itemCount: playlists.length,
+    onSelect: (index) => {
+      const playlist = playlists[index]
+      if (!playlist) return
+      onNavigate('playlist')
+      if (onPlay && playlist.uri) {
+        onPlay(playlist.uri)
+      }
+    },
+    allowTapSelect: true,
+  })
 
   if (loading && playlists.length === 0) {
     return (
@@ -42,25 +55,19 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
         {playlists.length === 0 ? (
           <p className={styles.empty}>No playlists found</p>
         ) : (
-          <ul className={styles.list}>
-            {playlists.map((playlist) => (
+          <ul className={styles.list} onWheel={handleWheel as unknown as React.WheelEventHandler}>
+            {playlists.map((playlist, index) => (
               <li
                 key={playlist.id ?? Math.random().toString(36)}
-                className={styles.listItem}
+                className={`${styles.listItem} ${index === focusedIndex ? styles.focused : ''}`}
                 role="button"
                 tabIndex={0}
-                onClick={() => {
-                  onNavigate('playlist')
-                  if (onPlay && playlist.uri) {
-                    onPlay(playlist.uri)
-                  }
-                }}
+                ref={index === focusedIndex ? setFocusRef : undefined}
+                onClick={() => tapItem(index)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
-                    onNavigate('playlist')
-                    if (onPlay && playlist.uri) {
-                      onPlay(playlist.uri)
-                    }
+                    e.preventDefault()
+                    tapItem(index)
                   }
                 }}
               >
@@ -87,4 +94,4 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
   )
 }
 
-export const LibraryView = memo(LibraryViewImpl)
+export const LibraryView = LibraryViewImpl

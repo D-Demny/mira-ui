@@ -3,6 +3,7 @@ import type { ObserverStatusActive } from '@/api/types'
 import { getPreset, labelFromUri, presetIndexFromCode, setPreset } from '@/presets'
 import { getSettings } from '@/settings'
 import type { NotifyFn } from '@/notify/notifyContext'
+import { ListFocusContext } from '@/navigation/listFocusContext'
 
 // physical controls
 
@@ -170,10 +171,17 @@ export function useHardwareButtons({
   )
 
   // knob turn -> volume only when something is playing
+  // list focus takes priority over volume when a list is active
   useEffect(() => {
     if (!status) return
 
     const onWheel = (e: WheelEvent) => {
+      const listFocus = ListFocusContext.entry
+      if (listFocus && listFocus.onWheel) {
+        listFocus.onWheel(e)
+        return
+      }
+
       // the knob is REL_HWHEEL -> horizontal deltaX
       if (e.deltaX === 0) return
       e.preventDefault()
@@ -198,6 +206,22 @@ export function useHardwareButtons({
 
   // knob press (Enter) is play/pause, back (Escape) is go back.
   // preventDefault so Enter doesnt also trigger a focused button like the menu.
+  // capture phase for list focus confirm
+  useEffect(() => {
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        const listFocus = ListFocusContext.entry
+        if (listFocus && listFocus.onConfirm) {
+          e.preventDefault()
+          listFocus.onConfirm()
+          return
+        }
+      }
+    }
+    window.addEventListener('keydown', onKeyDownCapture, { capture: true })
+    return () => window.removeEventListener('keydown', onKeyDownCapture, { capture: true })
+  }, [])
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
