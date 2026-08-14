@@ -608,11 +608,10 @@ export default function App() {
       return
     }
 
-    // library navigation: back from playing → go to last browse route
-    if (statusActive && navigation.state.lastBrowseRoute != null && !showingLibrary) {
-      const route = navigation.state.lastBrowseRoute
+    // library navigation: back from playing → open library
+    if (statusActive && !showingLibrary) {
       setShowingLibrary(true)
-      navigation.setCurrentRoute(route)
+      navigation.setCurrentRoute('library')
       return
     }
 
