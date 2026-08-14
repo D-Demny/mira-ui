@@ -6,6 +6,10 @@ import type {
   ObserverStatus,
   ObserverStatusActive,
   RemoteStateWire,
+  SpotifyPlaylist,
+  SpotifyPlaylistResponse,
+  SpotifyRecentlyPlayedItem,
+  SpotifyRecentlyPlayedResponse,
 } from './types'
 
 function trackIdFromUri(uri: string): string {
@@ -169,4 +173,33 @@ export async function setSavedState(uri: string, saved: boolean): Promise<void> 
 
 export function eventsUrl(): string {
   return WS_URL
+}
+
+// ── Playlist API ──────────────────────────────────────────────────────────
+
+export async function fetchUserPlaylists(
+  page = 0,
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<{ items: SpotifyPlaylist[]; total: number }> {
+  const res = await fetch(
+    `${API_BASE}/web-api/me/playlists?limit=${limit}&offset=${page * limit}`,
+    { signal },
+  )
+  if (!res.ok) throw new Error(`web-api/me/playlists ${res.status}`)
+  const body: SpotifyPlaylistResponse = await res.json()
+  return { items: body.items, total: body.total }
+}
+
+export async function fetchRecentlyPlayed(
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<SpotifyRecentlyPlayedItem[]> {
+  const res = await fetch(
+    `${API_BASE}/web-api/me/player/recently-played?limit=${limit}`,
+    { signal },
+  )
+  if (!res.ok) throw new Error(`web-api/me/player/recently-played ${res.status}`)
+  const body: SpotifyRecentlyPlayedResponse = await res.json()
+  return body.items ?? []
 }
