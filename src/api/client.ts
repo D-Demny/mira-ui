@@ -177,29 +177,52 @@ export function eventsUrl(): string {
 
 // ── Playlist API ──────────────────────────────────────────────────────────
 
+async function safeJson(res: Response): Promise<unknown> {
+  const ct = res.headers.get('content-type') ?? ''
+  if (!ct.includes('application/json')) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Expected JSON but got ${ct || 'unknown'}: ${text.slice(0, 200)}`)
+  }
+  try {
+    return res.json()
+  } catch {
+    throw new Error('Failed to parse JSON response')
+  }
+}
+
 export async function fetchUserPlaylists(
   page = 0,
   limit = 50,
   signal?: AbortSignal,
 ): Promise<{ items: SpotifyPlaylist[]; total: number }> {
-  const res = await fetch(
-    `${API_BASE}/web-api/me/playlists?limit=${limit}&offset=${page * limit}`,
-    { signal },
-  )
-  if (!res.ok) throw new Error(`web-api/me/playlists ${res.status}`)
-  const body: SpotifyPlaylistResponse = await res.json()
-  return { items: body.items, total: body.total }
+  try {
+    const res = await fetch(
+      `${API_BASE}/web-api/me/playlists?limit=${limit}&offset=${page * limit}`,
+      { signal },
+    )
+    if (!res.ok) throw new Error(`web-api/me/playlists ${res.status}`)
+    const body: SpotifyPlaylistResponse = (await safeJson(res)) as SpotifyPlaylistResponse
+    return { items: body.items ?? [], total: body.total ?? 0 }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`web-api/me/playlists: ${message}`)
+  }
 }
 
 export async function fetchRecentlyPlayed(
   limit = 20,
   signal?: AbortSignal,
 ): Promise<SpotifyRecentlyPlayedItem[]> {
-  const res = await fetch(
-    `${API_BASE}/web-api/me/player/recently-played?limit=${limit}`,
-    { signal },
-  )
-  if (!res.ok) throw new Error(`web-api/me/player/recently-played ${res.status}`)
-  const body: SpotifyRecentlyPlayedResponse = await res.json()
-  return body.items ?? []
+  try {
+    const res = await fetch(
+      `${API_BASE}/web-api/me/player/recently-played?limit=${limit}`,
+      { signal },
+    )
+    if (!res.ok) throw new Error(`web-api/me/player/recently-played ${res.status}`)
+    const body: SpotifyRecentlyPlayedResponse = (await safeJson(res)) as SpotifyRecentlyPlayedResponse
+    return body.items ?? []
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`web-api/me/player/recently-played: ${message}`)
+  }
 }
