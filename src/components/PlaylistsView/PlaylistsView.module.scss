@@ -1,0 +1,58 @@
+.container {
+  width: 100%;
+  height: 100%;
+  background: $bg;
+  color: $text-primary;
+  padding: $pad-y $pad-x;
+  overflow-y: auto;
+}
+
+.title {
+  font-size: $fs-3xl;
+  font-weight: $fw-bold;
+  margin: 0 0 $s-6;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: $s-3;
+  padding: $s-3 $s-2;
+  border-radius: $r-md;
+  cursor: pointer;
+  transition: background $dur-fast $ease-standard;
+  min-height: $touch-min;
+
+  &:hover,
+  &:focus-visible {
+    background: $surface-elev;
+  }
+}
+
+.listItemIcon {
+  font-size: $fs-lg;
+  opacity: 0.6;
+}
+
+.listItemText {
+  flex: 1;
+  font-size: $fs-lg;
+  font-weight: $fw-regular;
+  color: $text-primary;
+}
+
+.playIcon {
+  font-size: $fs-md;
+  opacity: 0;
+  transition: opacity $dur-fast $ease-standard;
+}
+
+.listItem:hover .playIcon {
+  opacity: 0.6;
+}

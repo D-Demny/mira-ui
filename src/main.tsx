@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './styles/_global.scss'
 import App from './App.tsx'
 import { DevOverlay, DevScreenProvider } from '@/dev/DevScreens'
+import { NavigationProvider } from '@/navigation/navigationContext'
 import { NotifyProvider } from '@/notify/NotifyProvider'
 import { VoiceNotifier } from '@/voice/VoiceNotifier'
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
@@ -36,13 +37,15 @@ startUiScaleSync()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <DevScreenProvider>
-        <NotifyProvider>
-          <App />
-          <VoiceNotifier />
-        </NotifyProvider>
-        <DevOverlay />
-      </DevScreenProvider>
+      <NavigationProvider>
+        <DevScreenProvider>
+          <NotifyProvider>
+            <App />
+            <VoiceNotifier />
+          </NotifyProvider>
+          <DevOverlay />
+        </DevScreenProvider>
+      </NavigationProvider>
     </ErrorBoundary>
   </StrictMode>,
 )
