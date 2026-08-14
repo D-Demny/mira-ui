@@ -59,9 +59,9 @@ const CHORD_MS = 3000
 
 // power button: a press held longer than this is ignored (no long-press action yet?)
 const POWER_LONG_PRESS_MS = 600
-  // power button: a second press within this window counts as a double-press
-  const POWER_DOUBLE_MS = 350
-  // power button: single press opens screensaver (clock), double press opens power menu
+// power button: a second press within this window counts as a double-press
+const POWER_DOUBLE_MS = 700
+// power button: single press opens screensaver (clock), double press opens power menu
 
 export interface VolumeOverlayState {
   visible: boolean
