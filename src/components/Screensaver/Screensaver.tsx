@@ -87,14 +87,9 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
     }
   }, [onClose])
 
-  let hours = now.getHours() % 12
-  if (hours === 0) hours = 12
-  const ampm = now.getHours() < 12 ? 'AM' : 'PM'
-  const date = now.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  })
+  const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
+  const months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
+  const date = `${weekdays[now.getDay()]} ${String(now.getDate()).padStart(2, '0')}.${months[now.getMonth()]}.${now.getFullYear()}`
 
   return (
     <div className={styles.container} onClick={onClose}>
@@ -114,8 +109,7 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
       <div className={styles.scrim} aria-hidden />
       <div className={styles.content}>
         <div className={styles.clock}>
-          {hours}:{pad2(now.getMinutes())}
-          <span className={styles.ampm}>{ampm}</span>
+          {pad2(now.getHours())}:{pad2(now.getMinutes())}
         </div>
         <div className={styles.date}>{date}</div>
       </div>
