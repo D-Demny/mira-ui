@@ -87,12 +87,9 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
     }
   }, [onClose])
 
-  const date = now.toLocaleDateString('de-DE', {
-    weekday: 'long',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
+  const weekdays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
+  const months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
+  const date = `${weekdays[now.getDay()]} ${String(now.getDate()).padStart(2, '0')}.${months[now.getMonth()]}.${now.getFullYear()}`
 
   return (
     <div className={styles.container} onClick={onClose}>
