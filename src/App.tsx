@@ -7,11 +7,13 @@ import { ConnectionChooser } from '@/components/ConnectionChooser'
 import { Controls } from '@/components/Controls'
 import { DevicePicker } from '@/components/DevicePicker'
 import { IdleScreen } from '@/components/IdleScreen'
+import { LibraryView } from '@/components/LibraryView'
 import { Lyrics } from '@/components/Lyrics'
 import { Menu } from '@/components/Menu'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
 import { NoLyricsView } from '@/components/NoLyricsView'
 import { PairingDialog } from '@/components/PairingDialog'
+import { PlaylistsView } from '@/components/PlaylistsView'
 import { ReportDialog } from '@/components/ReportDialog'
 import { PcConnect } from '@/components/PcConnect'
 import { PowerMenu } from '@/components/PowerMenu'
@@ -35,6 +37,7 @@ import { useConnectDevices } from '@/hooks/useConnectDevices'
 import { useControls } from '@/hooks/useControls'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
 import { useKnownDevices } from '@/hooks/useKnownDevices'
+import { useNavigation } from '@/navigation/navigationContext'
 import { useNotify } from '@/notify/notifyContext'
 import { useObserver } from '@/hooks/useObserver'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
@@ -120,6 +123,10 @@ export default function App() {
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [transferPromptActive, setTransferPromptActive] = useState(false)
+
+  // navigation stack for library menu system
+  const navigation = useNavigation()
+  const [showingLibrary, setShowingLibrary] = useState(false)
   const [transferPromptAction, setTransferPromptAction] = useState<(() => void) | null>(null)
   // support report id dialog
   const [reportId, setReportId] = useState<string | null>(null)
@@ -253,7 +260,9 @@ export default function App() {
     forced === 'power-menu' ||
     forced === 'bluetooth-menu' ||
     forced === 'reconnect-banner' ||
-    forced === 'settings'
+    forced === 'settings' ||
+    forced === 'library' ||
+    forced === 'playlists'
       ? mockStatus
       : realStatus
 
@@ -540,9 +549,21 @@ export default function App() {
     updateRemindAtRef.current = Date.now() + UPDATE_REMIND_MS
     setUpdateCardOpen(false)
   }, [])
+
+  // start playback from library → save route, go to now-playing
+  const onStartPlaybackFromLibrary = useCallback(
+    (uri: string) => {
+      navigation.setLastBrowseRoute(navigation.state.currentRoute ?? 'library')
+      setShowingLibrary(false)
+      void Promise.resolve(playContext(uri)).catch(() => {})
+    },
+    [navigation, playContext],
+  )
   useEffect(() => {
     if (updateCardOpen && realStatus?.active === true) setUpdateCardOpen(false)
   }, [updateCardOpen, realStatus])
+
+  const statusActive = status?.active === true
 
   // hardware back button
   const goBack = useCallback(() => {
@@ -586,6 +607,27 @@ export default function App() {
       closeMenu()
       return
     }
+
+    // library navigation: back from playing → go to last browse route
+    if (statusActive && navigation.state.lastBrowseRoute != null && !showingLibrary) {
+      const route = navigation.state.lastBrowseRoute
+      setShowingLibrary(true)
+      navigation.setCurrentRoute(route)
+      return
+    }
+
+    // library navigation: within library, pop stack or return to playing
+    if (showingLibrary) {
+      const popped = navigation.popRoute()
+      if (popped == null) {
+        // at root of library, go back to playing
+        setShowingLibrary(false)
+        navigation.clearLastBrowseRoute()
+        return
+      }
+      return
+    }
+
     if (onOfflineSetup && offlineMethod !== 'chooser') {
       setOfflineMethod('chooser')
       return
@@ -609,6 +651,9 @@ export default function App() {
     closePowerMenu,
     menuOpen,
     closeMenu,
+    statusActive,
+    navigation,
+    showingLibrary,
     onOfflineSetup,
     offlineMethod,
     setupOverride,
@@ -634,7 +679,6 @@ export default function App() {
       : null
   const liked = useSavedTrack(savableUri, (message) => notify(message, { variant: 'error' }))
 
-  const statusActive = status?.active === true
   const onPlayPauseActive = controls.onPlayPause
   const resumeLast = useCallback(() => {
     void resumeLastDevice().catch(() => {
@@ -908,6 +952,35 @@ export default function App() {
     )
   }
 
+  if (forced === 'library') {
+    return (
+      <div className={styles.app}>
+        <LibraryView
+          onNavigate={(route) => {
+            if (route === 'playlist') {
+              setForced('playlists')
+            }
+          }}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'playlists') {
+    return (
+      <div className={styles.app}>
+        <PlaylistsView
+          onNavigate={() => {}}
+          onPlay={(uri) => {
+            setForced(null)
+            void playContext(uri).catch(() => {})
+          }}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+
   if (!forced) {
     if (offlineScreen !== null) {
       let screen
@@ -1013,6 +1086,34 @@ export default function App() {
             caption="setting things up"
             progress={setupProgress ? setupProgress.percent : null}
           />
+          {globalOverlays}
+        </div>
+      )
+    }
+
+    // library navigation view (replaces idle/playing when in library mode)
+    if (showingLibrary) {
+      const currentRoute = navigation.state.currentRoute ?? 'library'
+      return (
+        <div className={styles.app}>
+          {currentRoute === 'playlists' ? (
+            <PlaylistsView
+              onNavigate={(route) => {
+                if (route === 'playlist-detail') {
+                  // would navigate to playlist detail
+                }
+              }}
+              onPlay={onStartPlaybackFromLibrary}
+            />
+          ) : (
+            <LibraryView
+              onNavigate={(route) => {
+                if (route === 'playlist') {
+                  navigation.pushRoute('playlists')
+                }
+              }}
+            />
+          )}
           {globalOverlays}
         </div>
       )
