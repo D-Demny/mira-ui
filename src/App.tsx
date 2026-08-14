@@ -22,7 +22,7 @@ import { Screensaver } from '@/components/Screensaver'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TransferPrompt } from '@/components/TransferPrompt'
-import { SponsorScreen } from '@/components/SponsorScreen'
+
 import { TrackInfo } from '@/components/TrackInfo'
 import { UpdateCard } from '@/components/UpdateCard'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
@@ -47,8 +47,6 @@ import { getSettings, initSettings, updateSettings, useSettings } from '@/settin
 import { artSizeFor, heroArtSizeFor } from '@/uiScale'
 import styles from './App.module.scss'
 
-const SPONSOR_SHOWN_KEY = 'mira.sponsorShown'
-const SPONSOR_AFTER_PLAY_MS = 3 * 60 * 1000
 const LAST_ART_KEY = 'mira.lastArtUrl'
 const UTC_OFFSET_KEY = 'mira.utcOffsetMin'
 const UPDATE_REMIND_MS = 24 * 60 * 60 * 1000
@@ -130,25 +128,6 @@ export default function App() {
   // 'auto' = opened by the idle timer
   const [screensaverBy, setScreensaverBy] = useState<'manual' | 'auto'>('manual')
 
-  // one-time sponsor screen
-  const [sponsorOpenReal, setSponsorOpen] = useState(false)
-  const sponsorShownRef = useRef(false)
-  useEffect(() => {
-    try {
-      sponsorShownRef.current = window.localStorage.getItem(SPONSOR_SHOWN_KEY) === '1'
-    } catch {
-      sponsorShownRef.current = true
-    }
-  }, [])
-  const closeSponsor = useCallback(() => {
-    sponsorShownRef.current = true
-    try {
-      window.localStorage.setItem(SPONSOR_SHOWN_KEY, '1')
-    } catch {
-      // ignore
-    }
-    setSponsorOpen(false)
-  }, [])
   const [offlineMethod, setOfflineMethod] = useState<'chooser' | 'bluetooth' | 'pc'>('chooser')
   const [setupOverride, setSetupOverride] = useState(false)
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -367,7 +346,6 @@ export default function App() {
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
     !debugOpen &&
-    !sponsorOpenReal &&
     !updateCardOpen &&
     !reportId &&
     !pairing
@@ -498,16 +476,6 @@ export default function App() {
     }
   }, [realStatus])
 
-  const playbackActive = realStatus?.active === true
-  const stillSettingUp = realStatus?.setting_up === true
-  useEffect(() => {
-    if (!playbackActive || stillSettingUp || sponsorShownRef.current) return
-    const t = window.setTimeout(() => {
-      if (!sponsorShownRef.current) setSponsorOpen(true)
-    }, SPONSOR_AFTER_PLAY_MS)
-    return () => window.clearTimeout(t)
-  }, [playbackActive, stillSettingUp])
-
   const [latestVersion, setLatestVersion] = useState('')
   const [latestHighlights, setLatestHighlights] = useState<string[]>([])
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -560,7 +528,6 @@ export default function App() {
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
     !debugOpen &&
-    !sponsorOpenReal &&
     !reportId &&
     !pairing
   useEffect(() => {
@@ -589,10 +556,6 @@ export default function App() {
     }
     if (reportId) {
       setReportId(null)
-      return
-    }
-    if (sponsorOpenReal) {
-      closeSponsor()
       return
     }
     if (debugOpen) {
@@ -638,8 +601,6 @@ export default function App() {
     updateCardOpen,
     remindLater,
     reportId,
-    sponsorOpenReal,
-    closeSponsor,
     debugOpen,
     deviceMenuOpen,
     btMenuOpen,
@@ -754,10 +715,6 @@ export default function App() {
       <PowerMenu
         open={powerMenuOpen}
         onClose={closePowerMenu}
-        onSupport={() => {
-          closePowerMenu()
-          setSponsorOpen(true)
-        }}
       />
       <SettingsSheet
         open={settingsOpen}
@@ -796,7 +753,6 @@ export default function App() {
       <DebugScreen open={debugOpen} onClose={() => setDebugOpen(false)} onReport={setReportId} />
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
       {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
-      {sponsorOpenReal ? <SponsorScreen onClose={closeSponsor} /> : null}
       {updateCardOpen ? (
         <UpdateCard
           latest={latestVersion}
@@ -864,13 +820,6 @@ export default function App() {
       <div className={styles.app}>
         <BootSplash />
         {globalOverlays}
-      </div>
-    )
-  }
-  if (forced === 'sponsor') {
-    return (
-      <div className={styles.app}>
-        <SponsorScreen onClose={() => setForced(null)} />
       </div>
     )
   }
