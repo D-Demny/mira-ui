@@ -348,9 +348,9 @@ export default function App() {
   const [updateCardOpen, setUpdateCardOpen] = useState(false)
   const updateRemindAtRef = useRef(0)
 
-  // auto screensaver: only ever from the true idle screen, after 10 quiet
-  // minutes; any user input resets the countdown. Not a setting on purpose.
-  const SCREENSAVER_AUTO_MS = 10 * 60 * 1000
+  // auto screensaver: opens immediately when playback stops (nothing playing),
+  // acting as a clock screensaver. any user input wakes it up. Not a setting on purpose.
+  const SCREENSAVER_DELAY_MS = 3000
   const screensaverAutoEligible =
     !screensaverOpen &&
     !forced &&
@@ -377,21 +377,9 @@ export default function App() {
       setScreensaverBy('auto')
       setScreensaverOpen(true)
     }
-    let t = window.setTimeout(open, SCREENSAVER_AUTO_MS)
-    const reset = () => {
-      window.clearTimeout(t)
-      t = window.setTimeout(open, SCREENSAVER_AUTO_MS)
-    }
-    window.addEventListener('pointerdown', reset, { capture: true })
-    window.addEventListener('keydown', reset, { capture: true })
-    window.addEventListener('wheel', reset, { capture: true })
-    return () => {
-      window.clearTimeout(t)
-      window.removeEventListener('pointerdown', reset, { capture: true })
-      window.removeEventListener('keydown', reset, { capture: true })
-      window.removeEventListener('wheel', reset, { capture: true })
-    }
-  }, [screensaverAutoEligible, SCREENSAVER_AUTO_MS])
+    const t = window.setTimeout(open, SCREENSAVER_DELAY_MS)
+    return () => window.clearTimeout(t)
+  }, [screensaverAutoEligible, SCREENSAVER_DELAY_MS])
 
   // an auto-opened saver yields to real playback; a manual one stays (desk
   // mode) and cross-fades its art instead
@@ -473,13 +461,13 @@ export default function App() {
 
   const handleScreensaverClose = useCallback(() => {
     setScreensaverOpen(false)
-    if (screensaverBy === 'manual' && defaultDeviceId && defaultDeviceId !== '') {
+    if (defaultDeviceId && defaultDeviceId !== '') {
       void transferToDevice(defaultDeviceId).catch((err) => {
         console.warn('transfer failed', err)
         notify('Couldn\'t switch to default device', { variant: 'error' })
       })
     }
-  }, [screensaverBy, defaultDeviceId, notify])
+  }, [defaultDeviceId, notify])
 
   // remember the last album art for the screensavers ambient background
   useEffect(() => {
