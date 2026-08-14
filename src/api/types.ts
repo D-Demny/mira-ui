@@ -225,6 +225,42 @@ export interface RemoteStateWire {
   RawMetadata?: Record<string, string> | null
 }
 
+export interface SpotifyPlaylist {
+  id: string
+  name: string
+  owner: { display_name: string }
+  images: Array<{ url: string }>
+  tracks: { total: number }
+  collaborative: boolean
+  uri: string
+}
+
+export interface SpotifyPlaylistResponse {
+  items: SpotifyPlaylist[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface SpotifyRecentlyPlayedItem {
+  track: {
+    id: string
+    name: string
+    artists: Array<{ name: string }>
+    album: { name: string; images: Array<{ url: string }> }
+    uri: string
+  }
+  played_at: string
+}
+
+export interface SpotifyRecentlyPlayedResponse {
+  items: SpotifyRecentlyPlayedItem[]
+  next: string | null
+  cursors: { after: string; before: string }
+  limit: number
+  href: string
+}
+
 // debug screen snapshot
 export interface DebugStatus {
   firmware_version: string
