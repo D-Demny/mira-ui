@@ -42,6 +42,7 @@ import { usePrefetch } from '@/hooks/usePrefetch'
 import { useSavedTrack } from '@/hooks/useSavedTrack'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { resumeLastDevice, transferToDevice } from '@/api/client'
+import { suspendDevice } from '@/api/system'
 import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
 import { artSizeFor, heroArtSizeFor } from '@/uiScale'
@@ -663,6 +664,9 @@ export default function App() {
         return
       }
       setPowerMenuOpen((v) => !v)
+    },
+    onSleep: () => {
+      void suspendDevice().catch(() => {})
     },
     onOpenDebug: openDebug,
     notify,

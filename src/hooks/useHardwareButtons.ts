@@ -43,6 +43,8 @@ export interface UseHardwareButtonsParams {
   onTogglePowerMenu: () => void
   // power button double-press: opens the power menu
   onScreensaver: () => void
+  // power button long press (2s): puts device to sleep
+  onSleep: () => void
   // hold preset 1 + 4 together for 3s: open the debug screen
   onOpenDebug: () => void
   // top banner message for playlist msgs
@@ -57,11 +59,10 @@ const PRESET_HOLD_MS = 2000
 // hold preset 1 + 4 together this long to open the debug screen
 const CHORD_MS = 3000
 
-// power button: a press held longer than this is ignored (no long-press action yet?)
-const POWER_LONG_PRESS_MS = 600
-// power button: a second press within this window counts as a double-press
-const POWER_DOUBLE_MS = 700
-// power button: single press opens screensaver (clock), double press opens power menu
+// power button: long press (2s) puts device to sleep
+const POWER_LONG_PRESS_MS = 2000
+// power button: a second press within this window counts as a double-press (1s)
+const POWER_DOUBLE_MS = 1000
 
 export interface VolumeOverlayState {
   visible: boolean
@@ -84,6 +85,7 @@ export function useHardwareButtons({
   onBack,
   onTogglePowerMenu,
   onScreensaver,
+  onSleep,
   onOpenDebug,
   notify,
   wrapActionWithTransfer,
@@ -334,8 +336,11 @@ export function useHardwareButtons({
       armed = false
       const held = downAt ? Date.now() - downAt : 0
       downAt = 0
-      // a deliberate hold does nothing yet?
-      if (held >= POWER_LONG_PRESS_MS) return
+      // long press (2s) -> sleep
+      if (held >= POWER_LONG_PRESS_MS) {
+        onSleep()
+        return
+      }
       if (pendingSingle != null) {
         // second tap within the window -> double press -> power menu
         window.clearTimeout(pendingSingle)
@@ -355,7 +360,7 @@ export function useHardwareButtons({
       window.removeEventListener('keyup', onKeyUp)
       if (pendingSingle != null) window.clearTimeout(pendingSingle)
     }
-  }, [onTogglePowerMenu, onScreensaver])
+  }, [onTogglePowerMenu, onScreensaver, onSleep])
 
   // clean up timers
   useEffect(
