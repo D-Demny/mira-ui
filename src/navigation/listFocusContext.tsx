@@ -3,9 +3,10 @@
 export interface ListFocusEntry {
   onWheel: (e: WheelEvent) => void
   onConfirm: (() => void) | null
+  active: boolean
 }
 
-const noopEntry: ListFocusEntry = { onWheel: () => {}, onConfirm: null }
+const noopEntry: ListFocusEntry = { onWheel: () => {}, onConfirm: null, active: false }
 
 let currentEntry: ListFocusEntry = noopEntry
 

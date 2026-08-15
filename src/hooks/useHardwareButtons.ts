@@ -177,7 +177,7 @@ export function useHardwareButtons({
 
     const onWheel = (e: WheelEvent) => {
       const listFocus = ListFocusContext.entry
-      if (listFocus && listFocus.onWheel) {
+      if (listFocus.active && listFocus.onWheel) {
         listFocus.onWheel(e)
         return
       }
