@@ -608,10 +608,12 @@ export default function App() {
       return
     }
 
-    // library navigation: back from playing → open library
+    // library navigation: back from playing → open library (use lastBrowseRoute if available)
     if (statusActive && !showingLibrary) {
       setShowingLibrary(true)
-      navigation.setCurrentRoute('library')
+      navigation.resetStack()
+      const targetRoute = navigation.goBackFromPlaying() ?? 'library'
+      navigation.setCurrentRoute(targetRoute)
       return
     }
 
@@ -621,7 +623,6 @@ export default function App() {
       if (popped == null) {
         // at root of library, go back to playing
         setShowingLibrary(false)
-        navigation.clearLastBrowseRoute()
         return
       }
       return

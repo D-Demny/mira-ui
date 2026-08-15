@@ -15,6 +15,7 @@ export interface NavigationCtx {
   setCurrentRoute: (route: LibraryRoute | null) => void
   setLastBrowseRoute: (route: LibraryRoute | null) => void
   clearLastBrowseRoute: () => void
+  resetStack: () => void
   goBackFromPlaying: () => LibraryRoute | null
 }
 
@@ -25,6 +26,7 @@ export const NavigationContext = createContext<NavigationCtx>({
   setCurrentRoute: () => {},
   setLastBrowseRoute: () => {},
   clearLastBrowseRoute: () => {},
+  resetStack: () => {},
   goBackFromPlaying: () => null,
 })
 
@@ -80,6 +82,14 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
     return state.lastBrowseRoute
   }, [state.lastBrowseRoute])
 
+  const resetStack = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      navigationStack: [],
+      currentRoute: null,
+    }))
+  }, [])
+
   return (
     <NavigationContext.Provider
       value={{
@@ -89,6 +99,7 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
         setCurrentRoute,
         setLastBrowseRoute,
         clearLastBrowseRoute,
+        resetStack,
         goBackFromPlaying,
       }}
     >

@@ -43,7 +43,7 @@ export function useListFocus({ itemCount, onSelect, allowTapSelect = true }: Use
   }, [focusedIndex, itemCount])
 
   useEffect(() => {
-    ListFocusContext.setActive({ onWheel: handleWheel, onConfirm: confirm })
+    ListFocusContext.setActive({ onWheel: handleWheel, onConfirm: confirm, active: true })
     return () => {
       ListFocusContext.setActive(null)
     }
