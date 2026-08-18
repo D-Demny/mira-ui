@@ -8,18 +8,20 @@ describe('useListFocus', () => {
     expect(result.current.focusedIndex).toBe(0)
   })
 
-  it('increments focusedIndex on CW wheel', () => {
+  // hardware: clockwise turn = negative deltaX, should move focus down
+  it('increments focusedIndex on CW wheel (negative deltaX)', () => {
     const { result } = renderHook(() => useListFocus({ itemCount: 5, onSelect: vi.fn() }))
     act(() => {
-      result.current.handleWheel({ deltaX: 1, preventDefault: vi.fn() } as unknown as WheelEvent)
+      result.current.handleWheel({ deltaX: -1, preventDefault: vi.fn() } as unknown as WheelEvent)
     })
     expect(result.current.focusedIndex).toBe(1)
   })
 
-  it('decrements focusedIndex on CCW wheel', () => {
+  it('decrements focusedIndex on CCW wheel (positive deltaX)', () => {
     const { result } = renderHook(() => useListFocus({ itemCount: 5, onSelect: vi.fn() }))
     act(() => {
       result.current.handleWheel({ deltaX: -1, preventDefault: vi.fn() } as unknown as WheelEvent)
+      result.current.handleWheel({ deltaX: 1, preventDefault: vi.fn() } as unknown as WheelEvent)
     })
     expect(result.current.focusedIndex).toBe(0)
   })
@@ -27,7 +29,7 @@ describe('useListFocus', () => {
   it('does not go below 0', () => {
     const { result } = renderHook(() => useListFocus({ itemCount: 5, onSelect: vi.fn() }))
     act(() => {
-      result.current.handleWheel({ deltaX: -1, preventDefault: vi.fn() } as unknown as WheelEvent)
+      result.current.handleWheel({ deltaX: 1, preventDefault: vi.fn() } as unknown as WheelEvent)
     })
     expect(result.current.focusedIndex).toBe(0)
   })
@@ -36,7 +38,7 @@ describe('useListFocus', () => {
     const { result } = renderHook(() => useListFocus({ itemCount: 5, onSelect: vi.fn() }))
     act(() => {
       for (let i = 0; i < 10; i++) {
-        result.current.handleWheel({ deltaX: 1, preventDefault: vi.fn() } as unknown as WheelEvent)
+        result.current.handleWheel({ deltaX: -1, preventDefault: vi.fn() } as unknown as WheelEvent)
       }
     })
     expect(result.current.focusedIndex).toBe(4)
@@ -46,8 +48,8 @@ describe('useListFocus', () => {
     const onSelect = vi.fn()
     const { result } = renderHook(() => useListFocus({ itemCount: 5, onSelect }))
     act(() => {
-      result.current.handleWheel({ deltaX: 1, preventDefault: vi.fn() } as unknown as WheelEvent)
-      result.current.handleWheel({ deltaX: 1, preventDefault: vi.fn() } as unknown as WheelEvent)
+      result.current.handleWheel({ deltaX: -1, preventDefault: vi.fn() } as unknown as WheelEvent)
+      result.current.handleWheel({ deltaX: -1, preventDefault: vi.fn() } as unknown as WheelEvent)
       result.current.confirm()
     })
     expect(onSelect).toHaveBeenCalledWith(2)

@@ -16,7 +16,8 @@ export function useListFocus({ itemCount, onSelect, allowTapSelect = true }: Use
   const handleWheel = useCallback((e: WheelEvent) => {
     if (e.deltaX === 0) return
     e.preventDefault()
-    const dir = e.deltaX > 0 ? 1 : -1
+    // hardware: clockwise turn = negative deltaX, and should move focus down
+    const dir = e.deltaX > 0 ? -1 : 1
     const next = Math.max(0, Math.min(itemCount - 1, focusedIndexRef.current + dir))
     focusedIndexRef.current = next
     setFocusedIndex(next)
