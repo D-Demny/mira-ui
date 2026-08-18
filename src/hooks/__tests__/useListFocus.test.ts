@@ -89,6 +89,21 @@ describe('useListFocus', () => {
     expect(onSelect).toHaveBeenCalledWith(0)
   })
 
+  it('clamps focus when itemCount shrinks', () => {
+    const { result, rerender } = renderHook(
+      ({ count }: { count: number }) => useListFocus({ itemCount: count, onSelect: vi.fn() }),
+      { initialProps: { count: 5 } },
+    )
+    act(() => {
+      for (let i = 0; i < 4; i++) {
+        result.current.handleWheel({ deltaX: -1, preventDefault: vi.fn() } as unknown as WheelEvent)
+      }
+    })
+    expect(result.current.focusedIndex).toBe(4)
+    rerender({ count: 2 })
+    expect(result.current.focusedIndex).toBe(1)
+  })
+
   it('handles 1 item without changing focus', () => {
     const { result } = renderHook(() => useListFocus({ itemCount: 1, onSelect: vi.fn() }))
     act(() => {
