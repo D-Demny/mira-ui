@@ -179,6 +179,7 @@ export function useHardwareButtons({
       const listFocus = ListFocusContext.entry
       if (listFocus.active && listFocus.onWheel) {
         listFocus.onWheel(e)
+        if (e.deltaX !== 0) e.stopPropagation()
         return
       }
 
