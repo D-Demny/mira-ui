@@ -35,6 +35,16 @@ export function useListFocus({ itemCount, onSelect, allowTapSelect = true }: Use
     }
   }, [onSelect, allowTapSelect])
 
+  // keep focus in range when the list shrinks (e.g. items removed while focused)
+  useEffect(() => {
+    if (itemCount === 0) return
+    if (focusedIndexRef.current < 0 || focusedIndexRef.current >= itemCount) {
+      const next = Math.max(0, itemCount - 1)
+      focusedIndexRef.current = next
+      setFocusedIndex(next)
+    }
+  }, [itemCount])
+
   useEffect(() => {
     if (focusedIndex < 0 || focusedIndex >= itemCount) return
     const el = scrollRef.current

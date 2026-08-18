@@ -3,6 +3,11 @@ import { afterAll, afterEach, beforeAll } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import { server } from './msw-server'
 
+// jsdom does not implement scrollIntoView; useListFocus calls it on focus changes
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {}
+}
+
 // node 26 ships an experimental built-in localStorage that stays inert unless the
 // process gets --localstorage-file, and it shadows jsdom's, so the global lands as
 // undefined and anything touching the settings store dies. a plain synchronous

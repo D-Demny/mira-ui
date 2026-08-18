@@ -6,6 +6,7 @@ import { BootSplash } from '@/components/BootSplash'
 import { ConnectionChooser } from '@/components/ConnectionChooser'
 import { Controls } from '@/components/Controls'
 import { DevicePicker } from '@/components/DevicePicker'
+import { HomeMenuView } from '@/components/HomeMenuView'
 import { IdleScreen } from '@/components/IdleScreen'
 import { LibraryView } from '@/components/LibraryView'
 import { Lyrics } from '@/components/Lyrics'
@@ -262,7 +263,8 @@ export default function App() {
     forced === 'reconnect-banner' ||
     forced === 'settings' ||
     forced === 'library' ||
-    forced === 'playlists'
+    forced === 'playlists' ||
+    forced === 'home'
       ? mockStatus
       : realStatus
 
@@ -980,6 +982,14 @@ export default function App() {
       </div>
     )
   }
+  if (forced === 'home') {
+    return (
+      <div className={styles.app}>
+        <HomeMenuView />
+        {globalOverlays}
+      </div>
+    )
+  }
 
   if (!forced) {
     if (offlineScreen !== null) {
@@ -1105,11 +1115,16 @@ export default function App() {
               }}
               onPlay={onStartPlaybackFromLibrary}
             />
+          ) : currentRoute === 'home' ? (
+            <HomeMenuView />
           ) : (
             <LibraryView
               onNavigate={(route) => {
                 if (route === 'playlist') {
                   navigation.pushRoute('playlists')
+                }
+                if (route === 'home') {
+                  navigation.pushRoute('home')
                 }
               }}
             />

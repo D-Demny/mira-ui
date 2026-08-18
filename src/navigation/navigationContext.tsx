@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useState } from 'react'
 
-export type LibraryRoute = 'library' | 'playlists'
+export type LibraryRoute = 'library' | 'playlists' | 'home'
 
 export interface NavigationState {
   navigationStack: LibraryRoute[]

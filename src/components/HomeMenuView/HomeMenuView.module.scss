@@ -26,44 +26,6 @@
   letter-spacing: 0.5px;
 }
 
-.loading {
-  color: $text-secondary;
-  font-size: $fs-lg;
-  padding: $s-8 0;
-  text-align: center;
-}
-
-.empty {
-  color: $text-tertiary;
-  font-size: $fs-md;
-  padding: $s-4 0;
-}
-
-.error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: $s-3;
-  padding: $s-8 0;
-  color: $text-secondary;
-  font-size: $fs-md;
-}
-
-.retryBtn {
-  padding: $s-2 $s-4;
-  border-radius: $r-md;
-  border: 1px solid $divider;
-  background: transparent;
-  color: $accent;
-  font-size: $fs-md;
-  cursor: pointer;
-  transition: background $dur-fast $ease-standard;
-
-  &:hover {
-    background: $accent-dim;
-  }
-}
-
 .list {
   list-style: none;
   padding: 0;
@@ -92,14 +54,6 @@
   outline-offset: -2px;
 }
 
-.thumbnail {
-  flex: 0 0 48px;
-  width: 48px;
-  height: 48px;
-  border-radius: $r-sm;
-  object-fit: cover;
-}
-
 .listItemText {
   flex: 1;
   min-width: 0;
@@ -116,8 +70,25 @@
   text-overflow: ellipsis;
 }
 
-.chevron {
+.badge {
   flex: 0 0 auto;
-  font-size: $fs-2xl;
+  padding: 2px $s-2;
+  border-radius: $r-sm;
+  border: 1px solid $divider;
+  font-size: $fs-sm;
+  font-weight: $fw-semibold;
+  color: $text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badgeOn {
+  border-color: $accent;
+  color: $accent;
+  background: $accent-dim;
+}
+
+.badgeError {
+  border-color: $text-tertiary;
   color: $text-tertiary;
 }

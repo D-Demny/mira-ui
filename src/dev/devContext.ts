@@ -29,6 +29,7 @@ export type DevForcedScreen =
   | 'update-card'
   | 'library'
   | 'playlists'
+  | 'home'
 
 export interface DevScreenCtx {
   forced: DevForcedScreen

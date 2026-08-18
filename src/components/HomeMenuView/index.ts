@@ -1,0 +1,1 @@
+export { HomeMenuView } from './HomeMenuView'
