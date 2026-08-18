@@ -14,4 +14,22 @@ export const server = setupServer(
   // timer run trips onUnhandledRequest: 'error' with a confusing failure
   http.get('*/settings', () => HttpResponse.json({ v: 1 })),
   http.put('*/settings', () => HttpResponse.json({ ok: true })),
+  // Home Assistant (Epic 9) — default: light off, toggle turns it on
+  http.get('*/api/states/light.*', () =>
+    HttpResponse.json({
+      entity_id: 'light.3er_stehlampe_gold_esszimmer',
+      state: 'off',
+      attributes: {},
+    }),
+  ),
+  http.post('*/api/services/light/toggle', async ({ request }) => {
+    const body = (await request.json()) as { entity_id?: string }
+    return HttpResponse.json([
+      {
+        entity_id: body.entity_id ?? 'light.3er_stehlampe_gold_esszimmer',
+        state: 'on',
+        attributes: {},
+      },
+    ])
+  }),
 )
