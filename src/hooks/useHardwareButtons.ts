@@ -214,6 +214,8 @@ export function useHardwareButtons({
         const listFocus = ListFocusContext.entry
         if (listFocus && listFocus.onConfirm) {
           e.preventDefault()
+          // Stop the bubble-phase Enter handler (play/pause) from also firing.
+          e.stopPropagation()
           listFocus.onConfirm()
           return
         }

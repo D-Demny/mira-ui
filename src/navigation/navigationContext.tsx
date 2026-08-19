@@ -50,12 +50,15 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
   }, [])
 
   const popRoute = useCallback((): LibraryRoute | null => {
-    let popped: LibraryRoute | null = null
+    // Read the current stack synchronously: the setState updater below runs
+    // during the next render, so side effects inside it are not observable
+    // from the return value.
+    const stack = state.navigationStack
+    const popped = stack.length > 0 ? stack[stack.length - 1] : null
     setState((prev) => {
       if (prev.navigationStack.length === 0) {
         return { ...prev, currentRoute: null }
       }
-      popped = prev.navigationStack[prev.navigationStack.length - 1]
       const newStack = prev.navigationStack.slice(0, -1)
       return {
         ...prev,
@@ -64,7 +67,7 @@ export function NavigationProvider({ children }: { children: React.ReactNode }) 
       }
     })
     return popped
-  }, [])
+  }, [state])
 
   const setCurrentRoute = useCallback((route: LibraryRoute | null) => {
     setState((prev) => ({ ...prev, currentRoute: route }))
