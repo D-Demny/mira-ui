@@ -3,11 +3,18 @@
 
 export type MenuIconName = 'home' | 'play' | 'playlists' | 'recent' | 'settings'
 
+export type MenuCardKind = 'media' | 'action'
+
 export interface MenuCard {
   id: string
   title: string
   subtitle: string
   art?: string
+  // 'media' cards start playback, 'action' cards trigger a local service call,
+  // cards without a kind are inert placeholders
+  kind?: MenuCardKind
+  uri?: string
+  actionId?: string
 }
 
 export interface MenuCategory {
