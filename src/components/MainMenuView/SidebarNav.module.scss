@@ -1,0 +1,78 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: $pad-y $s-4;
+  box-sizing: border-box;
+  background: rgba(24, 24, 30, 0.55);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset -12px 0 24px rgba(0, 0, 0, 0.18);
+}
+
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: $touch-min;
+  margin-bottom: $s-2;
+  padding: $s-2 $s-3;
+  box-sizing: border-box;
+  border: none;
+  border-radius: $r-md;
+  background: transparent;
+  color: $text-secondary;
+  font-family: inherit;
+  font-size: $fs-lg;
+  font-weight: $fw-medium;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color $dur-fast $ease-standard, color $dur-fast $ease-standard;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: $text-primary;
+  }
+}
+
+.itemActive {
+  background: rgba(255, 255, 255, 0.1);
+  color: $text-primary;
+  font-weight: $fw-semibold;
+}
+
+.pill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 24px;
+  border-radius: 2px;
+  background: #ffffff;
+}
+
+.iconCircle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-right: $s-3;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
