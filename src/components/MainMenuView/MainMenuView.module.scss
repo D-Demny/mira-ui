@@ -1,0 +1,27 @@
+.view {
+  display: flex;
+  width: $screen-width;
+  height: $screen-height;
+  box-sizing: border-box;
+  overflow: hidden;
+  background-color: #0a0a12;
+  background-image:
+    radial-gradient(ellipse 60% 80% at 15% 0%, rgba(94, 53, 177, 0.35), transparent 60%),
+    radial-gradient(ellipse 50% 70% at 90% 20%, rgba(224, 83, 61, 0.22), transparent 60%),
+    radial-gradient(ellipse 70% 60% at 60% 100%, rgba(30, 100, 224, 0.25), transparent 65%),
+    linear-gradient(160deg, #14142a 0%, #0a0a12 55%, #101018 100%);
+}
+
+.sidebarPane {
+  width: 250px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  background: rgba(24, 24, 30, 0.55);
+  border-right: 1px solid $divider;
+  box-shadow: inset -12px 0 24px rgba(0, 0, 0, 0.18);
+}
+
+.contentPane {
+  flex: 1;
+  min-width: 0;
+}

@@ -87,6 +87,7 @@ const SCREENS: ScreenDef[] = [
   { id: 'sponsor', label: 'Sponsor screen', hint: 'One-time support QR after setup' },
   { id: 'screensaver', label: 'Screensaver', hint: 'Clock over ambient art (double power press)' },
   { id: 'update-card', label: 'Update card', hint: 'New release nag on the idle screen' },
+  { id: 'mainmenu', label: 'Main menu (Nocturne)', hint: 'Layout shell w/ gradient bg (ticket 8.4a1)' },
 ]
 
 export function DevOverlay() {

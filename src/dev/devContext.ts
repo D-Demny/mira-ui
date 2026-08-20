@@ -30,6 +30,7 @@ export type DevForcedScreen =
   | 'library'
   | 'playlists'
   | 'home'
+  | 'mainmenu'
 
 export interface DevScreenCtx {
   forced: DevForcedScreen

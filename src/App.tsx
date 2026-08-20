@@ -9,6 +9,7 @@ import { DevicePicker } from '@/components/DevicePicker'
 import { HomeMenuView } from '@/components/HomeMenuView'
 import { IdleScreen } from '@/components/IdleScreen'
 import { LibraryView } from '@/components/LibraryView'
+import { MainMenuView } from '@/components/MainMenuView'
 import { Lyrics } from '@/components/Lyrics'
 import { Menu } from '@/components/Menu'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
@@ -264,7 +265,8 @@ export default function App() {
     forced === 'settings' ||
     forced === 'library' ||
     forced === 'playlists' ||
-    forced === 'home'
+    forced === 'home' ||
+    forced === 'mainmenu'
       ? mockStatus
       : realStatus
 
@@ -986,6 +988,14 @@ export default function App() {
     return (
       <div className={styles.app}>
         <HomeMenuView />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'mainmenu') {
+    return (
+      <div className={styles.app}>
+        <MainMenuView />
         {globalOverlays}
       </div>
     )
