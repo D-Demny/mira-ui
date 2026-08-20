@@ -1,0 +1,54 @@
+.carousel {
+  display: flex;
+  align-items: center;
+  gap: $s-4;
+  height: 100%;
+  box-sizing: border-box;
+  padding: $pad-y $s-7;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: $s-3;
+  flex-shrink: 0;
+  padding: $s-4;
+  box-sizing: border-box;
+  border-radius: $r-lg;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: $s-1;
+  width: $art-size;
+}
+
+.title {
+  margin: 0;
+  color: $text-primary;
+  font-family: inherit;
+  font-size: $fs-lg;
+  font-weight: $fw-bold;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.subtitle {
+  margin: 0;
+  color: $text-secondary;
+  font-family: inherit;
+  font-size: $fs-sm;
+  font-weight: $fw-medium;
+  overflow-wrap: anywhere;
+}
