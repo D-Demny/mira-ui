@@ -22,3 +22,16 @@
   flex: 1;
   min-width: 0;
 }
+
+// swipe focus panes: dim the inactive pane so the focus position is visible
+.sidebarFocus {
+  .contentPane {
+    opacity: 0.45;
+  }
+}
+
+.contentFocus {
+  .sidebarPane {
+    opacity: 0.85;
+  }
+}

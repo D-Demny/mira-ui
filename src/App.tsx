@@ -554,14 +554,12 @@ export default function App() {
     setUpdateCardOpen(false)
   }, [])
 
-  // start playback from library → save route, go to now-playing
-  const onStartPlaybackFromLibrary = useCallback(
+  // start playback from the main menu → stay in the menu, it switches to 'Läuft gerade'
+  const onPlayFromMenu = useCallback(
     (uri: string) => {
-      navigation.setLastBrowseRoute(navigation.state.currentRoute ?? 'library')
-      setShowingLibrary(false)
       void Promise.resolve(playContext(uri)).catch(() => {})
     },
-    [navigation, playContext],
+    [playContext],
   )
   useEffect(() => {
     if (updateCardOpen && realStatus?.active === true) setUpdateCardOpen(false)
@@ -1113,32 +1111,12 @@ export default function App() {
 
     // library navigation view (replaces idle/playing when in library mode)
     if (showingLibrary) {
-      const currentRoute = navigation.state.currentRoute ?? 'library'
       return (
         <div className={styles.app}>
-          {currentRoute === 'playlists' ? (
-            <PlaylistsView
-              onNavigate={(route) => {
-                if (route === 'playlist-detail') {
-                  // would navigate to playlist detail
-                }
-              }}
-              onPlay={onStartPlaybackFromLibrary}
-            />
-          ) : currentRoute === 'home' ? (
-            <HomeMenuView />
-          ) : (
-            <LibraryView
-              onNavigate={(route) => {
-                if (route === 'playlist') {
-                  navigation.pushRoute('playlists')
-                }
-                if (route === 'home') {
-                  navigation.pushRoute('home')
-                }
-              }}
-            />
-          )}
+          <MainMenuView
+            onPlay={onPlayFromMenu}
+            nowPlaying={status && status.active ? status : null}
+          />
           {globalOverlays}
         </div>
       )

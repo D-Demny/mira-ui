@@ -4,13 +4,18 @@ import styles from './ContentCarousel.module.scss'
 
 interface ContentCarouselProps {
   cards: MenuCard[]
+  onCardTap?: (card: MenuCard) => void
 }
 
-export function ContentCarousel({ cards }: ContentCarouselProps) {
+export function ContentCarousel({ cards, onCardTap }: ContentCarouselProps) {
   return (
     <div className={styles.carousel}>
       {cards.map((card) => (
-        <article className={styles.card} key={card.id}>
+        <article
+          className={styles.card}
+          key={card.id}
+          onClick={onCardTap ? () => onCardTap(card) : undefined}
+        >
           <AlbumArt src={card.art} alt={card.title} />
           <div className={styles.meta}>
             <h3 className={styles.title}>{card.title}</h3>
