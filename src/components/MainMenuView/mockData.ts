@@ -14,6 +14,8 @@ export interface MenuCategory {
   id: string
   label: string
   icon: MenuIconName
+  // gradient glow colors for the category background (mockups 1-3)
+  accent: { a: string; b: string }
   cards: MenuCard[]
 }
 
@@ -36,6 +38,7 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     id: 'home',
     label: 'Home',
     icon: 'home',
+    accent: { a: 'rgba(224, 51, 142, 0.55)', b: 'rgba(245, 166, 35, 0.45)' },
     cards: [
       { id: 'home-1', title: 'Guten Morgen', subtitle: 'Home Routine', art: art('#f5a623', '#e0533d', '#ffe08a') },
       { id: 'home-2', title: 'Kaffeezeit', subtitle: 'Home Routine', art: art('#8e5a3a', '#4a2c1d', '#d9a066') },
@@ -47,6 +50,7 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     id: 'now-playing',
     label: 'Läuft gerade',
     icon: 'play',
+    accent: { a: 'rgba(84, 58, 182, 0.6)', b: 'rgba(224, 51, 142, 0.4)' },
     cards: [
       { id: 'np-1', title: 'Siamese Dream', subtitle: 'The Smashing Pumpkins', art: art('#e06a3f', '#8e2f6e', '#f5c04a') },
       { id: 'np-2', title: 'The Difference', subtitle: 'Flume, Tom Misch', art: art('#e0338e', '#f5a623', '#3ad1c0') },
@@ -58,6 +62,7 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     id: 'playlists',
     label: 'Playlists',
     icon: 'playlists',
+    accent: { a: 'rgba(29, 47, 110, 0.7)', b: 'rgba(58, 106, 224, 0.45)' },
     cards: [
       { id: 'pl-1', title: 'Road Trip', subtitle: 'Mira Mix', art: art('#f5c04a', '#e0533d', '#fff0c0') },
       { id: 'pl-2', title: 'Workout', subtitle: 'Mira Mix', art: art('#e0335b', '#6e1d3a', '#f58a9e') },
@@ -69,6 +74,7 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     id: 'recent',
     label: 'Zuletzt',
     icon: 'recent',
+    accent: { a: 'rgba(91, 58, 142, 0.6)', b: 'rgba(224, 51, 142, 0.35)' },
     cards: [
       { id: 'rc-1', title: 'Siamese Dream', subtitle: 'The Smashing Pumpkins', art: art('#e06a3f', '#8e2f6e', '#f5c04a') },
       { id: 'rc-2', title: 'The Difference', subtitle: 'Flume, Tom Misch', art: art('#e0338e', '#f5a623', '#3ad1c0') },
@@ -80,6 +86,7 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     id: 'settings',
     label: 'Einstellungen',
     icon: 'settings',
+    accent: { a: 'rgba(15, 61, 58, 0.7)', b: 'rgba(15, 142, 122, 0.4)' },
     cards: [
       { id: 'set-1', title: 'Bluetooth', subtitle: 'Geräte & Pairing' },
       { id: 'set-2', title: 'WLAN', subtitle: 'Netzwerk' },

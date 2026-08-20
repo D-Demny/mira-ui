@@ -22,8 +22,8 @@ export function SidebarNav({ categories, activeId, onSelect }: SidebarNavProps) 
             onClick={() => onSelect(category.id)}
           >
             {active && <span className={styles.pill} />}
-            <span className={styles.iconCircle}>
-              <MenuIcon name={category.icon} size={22} />
+            <span className={styles.iconTile}>
+              <MenuIcon name={category.icon} size={24} />
             </span>
             <span className={styles.label}>{category.label}</span>
           </button>

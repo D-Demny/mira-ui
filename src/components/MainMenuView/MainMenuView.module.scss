@@ -4,12 +4,12 @@
   height: $screen-height;
   box-sizing: border-box;
   overflow: hidden;
+  // per-category glow colors set via --menu-glow-a/--menu-glow-b in MainMenuView.tsx
   background-color: #0a0a12;
   background-image:
-    radial-gradient(ellipse 60% 80% at 15% 0%, rgba(94, 53, 177, 0.35), transparent 60%),
-    radial-gradient(ellipse 50% 70% at 90% 20%, rgba(224, 83, 61, 0.22), transparent 60%),
-    radial-gradient(ellipse 70% 60% at 60% 100%, rgba(30, 100, 224, 0.25), transparent 65%),
-    linear-gradient(160deg, #14142a 0%, #0a0a12 55%, #101018 100%);
+    radial-gradient(ellipse 110% 150% at 8% 0%, var(--menu-glow-a), transparent 72%),
+    radial-gradient(ellipse 110% 140% at 95% 20%, var(--menu-glow-b), transparent 72%),
+    linear-gradient(165deg, #16162e 0%, #0a0a12 60%, #0d0d16 100%);
 }
 
 .sidebarPane {
