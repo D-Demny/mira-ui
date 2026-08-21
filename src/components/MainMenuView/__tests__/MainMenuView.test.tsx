@@ -236,46 +236,38 @@ describe('MainMenuView', () => {
     expect(screen.getByRole('button', { name: 'Road Trip' })).toHaveClass('card')
   })
 
-  it('shows a blurred background of the focused card artwork in the content pane', async () => {
-    const { container } = render(<MainMenuView />)
-    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
-    await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+  describe('bug8: lightweight category background', () => {
+    it('drives the background from the static category colors, not the focused card art', async () => {
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+      const home = MENU_CATEGORIES[0]
 
-    // the crossfade is a passive effect; wait for it to land on the artwork
-    await waitFor(() => {
-      expect(container.querySelector('.albumBg .show img')).toHaveAttribute(
-        'src',
-        'http://img/r.jpg',
-      )
-    })
-  })
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(home.bg)
+      expect(view.style.getPropertyValue('--menu-glow-a')).toBe(home.accent.a)
 
-  it('falls back to the static category gradient when the focused card has no artwork', async () => {
-    const { container } = render(<MainMenuView />)
-    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
-    await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
-    await waitFor(() => {
-      expect(container.querySelector('.albumBg .show img')).toHaveAttribute(
-        'src',
-        'http://img/r.jpg',
-      )
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+
+      const playlists = MENU_CATEGORIES.find((category) => category.id === 'playlists')!
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(playlists.bg)
+      expect(view.style.getPropertyValue('--menu-glow-a')).toBe(playlists.accent.a)
+
+      // rotating within the category never touches the background (no per-card repaint)
+      wheel(-10)
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(playlists.bg)
+      expect(view.style.getPropertyValue('--menu-glow-a')).toBe(playlists.accent.a)
     })
 
-    // rotate the dial onto "Workout" (images: [])
-    wheel(-10)
+    it('keeps the static slate background in the settings view', () => {
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+      const settingsCategory = MENU_CATEGORIES.find((category) => category.id === 'settings')!
 
-    await waitFor(() => {
-      const shown = container.querySelector('.albumBg .show')
-      expect(shown).not.toBeNull()
-      expect(shown?.querySelectorAll('img')).toHaveLength(0)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(settingsCategory.bg)
+      expect(view.style.getPropertyValue('--menu-glow-a')).toBe(settingsCategory.accent.a)
     })
-  })
-
-  it('keeps a static gradient background in the settings view', async () => {
-    const { container } = render(<MainMenuView />)
-    fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
-    await waitFor(() => expect(screen.getByText('Lautstärke')).toBeInTheDocument())
-    expect(container.querySelector('.albumBg img')).toBeNull()
   })
 
   describe('bug1: live sidebar preview', () => {

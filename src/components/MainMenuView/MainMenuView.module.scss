@@ -5,15 +5,31 @@
   height: $screen-height;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+// bug8: lightweight background layer — static per-category colors only,
+// no image blur/filters. Own composite layer so dial card scrolling
+// never repaints it; the base tone transitions via background-color.
+.bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: var(--menu-bg, #0a0a12);
   // per-category glow colors set via --menu-glow-a/--menu-glow-b in MainMenuView.tsx
-  background-color: #0a0a12;
   background-image:
     radial-gradient(ellipse 110% 150% at 8% 0%, var(--menu-glow-a), transparent 72%),
     radial-gradient(ellipse 110% 140% at 95% 20%, var(--menu-glow-b), transparent 72%),
-    linear-gradient(165deg, #16162e 0%, #0a0a12 60%, #0d0d16 100%);
+    linear-gradient(165deg, rgba(22, 22, 46, 0.55) 0%, rgba(10, 10, 18, 0.7) 60%, rgba(13, 13, 22, 0.85) 100%);
+  transition: background-color 0.3s ease;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
-// panes must sit above the dynamic album-art background (z-index 0)
+// panes must sit above the background layer (z-index 0)
 .sidebarPane {
   position: relative;
   z-index: 1;
