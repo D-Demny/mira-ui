@@ -1,0 +1,46 @@
+// dynamic album-art background (ticket 8.5) — Chromium 69: plain filter +
+// transform only, no backdrop-filter / filter:scale()
+.albumBg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity 600ms ease-in-out;
+  will-change: opacity;
+}
+
+.show {
+  opacity: 1;
+}
+
+.img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  // scale before the blur so blurred edges are cropped away
+  transform: scale(1.4);
+  filter: blur(80px) saturate(1.8) brightness(0.5);
+}
+
+// dark veil keeps white text + sidebar icons WCAG-AA readable
+.dim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(8, 8, 16, 0.45);
+}

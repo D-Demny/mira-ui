@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 export type RGB = [number, number, number]
 
 // gray fallback for missing art or a bad image
-const DEFAULT: RGB = [70, 75, 95]
+export const DEFAULT_COLOR: RGB = [70, 75, 95]
 const SAMPLE = 32
 
 const TARGET_S = 1
@@ -17,6 +17,11 @@ const W_POP = 1
 
 const CACHE_MAX = 500
 const cache = new Map<string, RGB>()
+
+// test isolation helper
+export function clearColorCache() {
+  cache.clear()
+}
 
 function remember(url: string, rgb: RGB) {
   if (!cache.has(url) && cache.size >= CACHE_MAX) {
@@ -112,12 +117,14 @@ function extract(img: HTMLImageElement): RGB | null {
 }
 
 export function useColorExtract(url: string | undefined): RGB {
-  const [color, setColor] = useState<RGB>(() => (url ? (cache.get(url) ?? DEFAULT) : DEFAULT))
+  const [color, setColor] = useState<RGB>(() =>
+    url ? (cache.get(url) ?? DEFAULT_COLOR) : DEFAULT_COLOR,
+  )
   const lastUrlRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     if (!url) {
-      setColor(DEFAULT)
+      setColor(DEFAULT_COLOR)
       lastUrlRef.current = undefined
       return
     }
@@ -143,13 +150,13 @@ export function useColorExtract(url: string | undefined): RGB {
 
     img.onload = () => {
       if (cancelled) return
-      const rgb = extract(img) ?? DEFAULT
+      const rgb = extract(img) ?? DEFAULT_COLOR
       remember(url, rgb)
       apply(rgb)
     }
     img.onerror = () => {
       if (cancelled) return
-      apply(DEFAULT)
+      apply(DEFAULT_COLOR)
     }
     img.src = url
 

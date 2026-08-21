@@ -7,6 +7,7 @@ import { useRecent } from '@/hooks/useRecent'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { useSettings } from '@/settings'
 import type { ObserverStatusActive } from '@/api/types'
+import { AlbumArtBackground } from './AlbumArtBackground'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
 import { MENU_CATEGORIES } from './mockData'
@@ -178,6 +179,9 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     },
   })
 
+  // ticket 8.5: the focused (or first) carousel card drives the dynamic background
+  const focusedCard = activeCategory.cards[focus.contentIndex]
+
   useSwipeGestures(viewRef, {
     // right swipe enters the content pane, left swipe returns to the sidebar
     onNext: () => focus.setActivePane('content'),
@@ -205,6 +209,8 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       className={`${styles.view} ${focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus}`}
       style={viewStyle}
     >
+      {/* ticket 8.5: dynamic blurred album-art background behind both panes */}
+      <AlbumArtBackground art={focusedCard?.art} />
       <aside className={styles.sidebarPane} aria-label="Menü-Navigation">
         <SidebarNav
           categories={categories}
