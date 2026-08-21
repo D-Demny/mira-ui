@@ -45,7 +45,8 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     id: 'home',
     label: 'Home',
     icon: 'home',
-    accent: { a: 'rgba(224, 51, 142, 0.55)', b: 'rgba(245, 166, 35, 0.45)' },
+    // ticket 8.5: non-media views keep a fixed ambient gradient (home = warm amber)
+    accent: { a: 'rgba(232, 145, 45, 0.5)', b: 'rgba(150, 72, 32, 0.42)' },
     cards: [
       { id: 'home-1', title: 'Guten Morgen', subtitle: 'Home Routine', art: art('#f5a623', '#e0533d', '#ffe08a') },
       { id: 'home-2', title: 'Kaffeezeit', subtitle: 'Home Routine', art: art('#8e5a3a', '#4a2c1d', '#d9a066') },
@@ -93,7 +94,8 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     id: 'settings',
     label: 'Einstellungen',
     icon: 'settings',
-    accent: { a: 'rgba(15, 61, 58, 0.7)', b: 'rgba(15, 142, 122, 0.4)' },
+    // ticket 8.5: settings keeps a dark neutral slate/grey ambient gradient
+    accent: { a: 'rgba(72, 78, 92, 0.5)', b: 'rgba(40, 44, 54, 0.55)' },
     cards: [
       { id: 'set-1', title: 'Bluetooth', subtitle: 'Geräte & Pairing' },
       { id: 'set-2', title: 'WLAN', subtitle: 'Netzwerk' },

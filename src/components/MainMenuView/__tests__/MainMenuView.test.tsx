@@ -209,4 +209,34 @@ describe('MainMenuView', () => {
     )
     expect(screen.getByRole('button', { name: 'Road Trip' })).toHaveClass('card')
   })
+
+  it('shows a blurred background of the focused card artwork in the content pane', async () => {
+    const { container } = render(<MainMenuView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+    await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+
+    const background = container.querySelector('.albumBg .show img')
+    expect(background).not.toBeNull()
+    expect(background).toHaveAttribute('src', 'http://img/r.jpg')
+  })
+
+  it('falls back to the static category gradient when the focused card has no artwork', async () => {
+    const { container } = render(<MainMenuView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+    await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+
+    // rotate the dial onto "Workout" (images: [])
+    wheel(-10)
+
+    const shown = container.querySelector('.albumBg .show')
+    expect(shown).not.toBeNull()
+    expect(shown?.querySelectorAll('img')).toHaveLength(0)
+  })
+
+  it('keeps a static gradient background in the settings view', async () => {
+    const { container } = render(<MainMenuView />)
+    fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+    await waitFor(() => expect(screen.getByText('Lautstärke')).toBeInTheDocument())
+    expect(container.querySelector('.albumBg img')).toBeNull()
+  })
 })
