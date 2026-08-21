@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useHomeLight, HOME_LIGHT_LABEL } from '@/hooks/useHomeLight'
+import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { useRecent } from '@/hooks/useRecent'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
@@ -17,28 +18,19 @@ export interface MainMenuViewProps {
   onPlay?: (uri: string) => void
   // live player status so the 'Läuft gerade' pane can show current track + queue
   nowPlaying?: ObserverStatusActive | null
+  // close the menu and return to the player ('Läuft gerade' confirm / back on the sidebar)
+  onExit?: () => void
 }
 
-type FocusPane = 'sidebar' | 'content'
-
-// Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4c).
-export function MainMenuView({ onPlay, nowPlaying }: MainMenuViewProps) {
+// Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4b, 8.4c).
+export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
-  const [focusPane, setFocusPane] = useState<FocusPane>('content')
   const viewRef = useRef<HTMLDivElement>(null)
 
   const playlists = usePlaylists()
   const recent = useRecent()
   const light = useHomeLight()
   const settings = useSettings()
-
-  useSwipeGestures(viewRef, {
-    // right swipe enters the content pane, left swipe returns to the sidebar
-    onNext: () => setFocusPane('content'),
-    onPrev: () => setFocusPane('sidebar'),
-    onToggleView: () => setFocusPane((pane) => (pane === 'sidebar' ? 'content' : 'sidebar')),
-    enabled: true,
-  })
 
   const categories = useMemo(() => {
     const lightSubtitle =
@@ -158,12 +150,8 @@ export function MainMenuView({ onPlay, nowPlaying }: MainMenuViewProps) {
     '--menu-glow-b': activeCategory.accent.b,
   } as CSSProperties
 
-  const onCategorySelect = (id: string) => {
-    setActiveCategoryId(id)
-    setFocusPane('content')
-  }
-
-  const onCardTap = (card: MenuCard) => {
+  // dial press / tap on a card: start playback or trigger the action
+  const handleCardAction = (card: MenuCard) => {
     if (card.kind === 'media' && card.uri) {
       // start playback and land directly on the 'Läuft gerade' pane
       setActiveCategoryId('now-playing')
@@ -174,10 +162,42 @@ export function MainMenuView({ onPlay, nowPlaying }: MainMenuViewProps) {
     }
   }
 
+  const focus = useMainMenuFocus({
+    sidebarCount: categories.length,
+    contentCount: activeCategory.cards.length,
+    exitSidebarIndex: categories.findIndex((category) => category.id === 'now-playing'),
+    onExit: () => onExit?.(),
+    onConfirmContent: (index) => {
+      const card = activeCategory.cards[index]
+      if (card) handleCardAction(card)
+    },
+  })
+
+  useSwipeGestures(viewRef, {
+    // right swipe enters the content pane, left swipe returns to the sidebar
+    onNext: () => focus.setActivePane('content'),
+    onPrev: () => focus.setActivePane('sidebar'),
+    onToggleView: () =>
+      focus.setActivePane(focus.activePane === 'sidebar' ? 'content' : 'sidebar'),
+    enabled: true,
+  })
+
+  const onCategorySelect = (id: string) => {
+    const index = categories.findIndex((category) => category.id === id)
+    if (index < 0) return
+    if (id === 'now-playing') {
+      // 'Läuft gerade' exits the menu immediately
+      onExit?.()
+      return
+    }
+    focus.selectSidebar(index)
+    setActiveCategoryId(id)
+  }
+
   return (
     <div
       ref={viewRef}
-      className={`${styles.view} ${focusPane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus}`}
+      className={`${styles.view} ${focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus}`}
       style={viewStyle}
     >
       <aside className={styles.sidebarPane} aria-label="Menü-Navigation">
@@ -185,10 +205,16 @@ export function MainMenuView({ onPlay, nowPlaying }: MainMenuViewProps) {
           categories={categories}
           activeId={activeCategoryId}
           onSelect={onCategorySelect}
+          focusedIndex={focus.activePane === 'sidebar' ? focus.sidebarIndex : undefined}
         />
       </aside>
       <main className={styles.contentPane} aria-label="Menü-Inhalt">
-        <ContentCarousel cards={activeCategory.cards} onCardTap={onCardTap} />
+        <ContentCarousel
+          cards={activeCategory.cards}
+          // selectContent confirms the tapped card (runs the card action exactly once)
+          onCardTap={(_card, index) => focus.selectContent(index)}
+          focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+        />
       </main>
     </div>
   )

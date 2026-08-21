@@ -1116,6 +1116,7 @@ export default function App() {
           <MainMenuView
             onPlay={onPlayFromMenu}
             nowPlaying={status && status.active ? status : null}
+            onExit={() => setShowingLibrary(false)}
           />
           {globalOverlays}
         </div>

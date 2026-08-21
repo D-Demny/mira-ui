@@ -47,6 +47,13 @@
   font-weight: $fw-semibold;
 }
 
+// dial focus (may differ from the selected item)
+.itemFocused {
+  background: rgba(255, 255, 255, 0.1);
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: -2px;
+}
+
 .pill {
   position: absolute;
   left: 0;

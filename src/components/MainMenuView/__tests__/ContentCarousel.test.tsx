@@ -177,11 +177,19 @@ describe('ContentCarousel', () => {
     )
   })
 
-  it('shows the current track and queue in the Läuft gerade category', () => {
+  it('shows the current track and queue in the Läuft gerade category after starting playback', () => {
     render(<MainMenuView nowPlaying={nowPlaying} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+    fireEvent.click(screen.getByText('Road Trip'))
     expect(screen.getByText('Heat Waves')).toBeInTheDocument()
     expect(screen.getByText('Glass Animals')).toBeInTheDocument()
     expect(screen.getByText('Next Song')).toBeInTheDocument()
+  })
+
+  it('tapping Läuft gerade in the sidebar exits the menu', () => {
+    const onExit = vi.fn()
+    render(<MainMenuView onExit={onExit} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
+    expect(onExit).toHaveBeenCalledTimes(1)
   })
 })
