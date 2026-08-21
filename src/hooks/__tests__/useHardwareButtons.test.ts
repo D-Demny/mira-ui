@@ -2,6 +2,33 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
 import { ListFocusContext } from '@/navigation/listFocusContext'
+import type { ObserverStatusActive } from '@/api/types'
+
+// the wheel listener only registers while a session is active
+const activeStatus: ObserverStatusActive = {
+  active: true,
+  device_id: 'device-1',
+  device_name: 'Mira',
+  device_type: 'speaker',
+  track_id: 't-1',
+  track_uri: 'spotify:track:t-1',
+  track_name: 'Song',
+  track_artist: 'Artist',
+  track_album: 'Album',
+  track_image: '',
+  context_uri: 'spotify:context:1',
+  context_name: '',
+  duration: 200,
+  position: 10,
+  is_playing: true,
+  is_paused: false,
+  volume: 50,
+  shuffle: false,
+  repeat_context: false,
+  repeat_track: false,
+  lyrics_url: '',
+  received_at: 0,
+}
 
 function setup() {
   const onPlayPause = vi.fn()
@@ -80,5 +107,65 @@ describe('useHardwareButtons Enter handling', () => {
 
     expect(onBackFocus).toHaveBeenCalledTimes(1)
     expect(onBack).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useHardwareButtons list-focus wheel throttling (bug8.2)', () => {
+  function setupWithStatus() {
+    renderHook(() =>
+      useHardwareButtons({
+        status: activeStatus,
+        onPlayPause: vi.fn(),
+        setVolume: vi.fn(),
+        playContext: vi.fn(),
+        onBack: vi.fn(),
+        onTogglePowerMenu: vi.fn(),
+        onScreensaver: vi.fn(),
+        onOpenDebug: vi.fn(),
+        notify: vi.fn(),
+      }),
+    )
+  }
+
+  function turnWheel(deltaX: number): WheelEvent {
+    const e = new WheelEvent('wheel', { deltaX, deltaY: 0, cancelable: true, bubbles: true })
+    window.dispatchEvent(e)
+    return e
+  }
+
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+    vi.useRealTimers()
+  })
+
+  it('dispatches at most one list-focus wheel event per 35ms, dropping the rest', () => {
+    vi.useFakeTimers()
+    setupWithStatus()
+    const onWheel = vi.fn()
+    ListFocusContext.setActive({ onWheel, onConfirm: null, active: true })
+
+    turnWheel(-1)
+    expect(onWheel).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(20)
+    turnWheel(-1)
+    expect(onWheel).toHaveBeenCalledTimes(1) // 20ms < 35ms → dropped, not queued
+
+    vi.advanceTimersByTime(20)
+    turnWheel(-1)
+    expect(onWheel).toHaveBeenCalledTimes(2) // 40ms total → passes
+  })
+
+  it('still prevents native scrolling for a dropped tick', () => {
+    vi.useFakeTimers()
+    setupWithStatus()
+    const onWheel = vi.fn()
+    ListFocusContext.setActive({ onWheel, onConfirm: null, active: true })
+
+    turnWheel(-1)
+    const dropped = turnWheel(-1)
+
+    expect(onWheel).toHaveBeenCalledTimes(1)
+    expect(dropped.defaultPrevented).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 const hookState = vi.hoisted(() => ({
@@ -80,6 +80,9 @@ vi.mock('@/settings', () => ({
 }))
 
 import { MainMenuView } from '../MainMenuView'
+import { ContentCarousel } from '../ContentCarousel'
+import { carouselCardAreEqual } from '../carouselCardCompare'
+import type { MenuCard } from '../mockData'
 import type { ObserverStatusActive } from '@/api/types'
 
 const nowPlaying: ObserverStatusActive = {
@@ -194,5 +197,93 @@ describe('ContentCarousel', () => {
     render(<MainMenuView onExit={onExit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
     expect(onExit).toHaveBeenCalledTimes(1)
+  })
+})
+
+// stable card fixtures so re-renders can be told apart from data changes
+const CARDS_A: MenuCard[] = [
+  { id: 'a-1', title: 'Alpha', subtitle: 'One' },
+  { id: 'a-2', title: 'Beta', subtitle: 'Two' },
+  { id: 'a-3', title: 'Gamma', subtitle: 'Three' },
+]
+const CARDS_B: MenuCard[] = [
+  { id: 'b-1', title: 'Delta', subtitle: 'Four' },
+  { id: 'b-2', title: 'Epsilon', subtitle: 'Five' },
+]
+
+describe('bug8.1: scroll reset scoped to category changes', () => {
+  let setLeft: MockInstance
+
+  beforeEach(() => {
+    setLeft = vi.spyOn(Element.prototype, 'scrollLeft', 'set')
+    vi.spyOn(Element.prototype, 'scrollIntoView')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('does not reset the scroll when the focus moves within the same category', () => {
+    const { container, rerender } = render(
+      <ContentCarousel cards={CARDS_A} categoryId="playlists" focusedIndex={0} />,
+    )
+    setLeft.mockClear()
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+
+    rerender(<ContentCarousel cards={CARDS_A} categoryId="playlists" focusedIndex={1} />)
+
+    // the dial tick only centers the new card — no jump back to card 0
+    expect(setLeft).not.toHaveBeenCalled()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(container.querySelectorAll('article')).toHaveLength(3)
+  })
+
+  it('does not reset the scroll when the cards array identity changes within the same category', () => {
+    const { rerender } = render(
+      <ContentCarousel cards={CARDS_A} categoryId="playlists" focusedIndex={0} />,
+    )
+    setLeft.mockClear()
+
+    // the parent rebuilds the cards array on every render (memo identity churn)
+    rerender(<ContentCarousel cards={[...CARDS_A]} categoryId="playlists" focusedIndex={0} />)
+
+    expect(setLeft).not.toHaveBeenCalled()
+  })
+
+  it('resets the scroll to the first card when the category changes', () => {
+    const { rerender } = render(
+      <ContentCarousel cards={CARDS_A} categoryId="playlists" focusedIndex={2} />,
+    )
+    setLeft.mockClear()
+
+    rerender(<ContentCarousel cards={CARDS_B} categoryId="recent" focusedIndex={0} />)
+
+    expect(setLeft).toHaveBeenCalledWith(0)
+  })
+})
+
+describe('bug8.2: carousel card memo comparator', () => {
+  const base = {
+    card: CARDS_A[0],
+    index: 0,
+    isFocused: false,
+    interactive: true,
+  }
+
+  it('keeps a card when its focus state is unchanged', () => {
+    expect(carouselCardAreEqual(base, base)).toBe(true)
+  })
+
+  it('re-renders when the focus state flips', () => {
+    expect(carouselCardAreEqual(base, { ...base, isFocused: true })).toBe(false)
+  })
+
+  it('re-renders when the card data identity changes', () => {
+    expect(carouselCardAreEqual(base, { ...base, card: { ...CARDS_A[0] } })).toBe(false)
+  })
+
+  it('re-renders when the interactivity changes', () => {
+    expect(carouselCardAreEqual(base, { ...base, interactive: false })).toBe(false)
   })
 })

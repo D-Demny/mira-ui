@@ -20,6 +20,10 @@ const MIN_STEP_INTERVAL_MS = 55
 // similar idea
 const REVERSAL_DEBOUNCE_MS = 140
 
+// list-focus (menu) wheel events are dropped, not queued, below this rate so a
+// fast dial spin cannot back up the React state queue on the main thread (bug8.2)
+const LIST_WHEEL_THROTTLE_MS = 35
+
 const OVERLAY_MS = 1400
 
 // throttle the "can't control volume" banner
@@ -96,6 +100,7 @@ export function useHardwareButtons({
 
   const volumeRef = useRef(0)
   const lastTurnAtRef = useRef(0)
+  const lastListWheelAtRef = useRef(0)
   const overlayTimerRef = useRef<number | undefined>(undefined)
   const sendTimerRef = useRef<number | undefined>(undefined)
   const pendingSendRef = useRef<number | null>(null)
@@ -178,8 +183,16 @@ export function useHardwareButtons({
     const onWheel = (e: WheelEvent) => {
       const listFocus = ListFocusContext.entry
       if (listFocus.active && listFocus.onWheel) {
-        listFocus.onWheel(e)
-        if (e.deltaX !== 0) e.stopPropagation()
+        const now = Date.now()
+        if (now - lastListWheelAtRef.current >= LIST_WHEEL_THROTTLE_MS) {
+          lastListWheelAtRef.current = now
+          listFocus.onWheel(e)
+        }
+        if (e.deltaX !== 0) {
+          // a dropped tick must not fall through to a native page scroll either
+          e.preventDefault()
+          e.stopPropagation()
+        }
         return
       }
 

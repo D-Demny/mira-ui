@@ -1,6 +1,7 @@
 import styles from './PlaylistsView.module.scss'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { useListFocus } from '@/hooks/useListFocus'
+import { pickSpotifyImage } from '@/api/client'
 
 interface Props {
   onNavigate: (route: string) => void
@@ -54,42 +55,45 @@ function PlaylistsViewImpl({ onNavigate, onPlay }: Props) {
         <p className={styles.empty}>No playlists found</p>
       ) : (
         <ul className={styles.list} onWheel={handleWheel as unknown as React.WheelEventHandler}>
-          {playlists.map((playlist, index) => (
-            <li
-              key={playlist.id ?? Math.random().toString(36)}
-              className={`${styles.listItem} ${index === focusedIndex ? styles.focused : ''}`}
-              role="button"
-              tabIndex={0}
-              ref={index === focusedIndex ? setFocusRef : undefined}
-              onClick={() => tapItem(index)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  tapItem(index)
-                }
-              }}
-            >
-              {playlist.images?.[0]?.url && (
-                <img
-                  src={playlist.images[0].url}
-                  alt=""
-                  className={styles.thumbnail}
-                  aria-hidden
-                />
-              )}
-              <div className={styles.listItemInfo}>
-                <span className={styles.listItemText}>{playlist.name ?? 'Untitled'}</span>
-                <span className={styles.meta}>
-                  {playlist.owner?.display_name ?? ''}
-                  {' · '}
-                  {playlist.tracks?.total ?? 0} tracks
-                </span>
-              </div>
-              {onPlay && (
-                <span className={styles.playIcon} aria-hidden>&#9654;</span>
-              )}
-            </li>
-          ))}
+          {playlists.map((playlist, index) => {
+            const thumb = pickSpotifyImage(playlist.images)
+            return (
+              <li
+                key={playlist.id ?? Math.random().toString(36)}
+                className={`${styles.listItem} ${index === focusedIndex ? styles.focused : ''}`}
+                role="button"
+                tabIndex={0}
+                ref={index === focusedIndex ? setFocusRef : undefined}
+                onClick={() => tapItem(index)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    tapItem(index)
+                  }
+                }}
+              >
+                {thumb && (
+                  <img
+                    src={thumb}
+                    alt=""
+                    className={styles.thumbnail}
+                    aria-hidden
+                  />
+                )}
+                <div className={styles.listItemInfo}>
+                  <span className={styles.listItemText}>{playlist.name ?? 'Untitled'}</span>
+                  <span className={styles.meta}>
+                    {playlist.owner?.display_name ?? ''}
+                    {' · '}
+                    {playlist.tracks?.total ?? 0} tracks
+                  </span>
+                </div>
+                {onPlay && (
+                  <span className={styles.playIcon} aria-hidden>&#9654;</span>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

@@ -177,6 +177,17 @@ export function eventsUrl(): string {
 
 // ── Playlist API ──────────────────────────────────────────────────────────
 
+// Spotify image arrays come largest-first (index 0 = 640px, 1 = 300px, 2 = 64px).
+// The device decodes covers at native size, so full-res 640x640 images are a
+// main-thread cost for small cards — prefer the smaller variants (bug8.2).
+export function pickSpotifyImage(
+  images: Array<{ url: string }> | null | undefined,
+  index = 1,
+): string | undefined {
+  if (!images || images.length === 0) return undefined
+  return images[index]?.url ?? images[0]?.url
+}
+
 async function safeJson(res: Response): Promise<unknown> {
   const ct = res.headers.get('content-type') ?? ''
   if (!ct.includes('application/json')) {

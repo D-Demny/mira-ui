@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { fetchUserPlaylists, fetchRecentlyPlayed } from '../client'
+import { fetchUserPlaylists, fetchRecentlyPlayed, pickSpotifyImage } from '../client'
 import { server } from '../../__tests__/msw-server'
 
 describe('fetchUserPlaylists', () => {
@@ -96,5 +96,32 @@ describe('fetchRecentlyPlayed', () => {
     )
 
     await expect(fetchRecentlyPlayed()).rejects.toThrow()
+  })
+})
+
+describe('pickSpotifyImage (bug8.2)', () => {
+  const images = [
+    { url: 'https://i.scdn.co/img/640' },
+    { url: 'https://i.scdn.co/img/300' },
+    { url: 'https://i.scdn.co/img/64' },
+  ]
+
+  it('prefers the medium 300px variant over the full-res 640px image', () => {
+    expect(pickSpotifyImage(images)).toBe('https://i.scdn.co/img/300')
+  })
+
+  it('falls back to the largest image when no smaller variant exists', () => {
+    expect(pickSpotifyImage([{ url: 'a' }])).toBe('a')
+    expect(pickSpotifyImage(images.slice(0, 2))).toBe('https://i.scdn.co/img/300')
+  })
+
+  it('can request the smallest 64px variant', () => {
+    expect(pickSpotifyImage(images, 2)).toBe('https://i.scdn.co/img/64')
+  })
+
+  it('returns undefined for missing or empty image arrays', () => {
+    expect(pickSpotifyImage(undefined)).toBeUndefined()
+    expect(pickSpotifyImage(null)).toBeUndefined()
+    expect(pickSpotifyImage([])).toBeUndefined()
   })
 })
