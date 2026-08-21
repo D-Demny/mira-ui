@@ -1,13 +1,14 @@
 // keep in sync with CARD_ART_SIZE in ContentCarousel.tsx (bug2: 170px)
 $card-art-size: 170px;
 
+// bug2.1: 24px container gap + 16px edge padding so cards never touch the edges
 .carousel {
   display: flex;
   align-items: center;
-  gap: $s-7;
+  gap: $s-6;
   height: 100%;
   box-sizing: border-box;
-  padding: $pad-y $s-7;
+  padding: 0 $s-4;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -17,18 +18,22 @@ $card-art-size: 170px;
   }
 }
 
+// bug2.2: Nocturne-style focus — unfocused cards scaled down and dimmed,
+// no border/outline box
 .card {
   display: flex;
   flex-direction: column;
   gap: $s-3;
   flex-shrink: 0;
+  opacity: 0.65;
+  transform: scale(0.92);
+  transition: transform 0.25s ease-out, opacity 0.25s ease-out;
 }
 
 // dial focus inside the carousel
 .cardFocused {
-  outline: 2px solid rgba(255, 255, 255, 0.4);
-  outline-offset: 6px;
-  border-radius: $r-md;
+  opacity: 1;
+  transform: scale(1.06);
 }
 
 .meta {
@@ -38,6 +43,7 @@ $card-art-size: 170px;
   width: $card-art-size;
 }
 
+// bug2.3: titles may wrap to a max of 2 lines, then ellipsize
 .title {
   margin: 0;
   color: $text-primary;
@@ -45,9 +51,12 @@ $card-art-size: 170px;
   font-size: $fs-2xl;
   font-weight: $fw-bold;
   line-height: 1.3;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 .subtitle {

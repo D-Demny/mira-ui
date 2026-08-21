@@ -63,7 +63,7 @@ export function ContentCarousel({ cards, onCardTap, focusedIndex }: ContentCarou
             <AlbumArt src={card.art} alt={card.title} size={CARD_ART_SIZE} />
             <div className={styles.meta}>
               <h3 className={styles.title}>{card.title}</h3>
-              <p className={styles.subtitle}>{card.subtitle}</p>
+              {card.subtitle ? <p className={styles.subtitle}>{card.subtitle}</p> : null}
             </div>
           </article>
         )

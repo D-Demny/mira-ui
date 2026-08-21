@@ -127,11 +127,13 @@ describe('ContentCarousel', () => {
     expect(screen.getByText('An')).toBeInTheDocument()
   })
 
-  it('binds the Playlists category to the fetched playlists', () => {
+  it('binds the Playlists category to the fetched playlists, title only (bug2.3)', () => {
     const { container } = render(<MainMenuView />)
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
     expect(screen.getByText('Road Trip')).toBeInTheDocument()
-    expect(screen.getByText('Mira Mix · 12 Titel')).toBeInTheDocument()
+    // owner name and track count are no longer rendered on playlist cards
+    expect(screen.queryByText('Mira Mix · 12 Titel')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.subtitle')).toHaveLength(0)
     expect(screen.getByText('Workout')).toBeInTheDocument()
     expect(container.querySelectorAll('.card')).toHaveLength(2)
     expect(screen.getAllByRole('img')).toHaveLength(1)
