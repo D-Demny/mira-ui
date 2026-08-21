@@ -3,6 +3,9 @@ import { AlbumArt } from '@/components/AlbumArt'
 import type { MenuCard } from './mockData'
 import styles from './ContentCarousel.module.scss'
 
+// cover art size for carousel cards (bug2: was 200, reduced for breathing room)
+const CARD_ART_SIZE = 170
+
 interface ContentCarouselProps {
   cards: MenuCard[]
   onCardTap?: (card: MenuCard, index: number) => void
@@ -57,7 +60,7 @@ export function ContentCarousel({ cards, onCardTap, focusedIndex }: ContentCarou
                 : undefined
             }
           >
-            <AlbumArt src={card.art} alt={card.title} />
+            <AlbumArt src={card.art} alt={card.title} size={CARD_ART_SIZE} />
             <div className={styles.meta}>
               <h3 className={styles.title}>{card.title}</h3>
               <p className={styles.subtitle}>{card.subtitle}</p>
