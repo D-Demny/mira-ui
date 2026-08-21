@@ -21,6 +21,13 @@
   flex-shrink: 0;
 }
 
+// dial focus inside the carousel
+.cardFocused {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 6px;
+  border-radius: $r-md;
+}
+
 .meta {
   display: flex;
   flex-direction: column;

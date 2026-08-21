@@ -3,6 +3,8 @@
 export interface ListFocusEntry {
   onWheel: (e: WheelEvent) => void
   onConfirm: (() => void) | null
+  // called for the physical Back button; return true when the press was handled
+  onBack?: (() => boolean) | null
   active: boolean
 }
 

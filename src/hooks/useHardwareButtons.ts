@@ -236,6 +236,9 @@ export function useHardwareButtons({
         }
       } else if (e.key === 'Escape') {
         e.preventDefault()
+        // the focused view (e.g. the main menu panes) may handle back itself
+        const listFocus = ListFocusContext.entry
+        if (listFocus.active && listFocus.onBack && listFocus.onBack()) return
         onBack()
       }
     }
