@@ -1,10 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { HomeMenuView } from '../HomeMenuView'
 import { server } from '@/__tests__/msw-server'
+import { clearCache } from '@/hooks/usePlaylists'
 
 describe('HomeMenuView', () => {
+  beforeEach(() => {
+    clearCache()
+  })
+
   it('renders the light with its real-time status', async () => {
     render(<HomeMenuView />)
     expect(screen.getByText('Home')).toBeInTheDocument()
@@ -55,5 +60,10 @@ describe('HomeMenuView', () => {
     )
     render(<HomeMenuView />)
     await waitFor(() => expect(screen.getByText('Offline')).toBeInTheDocument())
+  })
+
+  it('exposes every home item as an accessible button', () => {
+    render(<HomeMenuView />)
+    expect(screen.getAllByRole('button')).toHaveLength(3)
   })
 })

@@ -59,4 +59,26 @@ describe('useHardwareButtons Enter handling', () => {
 
     expect(onBack).toHaveBeenCalledTimes(1)
   })
+
+  it('lets an active list focus handle Escape before the app back handler', () => {
+    const { onBack } = setup()
+    const onBackFocus = vi.fn(() => true)
+    ListFocusContext.setActive({ onWheel: vi.fn(), onConfirm: null, onBack: onBackFocus, active: true })
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    expect(onBackFocus).toHaveBeenCalledTimes(1)
+    expect(onBack).not.toHaveBeenCalled()
+  })
+
+  it('falls through to the app back handler when list focus does not handle Escape', () => {
+    const { onBack } = setup()
+    const onBackFocus = vi.fn(() => false)
+    ListFocusContext.setActive({ onWheel: vi.fn(), onConfirm: null, onBack: onBackFocus, active: true })
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+
+    expect(onBackFocus).toHaveBeenCalledTimes(1)
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
 })

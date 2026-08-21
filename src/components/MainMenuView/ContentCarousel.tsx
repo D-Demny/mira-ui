@@ -21,28 +21,44 @@ export function ContentCarousel({ cards, onCardTap, focusedIndex }: ContentCarou
 
   return (
     <div className={styles.carousel}>
-      {cards.map((card, index) => (
-        <article
-          key={card.id}
-          ref={
-            focusedIndex === index
-              ? (el) => {
-                  focusedCardRef.current = el
-                }
-              : undefined
-          }
-          className={
-            focusedIndex === index ? `${styles.card} ${styles.cardFocused}` : styles.card
-          }
-          onClick={onCardTap ? () => onCardTap(card, index) : undefined}
-        >
-          <AlbumArt src={card.art} alt={card.title} />
-          <div className={styles.meta}>
-            <h3 className={styles.title}>{card.title}</h3>
-            <p className={styles.subtitle}>{card.subtitle}</p>
-          </div>
-        </article>
-      ))}
+      {cards.map((card, index) => {
+        const interactive = onCardTap != null
+        return (
+          <article
+            key={card.id}
+            ref={
+              focusedIndex === index
+                ? (el) => {
+                    focusedCardRef.current = el
+                  }
+                : undefined
+            }
+            role={interactive ? 'button' : undefined}
+            tabIndex={interactive ? 0 : undefined}
+            aria-label={interactive ? card.title : undefined}
+            className={
+              focusedIndex === index ? `${styles.card} ${styles.cardFocused}` : styles.card
+            }
+            onClick={interactive ? () => onCardTap(card, index) : undefined}
+            onKeyDown={
+              interactive
+                ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      onCardTap(card, index)
+                    }
+                  }
+                : undefined
+            }
+          >
+            <AlbumArt src={card.art} alt={card.title} />
+            <div className={styles.meta}>
+              <h3 className={styles.title}>{card.title}</h3>
+              <p className={styles.subtitle}>{card.subtitle}</p>
+            </div>
+          </article>
+        )
+      })}
     </div>
   )
 }

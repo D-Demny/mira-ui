@@ -10,6 +10,8 @@ export interface UseMainMenuFocusOptions {
   exitSidebarIndex: number
   // called when the menu should close (exit item confirmed / back on the sidebar)
   onExit: () => void
+  // called when a sidebar item is selected (dial press or tap)
+  onSelectSidebar?: (index: number) => void
   // called when a carousel card is confirmed (dial press or tap)
   onConfirmContent: (index: number) => void
 }
@@ -36,6 +38,7 @@ export function useMainMenuFocus({
   contentCount,
   exitSidebarIndex,
   onExit,
+  onSelectSidebar,
   onConfirmContent,
 }: UseMainMenuFocusOptions): UseMainMenuFocusResult {
   const [activePane, setActivePaneState] = useState<MainMenuPane>('sidebar')
@@ -48,11 +51,13 @@ export function useMainMenuFocus({
 
   // keep the latest callbacks/counts without re-registering the listeners
   const onExitRef = useRef(onExit)
+  const onSelectSidebarRef = useRef(onSelectSidebar)
   const onConfirmContentRef = useRef(onConfirmContent)
   const exitSidebarIndexRef = useRef(exitSidebarIndex)
   const countsRef = useRef({ sidebarCount, contentCount })
   useEffect(() => {
     onExitRef.current = onExit
+    onSelectSidebarRef.current = onSelectSidebar
     onConfirmContentRef.current = onConfirmContent
     exitSidebarIndexRef.current = exitSidebarIndex
     countsRef.current = { sidebarCount, contentCount }
@@ -94,6 +99,7 @@ export function useMainMenuFocus({
       contentIndexRef.current = 0
       setContentIndexState(0)
       setActivePane('content')
+      onSelectSidebarRef.current?.(index)
     },
     [setActivePane],
   )
