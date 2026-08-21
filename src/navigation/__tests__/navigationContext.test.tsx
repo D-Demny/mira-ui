@@ -57,4 +57,42 @@ describe('NavigationProvider', () => {
     expect(result.current.state.navigationStack).toEqual(['home'])
     expect(result.current.state.currentRoute).toBe('home')
   })
+
+  it('tracks the last browse route for the back hierarchy', () => {
+    const { result } = renderHook(() => useNavigation(), { wrapper })
+
+    act(() => {
+      result.current.setLastBrowseRoute('playlists')
+    })
+    let target: string | null = 'sentinel'
+    act(() => {
+      target = result.current.goBackFromPlaying()
+    })
+    expect(target).toBe('playlists')
+
+    act(() => {
+      result.current.clearLastBrowseRoute()
+    })
+    act(() => {
+      target = result.current.goBackFromPlaying()
+    })
+    expect(target).toBeNull()
+  })
+
+  it('resetStack clears the stack and the current route', () => {
+    const { result } = renderHook(() => useNavigation(), { wrapper })
+    act(() => {
+      result.current.pushRoute('playlists')
+    })
+    act(() => {
+      result.current.pushRoute('home')
+    })
+
+    act(() => {
+      result.current.resetStack()
+    })
+
+    expect(result.current.state.navigationStack).toEqual([])
+    expect(result.current.state.currentRoute).toBeNull()
+  })
 })

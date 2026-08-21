@@ -136,6 +136,7 @@ describe('ContentCarousel', () => {
     expect(container.querySelectorAll('.card')).toHaveLength(2)
     expect(screen.getAllByRole('img')).toHaveLength(1)
     expect(screen.getByRole('img', { name: 'Road Trip' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Road Trip' })).toHaveClass('card')
   })
 
   it('binds the Zuletzt category to recently played tracks', () => {

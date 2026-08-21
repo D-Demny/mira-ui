@@ -167,6 +167,11 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     contentCount: activeCategory.cards.length,
     exitSidebarIndex: categories.findIndex((category) => category.id === 'now-playing'),
     onExit: () => onExit?.(),
+    // keep the rendered pane in sync when a sidebar item is selected (dial press or tap)
+    onSelectSidebar: (index) => {
+      const category = categories[index]
+      if (category) setActiveCategoryId(category.id)
+    },
     onConfirmContent: (index) => {
       const card = activeCategory.cards[index]
       if (card) handleCardAction(card)
@@ -190,8 +195,8 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       onExit?.()
       return
     }
+    // selectSidebar triggers onSelectSidebar, which updates activeCategoryId
     focus.selectSidebar(index)
-    setActiveCategoryId(id)
   }
 
   return (

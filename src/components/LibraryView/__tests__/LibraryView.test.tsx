@@ -79,4 +79,12 @@ describe('LibraryView', () => {
     expect(screen.getByText('My Playlist').closest('li')).toHaveClass('focused')
     expect(screen.getByText('Home').closest('li')).not.toHaveClass('focused')
   })
+
+  it('exposes the Home entry and playlists as accessible buttons', async () => {
+    mockPlaylistsApi()
+    render(<LibraryView onNavigate={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('My Playlist')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Home/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /My Playlist/ })).toBeInTheDocument()
+  })
 })
