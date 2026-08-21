@@ -241,22 +241,34 @@ describe('MainMenuView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
     await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
 
-    const background = container.querySelector('.albumBg .show img')
-    expect(background).not.toBeNull()
-    expect(background).toHaveAttribute('src', 'http://img/r.jpg')
+    // the crossfade is a passive effect; wait for it to land on the artwork
+    await waitFor(() => {
+      expect(container.querySelector('.albumBg .show img')).toHaveAttribute(
+        'src',
+        'http://img/r.jpg',
+      )
+    })
   })
 
   it('falls back to the static category gradient when the focused card has no artwork', async () => {
     const { container } = render(<MainMenuView />)
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
     await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+    await waitFor(() => {
+      expect(container.querySelector('.albumBg .show img')).toHaveAttribute(
+        'src',
+        'http://img/r.jpg',
+      )
+    })
 
     // rotate the dial onto "Workout" (images: [])
     wheel(-10)
 
-    const shown = container.querySelector('.albumBg .show')
-    expect(shown).not.toBeNull()
-    expect(shown?.querySelectorAll('img')).toHaveLength(0)
+    await waitFor(() => {
+      const shown = container.querySelector('.albumBg .show')
+      expect(shown).not.toBeNull()
+      expect(shown?.querySelectorAll('img')).toHaveLength(0)
+    })
   })
 
   it('keeps a static gradient background in the settings view', async () => {
@@ -319,6 +331,23 @@ describe('MainMenuView', () => {
       expect(screen.getByText('Siamese Dream')).toBeInTheDocument()
       expect(screen.queryByText('Workout')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Zuletzt' })).toHaveClass('itemFocused')
+    })
+  })
+
+  describe('bug2: card spacing & centering', () => {
+    it('centers the focused card with inline center while dialing through the carousel', async () => {
+      const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+      render(<MainMenuView />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+
+      wheel(-10)
+      expect(screen.getByText('Workout').closest('.card')).toHaveClass('cardFocused')
+      expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
+      const lastEl = scrollSpy.mock.instances.at(-1)
+      expect(lastEl).toBe(screen.getByText('Workout').closest('.card'))
+      scrollSpy.mockRestore()
     })
   })
 })

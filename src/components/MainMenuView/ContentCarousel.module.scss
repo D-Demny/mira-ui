@@ -1,7 +1,10 @@
+// keep in sync with CARD_ART_SIZE in ContentCarousel.tsx (bug2: 170px)
+$card-art-size: 170px;
+
 .carousel {
   display: flex;
   align-items: center;
-  gap: $s-6;
+  gap: $s-7;
   height: 100%;
   box-sizing: border-box;
   padding: $pad-y $s-7;
@@ -32,7 +35,7 @@
   display: flex;
   flex-direction: column;
   gap: $s-1;
-  width: $art-size;
+  width: $card-art-size;
 }
 
 .title {
