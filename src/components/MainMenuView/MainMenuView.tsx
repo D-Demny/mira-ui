@@ -42,10 +42,11 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
             ? 'An'
             : 'Aus'
 
+    // bug2.3: playlist cards show only the title — no owner name / track count
     const playlistCards: MenuCard[] = playlists.items.map((playlist) => ({
       id: `pl-${playlist.id}`,
       title: playlist.name,
-      subtitle: `${playlist.owner.display_name} · ${playlist.tracks.total} Titel`,
+      subtitle: '',
       art: playlist.images[0]?.url || undefined,
       kind: 'media',
       uri: playlist.uri,
