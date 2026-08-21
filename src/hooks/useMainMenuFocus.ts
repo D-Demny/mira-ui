@@ -75,6 +75,11 @@ export function useMainMenuFocus({
     if (next === sidebarIndexRef.current) return
     sidebarIndexRef.current = next
     setSidebarIndexState(next)
+    // the newly previewed category starts at its first card (bug1)
+    if (contentIndexRef.current !== 0) {
+      contentIndexRef.current = 0
+      setContentIndexState(0)
+    }
   }, [])
 
   const moveContent = useCallback((dir: 1 | -1) => {

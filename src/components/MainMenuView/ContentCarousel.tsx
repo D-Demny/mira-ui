@@ -12,6 +12,12 @@ interface ContentCarouselProps {
 
 export function ContentCarousel({ cards, onCardTap, focusedIndex }: ContentCarouselProps) {
   const focusedCardRef = useRef<HTMLElement | null>(null)
+  const carouselRef = useRef<HTMLDivElement | null>(null)
+
+  // a different category (or refreshed data) always starts at the first card (bug1)
+  useEffect(() => {
+    if (carouselRef.current) carouselRef.current.scrollLeft = 0
+  }, [cards])
 
   // keep the focused card visible while the dial rotates through the carousel
   useEffect(() => {
@@ -20,7 +26,7 @@ export function ContentCarousel({ cards, onCardTap, focusedIndex }: ContentCarou
   }, [focusedIndex, cards])
 
   return (
-    <div className={styles.carousel}>
+    <div className={styles.carousel} ref={carouselRef}>
       {cards.map((card, index) => {
         const interactive = onCardTap != null
         return (

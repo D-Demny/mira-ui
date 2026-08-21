@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MainMenuView } from '../MainMenuView'
 import { MENU_CATEGORIES } from '../mockData'
+import type { ObserverStatusActive } from '@/api/types'
 import { server } from '@/__tests__/msw-server'
 import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
@@ -41,6 +42,31 @@ const mockRecent = [
     played_at: '2026-08-20T10:00:00Z',
   },
 ]
+
+const nowPlaying: ObserverStatusActive = {
+  active: true,
+  device_id: 'device-1',
+  device_name: 'Mira',
+  device_type: 'speaker',
+  track_id: 't-9',
+  track_uri: 'spotify:track:t-9',
+  track_name: 'Heat Waves',
+  track_artist: 'Glass Animals',
+  track_album: 'Heat Waves',
+  track_image: 'http://img/h.jpg',
+  context_uri: 'spotify:context:1',
+  context_name: 'Chill',
+  duration: 200,
+  position: 10,
+  is_playing: true,
+  is_paused: false,
+  shuffle: false,
+  repeat_context: false,
+  repeat_track: false,
+  lyrics_url: '',
+  received_at: 0,
+  next_tracks: [],
+}
 
 function wheel(deltaX: number) {
   act(() => {
@@ -238,5 +264,61 @@ describe('MainMenuView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
     await waitFor(() => expect(screen.getByText('Lautstärke')).toBeInTheDocument())
     expect(container.querySelector('.albumBg img')).toBeNull()
+  })
+
+  describe('bug1: live sidebar preview', () => {
+    it('updates the carousel immediately while rotating the sidebar dial, without confirming', async () => {
+      render(<MainMenuView />)
+      expect(screen.getByText('3er Stehlampe Gold')).toBeInTheDocument()
+
+      // rotate down to 'Playlists' (no dial press)
+      wheel(-10)
+      wheel(-10)
+
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      expect(screen.queryByText('3er Stehlampe Gold')).not.toBeInTheDocument()
+
+      // focus stayed strictly on the sidebar
+      expect(screen.getByRole('button', { name: 'Playlists' })).toHaveClass('itemFocused')
+    })
+
+    it('previews Läuft gerade with the currently playing track while keeping sidebar focus', async () => {
+      const { container } = render(<MainMenuView nowPlaying={nowPlaying} />)
+
+      wheel(-10)
+
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      expect(container.querySelector('.sidebarFocus')).not.toBeNull()
+      expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveClass('itemFocused')
+    })
+
+    it('exits the menu when the dial is confirmed on Läuft gerade', () => {
+      const onExit = vi.fn()
+      render(<MainMenuView nowPlaying={nowPlaying} onExit={onExit} />)
+
+      wheel(-10)
+      confirmDial()
+
+      expect(onExit).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps content focus on the first card when the sidebar item changes', async () => {
+      render(<MainMenuView />)
+
+      // enter Playlists, move the content focus to the second card
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      wheel(-10)
+      expect(screen.getByText('Workout').closest('.card')).toHaveClass('cardFocused')
+
+      // back to the sidebar, then focus 'Zuletzt'
+      pressBack()
+      wheel(-10)
+
+      // the preview shows the recent tracks again, starting at the first card
+      expect(screen.getByText('Siamese Dream')).toBeInTheDocument()
+      expect(screen.queryByText('Workout')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Zuletzt' })).toHaveClass('itemFocused')
+    })
   })
 })
