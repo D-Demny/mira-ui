@@ -144,12 +144,10 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     }))
   }, [playlists, recent, light, settings, nowPlaying])
 
-  const activeCategory =
+  // the confirmed selection (dial press / tap); in the sidebar pane the
+  // carousel live-previews the *focused* item instead (bug1)
+  const confirmedCategory =
     categories.find((category) => category.id === activeCategoryId) ?? categories[0]
-  const viewStyle = {
-    '--menu-glow-a': activeCategory.accent.a,
-    '--menu-glow-b': activeCategory.accent.b,
-  } as CSSProperties
 
   // dial press / tap on a card: start playback or trigger the action
   const handleCardAction = (card: MenuCard) => {
@@ -165,7 +163,7 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
 
   const focus = useMainMenuFocus({
     sidebarCount: categories.length,
-    contentCount: activeCategory.cards.length,
+    contentCount: confirmedCategory.cards.length,
     exitSidebarIndex: categories.findIndex((category) => category.id === 'now-playing'),
     onExit: () => onExit?.(),
     // keep the rendered pane in sync when a sidebar item is selected (dial press or tap)
@@ -174,13 +172,26 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       if (category) setActiveCategoryId(category.id)
     },
     onConfirmContent: (index) => {
-      const card = activeCategory.cards[index]
+      // only ever runs in the content pane, where displayed == confirmed
+      const card = confirmedCategory.cards[index]
       if (card) handleCardAction(card)
     },
   })
 
+  // bug1: while focus is in the sidebar, the carousel previews the focused
+  // item's content; in the content pane it shows the confirmed category
+  const displayedCategory =
+    focus.activePane === 'sidebar'
+      ? categories[focus.sidebarIndex] ?? confirmedCategory
+      : confirmedCategory
+
+  const viewStyle = {
+    '--menu-glow-a': displayedCategory.accent.a,
+    '--menu-glow-b': displayedCategory.accent.b,
+  } as CSSProperties
+
   // ticket 8.5: the focused (or first) carousel card drives the dynamic background
-  const focusedCard = activeCategory.cards[focus.contentIndex]
+  const focusedCard = displayedCategory.cards[focus.contentIndex]
 
   useSwipeGestures(viewRef, {
     // right swipe enters the content pane, left swipe returns to the sidebar
@@ -221,7 +232,7 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       </aside>
       <main className={styles.contentPane} aria-label="Menü-Inhalt">
         <ContentCarousel
-          cards={activeCategory.cards}
+          cards={displayedCategory.cards}
           // selectContent confirms the tapped card (runs the card action exactly once)
           onCardTap={(_card, index) => focus.selectContent(index)}
           focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
