@@ -1,6 +1,7 @@
 import styles from './LibraryView.module.scss'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { useListFocus } from '@/hooks/useListFocus'
+import { pickSpotifyImage } from '@/api/client'
 
 interface Props {
   onNavigate: (route: string) => void
@@ -78,6 +79,7 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
           <ul className={styles.list} onWheel={handleWheel as unknown as React.WheelEventHandler}>
             {playlists.map((playlist, i) => {
               const index = i + 1
+              const thumb = pickSpotifyImage(playlist.images)
               return (
                 <li
                   key={playlist.id ?? Math.random().toString(36)}
@@ -93,9 +95,9 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
                     }
                   }}
                 >
-                  {playlist.images?.[0]?.url && (
+                  {thumb && (
                     <img
-                      src={playlist.images[0].url}
+                      src={thumb}
                       alt=""
                       className={styles.thumbnail}
                       aria-hidden
