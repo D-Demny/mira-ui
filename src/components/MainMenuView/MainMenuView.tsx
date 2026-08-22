@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useHomeLight, HOME_LIGHT_LABEL } from '@/hooks/useHomeLight'
 import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
@@ -192,6 +192,27 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     settings,
     nowPlayingSnapshot,
   ])
+
+  // bug8.2 (vertical dial): pre-decode every menu cover once so a sidebar
+  // preview swap (full carousel remount) only pays layout/paint of already
+  // decoded bitmaps instead of fetch+decode per tick
+  const warmedArtRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const warmed = warmedArtRef.current
+    for (const category of categories) {
+      for (const card of category.cards) {
+        const art = card.art
+        if (!art || warmed.has(art)) continue
+        warmed.add(art)
+        const img = new Image()
+        // match AlbumArt's fetch attributes so the browser reuses the same
+        // cache entry (CORS images are cached separately)
+        img.crossOrigin = 'anonymous'
+        img.referrerPolicy = 'no-referrer'
+        img.src = art
+      }
+    }
+  }, [categories])
 
   // the confirmed selection (dial press / tap); in the sidebar pane the
   // carousel live-previews the *focused* item instead (bug1)
