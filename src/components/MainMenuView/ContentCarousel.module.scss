@@ -18,6 +18,15 @@ $card-art-size: 170px;
   }
 }
 
+// bug5/bug6: invisible placeholder for the off-screen cards — keeps the
+// total scroll width identical to the unwindowed layout
+.spacer {
+  flex-shrink: 0;
+  height: 1px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 // bug2.2: Nocturne-style focus — unfocused cards scaled down and dimmed,
 // no border/outline box
 .card {

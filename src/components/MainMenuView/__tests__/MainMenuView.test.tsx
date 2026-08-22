@@ -7,6 +7,7 @@ import type { ObserverStatusActive } from '@/api/types'
 import { server } from '@/__tests__/msw-server'
 import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
+import { clearTracksCache } from '@/hooks/usePlaylistTracks'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
 const mockPlaylists = [
@@ -93,6 +94,7 @@ describe('MainMenuView', () => {
   beforeEach(() => {
     clearCache()
     clearRecentCache()
+    clearTracksCache()
     server.use(
       http.get('*/web-api/me/playlists', () =>
         HttpResponse.json({
@@ -104,6 +106,26 @@ describe('MainMenuView', () => {
       ),
       http.get('*/web-api/me/player/recently-played', () =>
         HttpResponse.json({ items: mockRecent }),
+      ),
+      http.get('*/web-api/playlists/:id/tracks', ({ params }) =>
+        HttpResponse.json({
+          items: [
+            {
+              is_local: false,
+              track: {
+                id: `tr-${params.id}-1`,
+                name: `Track 1 of ${params.id}`,
+                uri: `spotify:track:tr-${params.id}-1`,
+                artists: [{ name: 'Someone' }],
+                album: { name: 'An Album', images: [{ url: 'http://img/tr.jpg' }] },
+              },
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+          next: null,
+        }),
       ),
     )
   })
@@ -209,7 +231,7 @@ describe('MainMenuView', () => {
     expect(onExit).toHaveBeenCalledTimes(1)
   })
 
-  it('starts playback when the focused media card is confirmed', async () => {
+  it('opens the track list when a playlist is confirmed and plays the focused track (bug4)', async () => {
     const onPlay = vi.fn()
     render(<MainMenuView onPlay={onPlay} />)
 
@@ -218,9 +240,14 @@ describe('MainMenuView', () => {
     confirmDial()
     await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
 
+    // confirming the playlist opens its track list instead of playing it
     confirmDial()
+    await waitFor(() => expect(screen.getByText('Track 1 of pl-1')).toBeInTheDocument())
+    expect(onPlay).not.toHaveBeenCalled()
 
-    expect(onPlay).toHaveBeenCalledWith('spotify:playlist:pl-1')
+    // confirming the focused track starts playback
+    confirmDial()
+    expect(onPlay).toHaveBeenCalledWith('spotify:track:tr-pl-1-1')
     expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveAttribute(
       'aria-current',
       'true',
@@ -376,6 +403,119 @@ describe('MainMenuView', () => {
         expect(img.crossOrigin).toBe('anonymous')
         expect(img.referrerPolicy).toBe('no-referrer')
       }
+    })
+  })
+
+  describe('bug2.6: zuletzt empty state', () => {
+    it('shows a placeholder card when there is no recent history', async () => {
+      server.use(
+        http.get('*/web-api/me/player/recently-played', () =>
+          HttpResponse.json({ items: [] }),
+        ),
+      )
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+
+      expect(await screen.findByText('Noch nichts abgespielt')).toBeInTheDocument()
+    })
+  })
+
+  describe('bug3: interactive queue & smart select', () => {
+    const queueNowPlaying: ObserverStatusActive = {
+      ...nowPlaying,
+      next_tracks: [
+        {
+          uri: 'spotify:track:t-10',
+          track_id: 't-10',
+          name: 'Next Song',
+          artist: 'Someone',
+          album: '',
+          image_url: '',
+        },
+        {
+          uri: 'spotify:track:t-11',
+          track_id: 't-11',
+          name: 'Song After',
+          artist: 'Another',
+          album: '',
+          image_url: '',
+        },
+      ],
+    }
+
+    it('shows every upcoming queue track as a card', () => {
+      render(<MainMenuView nowPlaying={queueNowPlaying} />)
+
+      wheel(-10) // focus 'Läuft gerade' in the sidebar (live preview)
+
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      expect(screen.getByText('Next Song')).toBeInTheDocument()
+      expect(screen.getByText('Song After')).toBeInTheDocument()
+    })
+
+    it('confirming the current track exits to the player without a play call', async () => {
+      const onPlay = vi.fn()
+      const onExit = vi.fn()
+      render(<MainMenuView nowPlaying={queueNowPlaying} onPlay={onPlay} onExit={onExit} />)
+
+      // land in the now-playing content pane via a recent track
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+      expect(onPlay).toHaveBeenCalledTimes(1)
+
+      // the current track card is focused; confirming must only exit
+      confirmDial()
+      expect(onExit).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenCalledTimes(1)
+    })
+
+    it('confirming an upcoming queue track plays that track', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView nowPlaying={queueNowPlaying} onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      wheel(-10) // focus the first upcoming track
+      confirmDial()
+
+      expect(onPlay).toHaveBeenCalledTimes(2)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:track:t-10')
+    })
+  })
+
+  describe('bug4: track sub-menu back behavior', () => {
+    it('back inside the track list returns to the playlist list without exiting', async () => {
+      const onExit = vi.fn()
+      render(<MainMenuView onExit={onExit} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Road Trip'))
+      await waitFor(() => expect(screen.getByText('Track 1 of pl-1')).toBeInTheDocument())
+
+      pressBack()
+      expect(onExit).not.toHaveBeenCalled()
+      // the playlist list is shown again, focused on the opened playlist
+      expect(screen.getByText('Road Trip').closest('.card')).toHaveClass('cardFocused')
+    })
+
+    it('selecting another sidebar category closes the track list', async () => {
+      render(<MainMenuView />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Road Trip'))
+      await waitFor(() => expect(screen.getByText('Track 1 of pl-1')).toBeInTheDocument())
+
+      pressBack() // track list closes, playlist list visible in the content pane
+      expect(screen.getByText('Road Trip')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      expect(screen.queryByText('Track 1 of pl-1')).not.toBeInTheDocument()
     })
   })
 })

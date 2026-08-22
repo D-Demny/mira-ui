@@ -261,6 +261,29 @@ export interface SpotifyRecentlyPlayedResponse {
   href: string
 }
 
+// one track inside a playlist (Web API playlists/{id}/tracks item.track)
+export interface SpotifyPlaylistTrack {
+  id: string
+  name: string
+  uri: string
+  artists: Array<{ name: string }>
+  album?: { name?: string; images?: Array<{ url: string; width?: number; height?: number }> }
+  duration_ms?: number
+}
+
+export interface SpotifyPlaylistTrackItem {
+  is_local: boolean
+  track: SpotifyPlaylistTrack
+}
+
+export interface SpotifyPlaylistTracksResponse {
+  items: SpotifyPlaylistTrackItem[]
+  total: number
+  limit: number
+  offset: number
+  next: string | null
+}
+
 // debug screen snapshot
 export interface DebugStatus {
   firmware_version: string

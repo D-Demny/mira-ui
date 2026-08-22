@@ -8,6 +8,14 @@ import styles from './ContentCarousel.module.scss'
 // cover art size for carousel cards (bug2: was 200, reduced for breathing room)
 const CARD_ART_SIZE = 170
 
+// bug5/bug6: windowed rendering — only the cards around the focused one are
+// mounted in the DOM, invisible spacers keep the scroll width intact
+const WINDOW_BEFORE = 3
+const WINDOW_AFTER = 8
+// keep in sync with $card-art-size / $s-6 in ContentCarousel.module.scss
+const CARD_WIDTH = 170
+const CARD_GAP = 24
+
 function CarouselCardImpl({
   card,
   index,
@@ -58,6 +66,27 @@ interface ContentCarouselProps {
   focusedIndex?: number
 }
 
+// bug5/bug6: which slice of the card list is mounted; short lists render in
+// full so the window logic never kicks in for menu panes with a few cards
+function windowRange(count: number, focusedIndex: number | undefined): { start: number; end: number } {
+  const full = WINDOW_BEFORE + 1 + WINDOW_AFTER
+  if (count <= full) return { start: 0, end: count }
+  const center = focusedIndex ?? 0
+  const start = Math.max(0, center - WINDOW_BEFORE)
+  const end = Math.min(count, center + 1 + WINDOW_AFTER)
+  return { start, end }
+}
+
+// spacer widths that exactly match the space the missing cards would occupy
+// (the carousel is a flex row with a CARD_GAP gap between every child)
+function leadingSpacerWidth(start: number): number {
+  return start > 0 ? start * (CARD_WIDTH + CARD_GAP) - CARD_GAP : 0
+}
+
+function trailingSpacerWidth(missing: number): number {
+  return missing > 0 ? missing * CARD_WIDTH + (missing - 1) * CARD_GAP : 0
+}
+
 export function ContentCarousel({
   cards,
   categoryId,
@@ -87,19 +116,44 @@ export function ContentCarousel({
     focusedCardRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center' })
   }, [focusedIndex, categoryId])
 
+  // bug5/bug6: mount only [start, end) plus invisible width spacers for the
+  // off-screen cards so scroll metrics and index math stay correct
+  const { start, end } = windowRange(cards.length, focusedIndex)
+  const leadingWidth = leadingSpacerWidth(start)
+  const trailingWidth = trailingSpacerWidth(cards.length - end)
+
   return (
     <div className={styles.carousel} ref={carouselRef}>
-      {cards.map((card, index) => (
-        <CarouselCard
-          key={card.id}
-          card={card}
-          index={index}
-          isFocused={focusedIndex === index}
-          interactive={onCardTap != null}
-          onCardTap={onCardTap}
-          registerRef={registerFocusedRef}
+      {leadingWidth > 0 && (
+        <div
+          key={`lead-${start}`}
+          className={styles.spacer}
+          style={{ width: leadingWidth }}
+          aria-hidden="true"
         />
-      ))}
+      )}
+      {cards.slice(start, end).map((card, i) => {
+        const index = start + i
+        return (
+          <CarouselCard
+            key={card.id}
+            card={card}
+            index={index}
+            isFocused={focusedIndex === index}
+            interactive={onCardTap != null}
+            onCardTap={onCardTap}
+            registerRef={registerFocusedRef}
+          />
+        )
+      })}
+      {trailingWidth > 0 && (
+        <div
+          key={`trail-${end}`}
+          className={styles.spacer}
+          style={{ width: trailingWidth }}
+          aria-hidden="true"
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import type {
   RemoteStateWire,
   SpotifyPlaylist,
   SpotifyPlaylistResponse,
+  SpotifyPlaylistTracksResponse,
   SpotifyRecentlyPlayedItem,
   SpotifyRecentlyPlayedResponse,
 } from './types'
@@ -217,6 +218,34 @@ export async function fetchUserPlaylists(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     throw new Error(`web-api/me/playlists: ${message}`)
+  }
+}
+
+// one page of a playlist's tracks (bug4: no hardcoded small limit — the
+// caller pages with the Web API maximum page size until total is reached)
+export async function fetchPlaylistTracks(
+  playlistId: string,
+  offset = 0,
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<SpotifyPlaylistTracksResponse> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/web-api/playlists/${encodeURIComponent(playlistId)}/tracks?limit=${limit}&offset=${offset}`,
+      { signal },
+    )
+    if (!res.ok) throw new Error(`web-api/playlists/${playlistId}/tracks ${res.status}`)
+    const body: SpotifyPlaylistTracksResponse = (await safeJson(res)) as SpotifyPlaylistTracksResponse
+    return {
+      items: Array.isArray(body.items) ? body.items : [],
+      total: body.total ?? 0,
+      limit: body.limit ?? limit,
+      offset: body.offset ?? offset,
+      next: body.next ?? null,
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`web-api/playlists/${playlistId}/tracks: ${message}`)
   }
 }
 

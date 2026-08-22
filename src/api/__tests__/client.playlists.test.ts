@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { renderHook } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { fetchUserPlaylists, fetchRecentlyPlayed, pickSpotifyImage } from '../client'
+import {
+  fetchPlaylistTracks,
+  fetchUserPlaylists,
+  fetchRecentlyPlayed,
+  pickSpotifyImage,
+} from '../client'
 import { server } from '../../__tests__/msw-server'
 
 describe('fetchUserPlaylists', () => {
@@ -55,6 +59,66 @@ describe('fetchUserPlaylists', () => {
     await fetchUserPlaylists(2, 25)
     expect(capturedUrl).toContain('limit=25')
     expect(capturedUrl).toContain('offset=50')
+  })
+})
+
+describe('fetchPlaylistTracks (bug4)', () => {
+  it('returns one page of tracks with total count', async () => {
+    server.use(
+      http.get('*/web-api/playlists/pl1/tracks', () =>
+        HttpResponse.json({
+          items: [
+            {
+              is_local: false,
+              track: {
+                id: 't1',
+                name: 'Song 1',
+                uri: 'spotify:track:t1',
+                artists: [{ name: 'Artist' }],
+                album: {
+                  name: 'Album',
+                  images: [{ url: 'https://i.scdn.co/img/300', width: 300, height: 300 }],
+                },
+              },
+            },
+          ],
+          total: 12,
+          limit: 50,
+          offset: 0,
+          next: null,
+        }),
+      ),
+    )
+
+    const result = await fetchPlaylistTracks('pl1')
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].track.name).toBe('Song 1')
+    expect(result.items[0].track.album?.images?.[0]?.url).toBe('https://i.scdn.co/img/300')
+    expect(result.total).toBe(12)
+  })
+
+  it('sends pagination params with the page size limit (bug4: no hardcoded small limit)', async () => {
+    let capturedUrl = ''
+    server.use(
+      http.get('*/web-api/playlists/pl1/tracks', ({ request }) => {
+        capturedUrl = request.url
+        return HttpResponse.json({ items: [], total: 0, limit: 50, offset: 50, next: null })
+      }),
+    )
+
+    await fetchPlaylistTracks('pl1', 50)
+    expect(capturedUrl).toContain('limit=50')
+    expect(capturedUrl).toContain('offset=50')
+  })
+
+  it('throws on non-OK response', async () => {
+    server.use(
+      http.get('*/web-api/playlists/pl1/tracks', () =>
+        HttpResponse.json({ error: 'not found' }, { status: 404 }),
+      ),
+    )
+
+    await expect(fetchPlaylistTracks('pl1')).rejects.toThrow('404')
   })
 })
 
