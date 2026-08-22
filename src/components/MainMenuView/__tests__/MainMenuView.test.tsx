@@ -259,6 +259,34 @@ describe('MainMenuView', () => {
     )
   })
 
+  it('does not leak track cards into other categories after closing the track sub-menu (bug15)', async () => {
+    render(<MainMenuView />)
+
+    // enter the playlists content pane
+    wheel(-10)
+    wheel(-10)
+    confirmDial()
+    await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+
+    // open the playlist's track sub-menu
+    confirmDial()
+    await waitFor(() => expect(screen.getByText('Track 1 of pl-1')).toBeInTheDocument())
+
+    // back out of the track sub-menu (returns to the playlist list)
+    pressBack()
+    await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+
+    // back to the sidebar, then move over to 'Einstellungen'
+    pressBack()
+    wheel(-10)
+    wheel(-10)
+    confirmDial()
+    await waitFor(() => expect(screen.getByText('Lyrics')).toBeInTheDocument())
+
+    // strictly the settings cards — no leftover track cards (bug15)
+    expect(screen.queryByText('Track 1 of pl-1')).not.toBeInTheDocument()
+  })
+
   it('exposes carousel cards as accessible buttons', async () => {
     render(<MainMenuView />)
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))

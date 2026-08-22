@@ -384,6 +384,15 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     loadTrackPage,
   ])
 
+  // bug15: the track sub-menu belongs to the playlists content pane; if focus
+  // lands anywhere else (sidebar preview, another category, a swipe), close it
+  // so its cards can never leak into a different category's carousel
+  useEffect(() => {
+    if (openTracklist && (activeCategoryId !== 'playlists' || focus.activePane !== 'content')) {
+      setOpenTracklist(null)
+    }
+  }, [openTracklist, activeCategoryId, focus.activePane])
+
   // stable across renders so the memoized carousel cards (bug8.2) never see a
   // changed onCardTap and re-render for nothing
   const selectFocusedCard = focus.selectContent
