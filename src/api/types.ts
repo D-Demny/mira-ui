@@ -269,6 +269,14 @@ export interface SpotifyPlaylistTrack {
   artists: Array<{ name: string }>
   album?: { name?: string; images?: Array<{ url: string; width?: number; height?: number }> }
   duration_ms?: number
+  // absolute index of the track inside the playlist (context playback offset)
+  position?: number
+}
+
+// start position for a context playback (POST /player/play offset)
+export interface PlayOffset {
+  uri?: string
+  position?: number
 }
 
 export interface SpotifyPlaylistTrackItem {

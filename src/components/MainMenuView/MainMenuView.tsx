@@ -8,7 +8,7 @@ import { useRecent } from '@/hooks/useRecent'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { useSettings } from '@/settings'
 import { pickSpotifyImage } from '@/api/client'
-import type { ObserverStatusActive } from '@/api/types'
+import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
 import { MENU_CATEGORIES } from './mockData'
@@ -29,8 +29,10 @@ interface OpenTracklist {
 const LOAD_MORE_THRESHOLD = 9
 
 export interface MainMenuViewProps {
-  // starts playback for a media card uri; the view stays open and switches to 'Läuft gerade'
-  onPlay?: (uri: string) => void
+  // starts playback for a media card uri; an optional offset starts a context
+  // at a specific track (playlist track sub-menu); the view stays open and
+  // switches to 'Läuft gerade'
+  onPlay?: (uri: string, offset?: PlayOffset) => void
   // live player status so the 'Läuft gerade' pane can show current track + queue
   nowPlaying?: ObserverStatusActive | null
   // close the menu and return to the player ('Läuft gerade' confirm / back on the sidebar)
@@ -310,6 +312,19 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     if (confirmedCategory.id === 'playlists' && !openTracklist && card.uri?.startsWith('spotify:playlist:')) {
       // bug4: playlist card opens the track sub-menu instead of playing
       openPlaylistTracklist(card, index)
+      return
+    }
+    // bug16: confirming a track in the track sub-menu plays the parent
+    // playlist context starting at that track, so the rest of the playlist
+    // stays in the upcoming queue
+    if (openTracklist && card.id.startsWith('tr-')) {
+      const track = trackItems.find((t) => t.id === card.id.slice('tr-'.length))
+      const offset: PlayOffset =
+        track?.position !== undefined
+          ? { position: track.position, uri: card.uri }
+          : { position: index, uri: card.uri }
+      setActiveCategoryId('now-playing')
+      onPlay?.(`spotify:playlist:${openTracklist.playlistId}`, offset)
       return
     }
     if (card.kind === 'media' && card.uri) {

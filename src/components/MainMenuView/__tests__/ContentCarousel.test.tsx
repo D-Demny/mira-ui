@@ -58,12 +58,13 @@ vi.mock('@/hooks/usePlaylistTracks', () => ({
   usePlaylistTracks: (playlistId: string | null) => ({
     tracks: playlistId
       ? [
-          {
+           {
             id: `tr-${playlistId}-1`,
             name: 'First Track',
             uri: `spotify:track:tr-${playlistId}-1`,
             artists: [{ name: 'Someone' }],
             album: { name: 'An Album', images: [{ url: 'http://img/tr.jpg' }] },
+            position: 0,
           },
         ]
       : [],
@@ -198,13 +199,18 @@ describe('ContentCarousel', () => {
     )
   })
 
-  it('tapping a track card in the sub-menu starts playback and switches to Läuft gerade (bug4)', () => {
+  it('tapping a track card in the sub-menu plays the playlist context at the track offset (bug4, bug16)', () => {
     const onPlay = vi.fn()
     render(<MainMenuView onPlay={onPlay} />)
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
     fireEvent.click(screen.getByText('Road Trip'))
     fireEvent.click(screen.getByText('First Track'))
-    expect(onPlay).toHaveBeenCalledWith('spotify:track:tr-pl-1-1')
+    // the parent playlist context is played starting at the track's position,
+    // so the rest of the playlist stays in the queue (bug16)
+    expect(onPlay).toHaveBeenCalledWith('spotify:playlist:pl-1', {
+      position: 0,
+      uri: 'spotify:track:tr-pl-1-1',
+    })
     expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveAttribute(
       'aria-current',
       'true',

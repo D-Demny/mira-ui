@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { API_BASE } from '@/config'
+import type { PlayOffset } from '@/api/types'
 
 async function call(method: string, path: string, body?: unknown): Promise<void> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -25,8 +26,13 @@ export function useControls() {
     [],
   )
   const togglePlayPause = useCallback(() => call('POST', '/player/playpause'), [])
-  // play a playlist/album/liked on the active device
-  const playContext = useCallback((uri: string) => call('POST', '/player/play', { uri }), [])
+  // play a playlist/album/liked on the active device; an optional offset
+  // starts the context at a specific track (position) or track uri
+  const playContext = useCallback(
+    (uri: string, offset?: PlayOffset) =>
+      call('POST', '/player/play', offset ? { uri, offset } : { uri }),
+    [],
+  )
   const setVolume = useCallback(
     (volume: number, relative = false) =>
       call('POST', '/player/volume', { volume: Math.round(volume), relative }),
