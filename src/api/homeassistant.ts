@@ -1,4 +1,4 @@
-import { HOME_ASSISTANT_TOKEN, HOME_ASSISTANT_URL } from '@/config'
+import { HOME_ASSISTANT_URL } from '@/config'
 
 export interface HaEntityState {
   entity_id: string
@@ -27,7 +27,6 @@ async function haFetch(
       ...init,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${HOME_ASSISTANT_TOKEN}`,
         ...(init.headers ?? {}),
       },
       signal: controller.signal,
@@ -50,7 +49,8 @@ export async function fetchHaEntityState(
   entityId: string,
   signal?: AbortSignal,
 ): Promise<HaEntityState> {
-  const res = await haFetch(`/api/states/${encodeURIComponent(entityId)}`, {}, signal)
+  // the daemon maps /ha-api/<path> to the HA REST root /api/<path>
+  const res = await haFetch(`/states/${encodeURIComponent(entityId)}`, {}, signal)
   if (!res.ok) throw new Error(`home assistant ${res.status}`)
   const body = (await res.json()) as HaEntityState
   if (!body || typeof body.state !== 'string') throw new Error('invalid entity state')
@@ -63,7 +63,7 @@ export async function toggleHaEntity(
   signal?: AbortSignal,
 ): Promise<HaEntityState | null> {
   const res = await haFetch(
-    '/api/services/light/toggle',
+    '/services/light/toggle',
     { method: 'POST', body: JSON.stringify({ entity_id: entityId }) },
     signal,
   )
