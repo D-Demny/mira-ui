@@ -36,7 +36,7 @@ describe('HomeMenuView', () => {
   it('toggles the light on tap and updates the badge', async () => {
     const toggled: string[] = []
     server.use(
-      http.post('*/api/services/light/toggle', async ({ request }) => {
+      http.post('*/ha-api/services/light/toggle', async ({ request }) => {
         const body = (await request.json()) as { entity_id?: string }
         toggled.push(body.entity_id ?? '')
         return HttpResponse.json([
@@ -54,7 +54,7 @@ describe('HomeMenuView', () => {
   it('shows an Offline badge when Home Assistant is unreachable', async () => {
     server.use(
       http.get(
-        '*/api/states/light.*',
+        '*/ha-api/states/light.*',
         () => HttpResponse.json({ message: 'unauthorized' }, { status: 500 }),
       ),
     )

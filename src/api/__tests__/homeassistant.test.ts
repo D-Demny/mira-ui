@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
-import { HOME_ASSISTANT_TOKEN } from '@/config'
 import { fetchHaEntityState, toggleHaEntity } from '../homeassistant'
 
 describe('homeassistant api', () => {
@@ -9,10 +8,11 @@ describe('homeassistant api', () => {
     vi.useRealTimers()
   })
 
-  it('fetches an entity state with the bearer token', async () => {
-    let auth: string | null = null
+  it('fetches an entity state via the daemon /ha-api/ proxy', async () => {
+    // the token is injected by the daemon proxy, the UI sends no Authorization
+    let auth: string | null = 'sentinel'
     server.use(
-      http.get('*/api/states/light.livingroom', ({ request }) => {
+      http.get('*/ha-api/states/light.livingroom', ({ request }) => {
         auth = request.headers.get('authorization')
         return HttpResponse.json({
           entity_id: 'light.livingroom',
@@ -23,13 +23,13 @@ describe('homeassistant api', () => {
     )
     const entity = await fetchHaEntityState('light.livingroom')
     expect(entity.state).toBe('on')
-    expect(auth).toBe(`Bearer ${HOME_ASSISTANT_TOKEN}`)
+    expect(auth).toBeNull()
   })
 
   it('throws on a non-ok response', async () => {
     server.use(
       http.get(
-        '*/api/states/light.missing',
+        '*/ha-api/states/light.missing',
         () => HttpResponse.json({ message: 'not found' }, { status: 404 }),
       ),
     )
@@ -39,7 +39,7 @@ describe('homeassistant api', () => {
   it('times out after 5 seconds', async () => {
     vi.useFakeTimers()
     server.use(
-      http.get('*/api/states/light.slow', () => new Promise<HttpResponse<undefined>>(() => {})),
+      http.get('*/ha-api/states/light.slow', () => new Promise<HttpResponse<undefined>>(() => {})),
     )
     const pending = fetchHaEntityState('light.slow').catch((e: unknown) => e)
     await vi.advanceTimersByTimeAsync(5000)
@@ -51,7 +51,7 @@ describe('homeassistant api', () => {
   it('toggles the light and returns the updated state', async () => {
     let payload: unknown = null
     server.use(
-      http.post('*/api/services/light/toggle', async ({ request }) => {
+      http.post('*/ha-api/services/light/toggle', async ({ request }) => {
         payload = await request.json()
         return HttpResponse.json([
           { entity_id: 'light.other', state: 'on' },
@@ -67,7 +67,7 @@ describe('homeassistant api', () => {
   it('throws when the toggle service fails', async () => {
     server.use(
       http.post(
-        '*/api/services/light/toggle',
+        '*/ha-api/services/light/toggle',
         () => HttpResponse.json({ message: 'unauthorized' }, { status: 401 }),
       ),
     )

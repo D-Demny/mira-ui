@@ -11,6 +11,7 @@ const apiProxy = {
   '/lyrics': API_TARGET,
   '/player': API_TARGET,
   '/web-api': API_TARGET,
+  '/ha-api': API_TARGET,
   '/token': API_TARGET,
   '/auth': API_TARGET,
   '/bluetooth': API_TARGET,

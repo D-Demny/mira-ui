@@ -15,14 +15,15 @@ export const server = setupServer(
   http.get('*/settings', () => HttpResponse.json({ v: 1 })),
   http.put('*/settings', () => HttpResponse.json({ ok: true })),
   // Home Assistant (Epic 9) — default: light off, toggle turns it on
-  http.get('*/api/states/light.*', () =>
+  // (the UI talks to the daemon's /ha-api/ CORS proxy, not to HA directly)
+  http.get('*/ha-api/states/light.*', () =>
     HttpResponse.json({
       entity_id: 'light.3er_stehlampe_gold_esszimmer',
       state: 'off',
       attributes: {},
     }),
   ),
-  http.post('*/api/services/light/toggle', async ({ request }) => {
+  http.post('*/ha-api/services/light/toggle', async ({ request }) => {
     const body = (await request.json()) as { entity_id?: string }
     return HttpResponse.json([
       {

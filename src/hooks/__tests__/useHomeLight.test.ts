@@ -7,7 +7,7 @@ import { useHomeLight } from '../useHomeLight'
 describe('useHomeLight', () => {
   it('loads the light state on mount', async () => {
     server.use(
-      http.get('*/api/states/light.*', () =>
+      http.get('*/ha-api/states/light.*', () =>
         HttpResponse.json({ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' }),
       ),
     )
@@ -20,7 +20,7 @@ describe('useHomeLight', () => {
   it('sets an error when the state fetch fails', async () => {
     server.use(
       http.get(
-        '*/api/states/light.*',
+        '*/ha-api/states/light.*',
         () => HttpResponse.json({ message: 'unauthorized' }, { status: 401 }),
       ),
     )
@@ -34,10 +34,10 @@ describe('useHomeLight', () => {
 
   it('toggles optimistically and confirms with the service response', async () => {
     server.use(
-      http.get('*/api/states/light.*', () =>
+      http.get('*/ha-api/states/light.*', () =>
         HttpResponse.json({ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'off' }),
       ),
-      http.post('*/api/services/light/toggle', () =>
+      http.post('*/ha-api/services/light/toggle', () =>
         HttpResponse.json([
           { entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' },
         ]),
@@ -57,11 +57,11 @@ describe('useHomeLight', () => {
 
   it('reverts the optimistic state when the toggle fails', async () => {
     server.use(
-      http.get('*/api/states/light.*', () =>
+      http.get('*/ha-api/states/light.*', () =>
         HttpResponse.json({ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' }),
       ),
       http.post(
-        '*/api/services/light/toggle',
+        '*/ha-api/services/light/toggle',
         () => HttpResponse.json({ message: 'boom' }, { status: 500 }),
       ),
     )
