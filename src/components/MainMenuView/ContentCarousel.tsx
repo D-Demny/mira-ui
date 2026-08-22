@@ -134,9 +134,11 @@ export function ContentCarousel({
       )}
       {cards.slice(start, end).map((card, i) => {
         const index = start + i
+        // key includes the view identity (category / track sub-menu) so a view
+        // switch always mounts fresh cards and never reuses a stale one (bug15)
         return (
           <CarouselCard
-            key={card.id}
+            key={`${categoryId}:${card.id}`}
             card={card}
             index={index}
             isFocused={focusedIndex === index}
