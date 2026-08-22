@@ -53,6 +53,30 @@ vi.mock('@/hooks/useRecent', () => ({
   }),
 }))
 
+vi.mock('@/hooks/usePlaylistTracks', () => ({
+  // bug4: the track sub-menu data, one page of one track per playlist
+  usePlaylistTracks: (playlistId: string | null) => ({
+    tracks: playlistId
+      ? [
+          {
+            id: `tr-${playlistId}-1`,
+            name: 'First Track',
+            uri: `spotify:track:tr-${playlistId}-1`,
+            artists: [{ name: 'Someone' }],
+            album: { name: 'An Album', images: [{ url: 'http://img/tr.jpg' }] },
+          },
+        ]
+      : [],
+    total: playlistId ? 1 : 0,
+    loading: false,
+    loadingMore: false,
+    error: null,
+    loadMore: () => {},
+    refetch: () => {},
+  }),
+  clearTracksCache: () => {},
+}))
+
 vi.mock('@/hooks/useHomeLight', () => ({
   HOME_LIGHT_LABEL: '3er Stehlampe Gold',
   useHomeLight: () => ({
@@ -160,12 +184,27 @@ describe('ContentCarousel', () => {
     expect(screen.getByText('Sprach-Mikrofon')).toBeInTheDocument()
   })
 
-  it('tapping a media card starts playback and switches to Läuft gerade', () => {
+  it('tapping a playlist card opens its track list without starting playback (bug4)', () => {
     const onPlay = vi.fn()
     render(<MainMenuView onPlay={onPlay} />)
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
     fireEvent.click(screen.getByText('Road Trip'))
-    expect(onPlay).toHaveBeenCalledWith('spotify:playlist:pl-1')
+    // the sub-menu shows the playlist's tracks, playback is not triggered yet
+    expect(onPlay).not.toHaveBeenCalled()
+    expect(screen.getByText('First Track')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Playlists' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
+  })
+
+  it('tapping a track card in the sub-menu starts playback and switches to Läuft gerade (bug4)', () => {
+    const onPlay = vi.fn()
+    render(<MainMenuView onPlay={onPlay} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+    fireEvent.click(screen.getByText('Road Trip'))
+    fireEvent.click(screen.getByText('First Track'))
+    expect(onPlay).toHaveBeenCalledWith('spotify:track:tr-pl-1-1')
     expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveAttribute(
       'aria-current',
       'true',
@@ -187,6 +226,7 @@ describe('ContentCarousel', () => {
     render(<MainMenuView nowPlaying={nowPlaying} />)
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
     fireEvent.click(screen.getByText('Road Trip'))
+    fireEvent.click(screen.getByText('First Track'))
     expect(screen.getByText('Heat Waves')).toBeInTheDocument()
     expect(screen.getByText('Glass Animals')).toBeInTheDocument()
     expect(screen.getByText('Next Song')).toBeInTheDocument()
@@ -260,6 +300,61 @@ describe('bug8.1: scroll reset scoped to category changes', () => {
     rerender(<ContentCarousel cards={CARDS_B} categoryId="recent" focusedIndex={0} />)
 
     expect(setLeft).toHaveBeenCalledWith(0)
+  })
+})
+
+describe('bug5/bug6: windowed rendering', () => {
+  // 20 cards: window is 3 before + focused + 8 after = 12 mounted cards
+  const MANY: MenuCard[] = Array.from({ length: 20 }, (_, i) => ({
+    id: `m-${i}`,
+    title: `Card ${i}`,
+    subtitle: '',
+  }))
+
+  it('mounts only the window around the focused card plus width spacers', () => {
+    const { container } = render(
+      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={10} />,
+    )
+    // 3 before (7..9) + focused (10) + 8 after (11..18) = 12 cards
+    expect(container.querySelectorAll('article')).toHaveLength(12)
+    expect(screen.getByText('Card 7')).toBeInTheDocument()
+    expect(screen.getByText('Card 18')).toBeInTheDocument()
+    // off-screen cards are not mounted
+    expect(screen.queryByText('Card 6')).not.toBeInTheDocument()
+    expect(screen.queryByText('Card 19')).not.toBeInTheDocument()
+    // invisible spacers keep the scroll width of the full list
+    const spacers = container.querySelectorAll('.spacer')
+    expect(spacers).toHaveLength(2)
+    // 7 missing before: 7*(170+24)-24, 1 missing after: 170
+    expect((spacers[0] as HTMLElement).style.width).toBe('1334px')
+    expect((spacers[1] as HTMLElement).style.width).toBe('170px')
+  })
+
+  it('moves the window as the focus moves and keeps the focused card mounted', () => {
+    const { container, rerender } = render(
+      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} />,
+    )
+    expect(screen.getByText('Card 0')).toBeInTheDocument()
+    expect(screen.queryByText('Card 12')).not.toBeInTheDocument()
+
+    rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={19} />)
+
+    expect(screen.getByText('Card 19')).toBeInTheDocument()
+    expect(screen.getByText('Card 16')).toBeInTheDocument()
+    expect(screen.queryByText('Card 0')).not.toBeInTheDocument()
+    // at the end of the list the window is clipped to the available cards
+    expect(container.querySelectorAll('article')).toHaveLength(4)
+    // only the leading spacer remains
+    expect(container.querySelectorAll('.spacer')).toHaveLength(1)
+    expect((container.querySelector('.spacer') as HTMLElement).style.width).toBe('3080px')
+  })
+
+  it('renders short lists in full without spacers', () => {
+    const { container } = render(
+      <ContentCarousel cards={CARDS_A} categoryId="recent" focusedIndex={0} />,
+    )
+    expect(container.querySelectorAll('article')).toHaveLength(3)
+    expect(container.querySelectorAll('.spacer')).toHaveLength(0)
   })
 })
 

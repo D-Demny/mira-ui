@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { useHomeLight, HOME_LIGHT_LABEL } from '@/hooks/useHomeLight'
 import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
 import { usePlaylists } from '@/hooks/usePlaylists'
+import { usePlaylistTracks } from '@/hooks/usePlaylistTracks'
 import { useRecent } from '@/hooks/useRecent'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { useSettings } from '@/settings'
@@ -13,6 +14,19 @@ import { ContentCarousel } from './ContentCarousel'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard } from './mockData'
 import styles from './MainMenuView.module.scss'
+
+// the playlist track sub-menu (bug4): confirming a playlist card opens its
+// track list; dial-back returns to the playlist list without playing
+interface OpenTracklist {
+  playlistId: string
+  playlistName: string
+  // where to restore the focus when the sub-menu closes
+  playlistIndex: number
+}
+
+// bug5: when the dial focus this close to the end of the loaded tracks, the
+// next page is fetched in the background
+const LOAD_MORE_THRESHOLD = 9
 
 export interface MainMenuViewProps {
   // starts playback for a media card uri; the view stays open and switches to 'Läuft gerade'
@@ -26,6 +40,8 @@ export interface MainMenuViewProps {
 // Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4b, 8.4c).
 export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
+  // bug4: non-null while a playlist's track list is open as a sub-menu
+  const [openTracklist, setOpenTracklist] = useState<OpenTracklist | null>(null)
   const viewRef = useRef<HTMLDivElement>(null)
 
   // destructured so the categories memo keys on stable primitives — the hook
@@ -36,11 +52,21 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     useHomeLight()
   const settings = useSettings()
 
+  // bug4/bug5/bug7: track list of the open playlist (lazy pages + 5 min cache)
+  const {
+    tracks: trackItems,
+    loading: tracksLoading,
+    loadingMore: tracksLoadingMore,
+    error: tracksError,
+    loadMore: loadTrackPage,
+    refetch: refetchTracks,
+  } = usePlaylistTracks(openTracklist?.playlistId ?? null)
+
   // the observer polls every 3s and hands over a fresh status object each time
   // even when nothing changed; key the snapshot on the scalars that actually
   // feed the cards so card identities survive the polls (bug8.2)
+  // bug3: the full queue (daemon caps it) feeds the 'Läuft gerade' cards
   const nowPlayingQueueKey = (nowPlaying?.next_tracks ?? [])
-    .slice(0, 3)
     .map((track) => `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`)
     .join('\u0000')
 
@@ -52,7 +78,7 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       subtitle: nowPlaying.track_artist,
       art: nowPlaying.track_image || undefined,
       uri: nowPlaying.track_uri,
-      queue: (nowPlaying.next_tracks ?? []).slice(0, 3).map((track) => ({
+      queue: (nowPlaying.next_tracks ?? []).map((track) => ({
         id: track.track_id,
         title: track.name,
         subtitle: track.artist,
@@ -110,6 +136,10 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     }
     if (recentLoading && recentCards.length === 0) {
       recentCards.push({ id: 'rc-loading', title: 'Lade…', subtitle: '' })
+    } else if (!recentLoading && recentCards.length === 0) {
+      // bug2.6: no play history yet — show an inert placeholder instead of an
+      // empty carousel
+      recentCards.push({ id: 'rc-empty', title: 'Noch nichts abgespielt', subtitle: '' })
     }
 
     const nowPlayingCards: MenuCard[] = []
@@ -161,6 +191,29 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       },
     ]
 
+    // bug4: while a playlist's track list is open, the 'Playlists' pane shows
+    // that playlist's tracks instead of the playlist library
+    let tracklistCards: MenuCard[] | null = null
+    if (openTracklist) {
+      tracklistCards = trackItems.map((track) => ({
+        id: `tr-${track.id}`,
+        title: track.name,
+        subtitle: track.artists.map((artist) => artist.name).join(', '),
+        art: pickSpotifyImage(track.album?.images),
+        kind: 'media',
+        uri: track.uri,
+      }))
+      if (tracksLoading && tracklistCards.length === 0) {
+        tracklistCards.push({ id: 'tr-loading', title: 'Lade…', subtitle: '' })
+      } else if (!tracksLoading && tracklistCards.length === 0 && !tracksLoadingMore) {
+        if (tracksError) {
+          tracklistCards.push({ id: 'tr-error', title: tracksError, subtitle: 'Erneut versuchen' })
+        } else {
+          tracklistCards.push({ id: 'tr-empty', title: 'Keine Titel', subtitle: '' })
+        }
+      }
+    }
+
     const cardsByCategory: Record<string, MenuCard[]> = {
       home: [
         {
@@ -172,7 +225,7 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
         },
       ],
       'now-playing': nowPlayingCards,
-      playlists: playlistCards,
+      playlists: tracklistCards ?? playlistCards,
       recent: recentCards,
       settings: settingsCards,
     }
@@ -191,6 +244,11 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     lightError,
     settings,
     nowPlayingSnapshot,
+    openTracklist,
+    trackItems,
+    tracksLoading,
+    tracksLoadingMore,
+    tracksError,
   ])
 
   // bug8.2 (vertical dial): pre-decode every menu cover once so a sidebar
@@ -219,8 +277,41 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
   const confirmedCategory =
     categories.find((category) => category.id === activeCategoryId) ?? categories[0]
 
-  // dial press / tap on a card: start playback or trigger the action
-  const handleCardAction = (card: MenuCard) => {
+  // bug4: open a playlist's track list as a sub-menu (focus resets to track 0)
+  const openPlaylistTracklist = (card: MenuCard, index: number) => {
+    if (confirmedCategory.id !== 'playlists' || openTracklist) return
+    const match = /^spotify:playlist:([^/]+)/.exec(card.uri ?? '')
+    if (!match) return
+    setOpenTracklist({
+      playlistId: match[1],
+      playlistName: card.title,
+      playlistIndex: index,
+    })
+    // focus the first track once the track cards are mounted
+    focusRef.current?.focusContent(0)
+  }
+
+  // bug4: close the track sub-menu and restore the playlist focus
+  const closeTracklist = () => {
+    if (!openTracklist) return false
+    setOpenTracklist(null)
+    focusRef.current?.focusContent(openTracklist.playlistIndex)
+    return true
+  }
+
+  // dial press / tap on a card: start playback, open a track list, or action
+  const handleCardAction = (card: MenuCard, index: number) => {
+    // bug3: confirming the current track in 'Läuft gerade' returns to the
+    // full-screen player WITHOUT a play API call (no restart)
+    if (confirmedCategory.id === 'now-playing' && index === 0 && card.id === 'np-current') {
+      onExit?.()
+      return
+    }
+    if (confirmedCategory.id === 'playlists' && !openTracklist && card.uri?.startsWith('spotify:playlist:')) {
+      // bug4: playlist card opens the track sub-menu instead of playing
+      openPlaylistTracklist(card, index)
+      return
+    }
     if (card.kind === 'media' && card.uri) {
       // start playback and land directly on the 'Läuft gerade' pane
       setActiveCategoryId('now-playing')
@@ -228,6 +319,9 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     } else if (card.kind === 'action' && card.actionId === 'toggle-light') {
       // keep focus inside the carousel — no view transition
       void lightToggle()
+    } else if (card.id === 'tr-error') {
+      // error placeholder: dial press retries the track list fetch
+      refetchTracks()
     }
   }
 
@@ -239,14 +333,41 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     // keep the rendered pane in sync when a sidebar item is selected (dial press or tap)
     onSelectSidebar: (index) => {
       const category = categories[index]
-      if (category) setActiveCategoryId(category.id)
+      if (category) {
+        setActiveCategoryId(category.id)
+        // leaving 'Playlists' closes the track sub-menu
+        if (category.id !== 'playlists' && openTracklist) setOpenTracklist(null)
+      }
     },
     onConfirmContent: (index) => {
       // only ever runs in the content pane, where displayed == confirmed
       const card = confirmedCategory.cards[index]
-      if (card) handleCardAction(card)
+      if (card) handleCardAction(card, index)
     },
+    // bug4: back in the content pane first closes the track sub-menu
+    onContentBack: () => closeTracklist(),
   })
+
+  // the handlers above close over focus; the hook's options are read through
+  // refs, so a stable indirection keeps focusContent reachable in open/close
+  const focusRef = useRef<typeof focus | null>(null)
+  focusRef.current = focus
+
+  // bug5: while dialing through the track sub-menu, fetch the next page in
+  // the background once the focused card approaches the end of what is loaded
+  useEffect(() => {
+    if (!openTracklist || focus.activePane !== 'content') return
+    if (trackItems.length === 0) return
+    if (focus.contentIndex + LOAD_MORE_THRESHOLD >= trackItems.length) {
+      loadTrackPage()
+    }
+  }, [
+    openTracklist,
+    focus.activePane,
+    focus.contentIndex,
+    trackItems.length,
+    loadTrackPage,
+  ])
 
   // stable across renders so the memoized carousel cards (bug8.2) never see a
   // changed onCardTap and re-render for nothing
@@ -310,7 +431,11 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       <main className={styles.contentPane} aria-label="Menü-Inhalt">
         <ContentCarousel
           cards={displayedCategory.cards}
-          categoryId={displayedCategory.id}
+          // the track sub-menu gets its own id so the carousel scroll resets
+          // when it opens/closes (bug8.1's reset is keyed on this value)
+          categoryId={
+            openTracklist ? `playlists:tracks:${openTracklist.playlistId}` : displayedCategory.id
+          }
           // selectContent confirms the tapped card (runs the card action exactly once)
           onCardTap={handleCardTap}
           focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}

@@ -14,6 +14,10 @@ export interface UseMainMenuFocusOptions {
   onSelectSidebar?: (index: number) => void
   // called when a carousel card is confirmed (dial press or tap)
   onConfirmContent: (index: number) => void
+  // called on back while focus is in the content pane, before returning to
+  // the sidebar; returning true consumes the back press (e.g. closes a
+  // playlist track sub-menu)
+  onContentBack?: () => boolean
 }
 
 export interface UseMainMenuFocusResult {
@@ -27,6 +31,8 @@ export interface UseMainMenuFocusResult {
   confirm: () => void
   // tap a carousel card: focus it and confirm
   selectContent: (index: number) => void
+  // move the content focus without confirming (sub-menu open/close)
+  focusContent: (index: number) => void
   setActivePane: (pane: MainMenuPane) => void
 }
 
@@ -40,6 +46,7 @@ export function useMainMenuFocus({
   onExit,
   onSelectSidebar,
   onConfirmContent,
+  onContentBack,
 }: UseMainMenuFocusOptions): UseMainMenuFocusResult {
   const [activePane, setActivePaneState] = useState<MainMenuPane>('sidebar')
   const [sidebarIndex, setSidebarIndexState] = useState(0)
@@ -53,12 +60,14 @@ export function useMainMenuFocus({
   const onExitRef = useRef(onExit)
   const onSelectSidebarRef = useRef(onSelectSidebar)
   const onConfirmContentRef = useRef(onConfirmContent)
+  const onContentBackRef = useRef(onContentBack)
   const exitSidebarIndexRef = useRef(exitSidebarIndex)
   const countsRef = useRef({ sidebarCount, contentCount })
   useEffect(() => {
     onExitRef.current = onExit
     onSelectSidebarRef.current = onSelectSidebar
     onConfirmContentRef.current = onConfirmContent
+    onContentBackRef.current = onContentBack
     exitSidebarIndexRef.current = exitSidebarIndex
     countsRef.current = { sidebarCount, contentCount }
   })
@@ -115,6 +124,12 @@ export function useMainMenuFocus({
     onConfirmContentRef.current(index)
   }, [])
 
+  const focusContent = useCallback((index: number) => {
+    const count = countsRef.current.contentCount
+    contentIndexRef.current = Math.max(0, Math.min(count - 1, index))
+    setContentIndexState(contentIndexRef.current)
+  }, [])
+
   const confirm = useCallback(() => {
     if (activePaneRef.current === 'sidebar') {
       selectSidebar(sidebarIndexRef.current)
@@ -138,9 +153,11 @@ export function useMainMenuFocus({
     [moveSidebar, moveContent],
   )
 
-  // back: content mode returns to the sidebar, sidebar mode exits the menu
+  // back: a content sub-level (e.g. playlist track list) may consume the
+  // press first, then content mode returns to the sidebar, sidebar mode exits
   const handleBack = useCallback((): boolean => {
     if (activePaneRef.current === 'content') {
+      if (onContentBackRef.current?.()) return true
       setActivePane('sidebar')
       return true
     }
@@ -175,6 +192,7 @@ export function useMainMenuFocus({
     contentIndex,
     selectSidebar,
     selectContent,
+    focusContent,
     confirm,
     setActivePane,
   }
