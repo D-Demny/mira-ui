@@ -1,20 +1,18 @@
-import { memo, useCallback, useEffect, useRef } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
 import type { MenuCard } from './mockData'
 import { carouselCardAreEqual } from './carouselCardCompare'
 import type { CarouselCardProps } from './carouselCardCompare'
+import {
+  leadingSpacerWidth,
+  trailingSpacerWidth,
+  windowRange,
+  type ScrollMetrics,
+} from './carouselWindow'
 import styles from './ContentCarousel.module.scss'
 
 // cover art size for carousel cards (bug2: was 200, reduced for breathing room)
 const CARD_ART_SIZE = 170
-
-// bug5/bug6: windowed rendering — only the cards around the focused one are
-// mounted in the DOM, invisible spacers keep the scroll width intact
-const WINDOW_BEFORE = 3
-const WINDOW_AFTER = 8
-// keep in sync with $card-art-size / $s-6 in ContentCarousel.module.scss
-const CARD_WIDTH = 170
-const CARD_GAP = 24
 
 function CarouselCardImpl({
   card,
@@ -66,27 +64,6 @@ interface ContentCarouselProps {
   focusedIndex?: number
 }
 
-// bug5/bug6: which slice of the card list is mounted; short lists render in
-// full so the window logic never kicks in for menu panes with a few cards
-function windowRange(count: number, focusedIndex: number | undefined): { start: number; end: number } {
-  const full = WINDOW_BEFORE + 1 + WINDOW_AFTER
-  if (count <= full) return { start: 0, end: count }
-  const center = focusedIndex ?? 0
-  const start = Math.max(0, center - WINDOW_BEFORE)
-  const end = Math.min(count, center + 1 + WINDOW_AFTER)
-  return { start, end }
-}
-
-// spacer widths that exactly match the space the missing cards would occupy
-// (the carousel is a flex row with a CARD_GAP gap between every child)
-function leadingSpacerWidth(start: number): number {
-  return start > 0 ? start * (CARD_WIDTH + CARD_GAP) - CARD_GAP : 0
-}
-
-function trailingSpacerWidth(missing: number): number {
-  return missing > 0 ? missing * CARD_WIDTH + (missing - 1) * CARD_GAP : 0
-}
-
 export function ContentCarousel({
   cards,
   categoryId,
@@ -96,10 +73,24 @@ export function ContentCarousel({
   const focusedCardRef = useRef<HTMLElement | null>(null)
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const lastCategoryIdRef = useRef(categoryId)
+  // bug18: measured physical scroll position, feeding the viewport safety guard
+  const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics | null>(null)
 
   const registerFocusedRef = useCallback((el: HTMLElement | null) => {
     focusedCardRef.current = el
   }, [])
+
+  // bug18: read the carousel's physical scroll position after each render that
+  // can change the window (focus / list / view). A lagging smooth scroll then
+  // keeps the still-visible cards mounted instead of unmounting them early.
+  useEffect(() => {
+    const carousel = carouselRef.current
+    if (!carousel) return
+    const next: ScrollMetrics = { scrollLeft: carousel.scrollLeft, width: carousel.clientWidth }
+    setScrollMetrics((prev) =>
+      prev && prev.scrollLeft === next.scrollLeft && prev.width === next.width ? prev : next,
+    )
+  }, [cards.length, focusedIndex, categoryId])
 
   // a category change always starts at the first card (bug8.1: keyed on
   // categoryId, not on the cards array identity — the parent rebuilds it on
@@ -116,9 +107,9 @@ export function ContentCarousel({
     focusedCardRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center' })
   }, [focusedIndex, categoryId])
 
-  // bug5/bug6: mount only [start, end) plus invisible width spacers for the
-  // off-screen cards so scroll metrics and index math stay correct
-  const { start, end } = windowRange(cards.length, focusedIndex)
+  // bug5/bug6/bug18: mount only [start, end) plus invisible width spacers for
+  // the off-screen cards so scroll metrics and index math stay correct
+  const { start, end } = windowRange(cards.length, focusedIndex, scrollMetrics)
   const leadingWidth = leadingSpacerWidth(start)
   const trailingWidth = trailingSpacerWidth(cards.length - end)
 

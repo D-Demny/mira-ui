@@ -309,57 +309,73 @@ describe('bug8.1: scroll reset scoped to category changes', () => {
   })
 })
 
-describe('bug5/bug6: windowed rendering', () => {
-  // 20 cards: window is 3 before + focused + 8 after = 12 mounted cards
-  const MANY: MenuCard[] = Array.from({ length: 20 }, (_, i) => ({
+describe('bug5/bug6/bug18: windowed rendering', () => {
+  // 50 cards: long enough (> NO_WINDOW_THRESHOLD) that windowing applies.
+  // In jsdom the carousel measures 0px wide, so the viewport safety guard is
+  // disabled and the pure 16/16 index window is exercised.
+  const MANY: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
     id: `m-${i}`,
     title: `Card ${i}`,
     subtitle: '',
   }))
 
-  it('mounts only the window around the focused card plus width spacers', () => {
+  it('mounts the symmetrical 16/16 window around the focused card plus width spacers', () => {
     const { container } = render(
-      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={10} />,
+      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={25} />,
     )
-    // 3 before (7..9) + focused (10) + 8 after (11..18) = 12 cards
-    expect(container.querySelectorAll('article')).toHaveLength(12)
-    expect(screen.getByText('Card 7')).toBeInTheDocument()
-    expect(screen.getByText('Card 18')).toBeInTheDocument()
+    // 16 before (9..24) + focused (25) + 16 after (26..41) = 33 cards
+    expect(container.querySelectorAll('article')).toHaveLength(33)
+    expect(screen.getByText('Card 9')).toBeInTheDocument()
+    expect(screen.getByText('Card 41')).toBeInTheDocument()
     // off-screen cards are not mounted
-    expect(screen.queryByText('Card 6')).not.toBeInTheDocument()
-    expect(screen.queryByText('Card 19')).not.toBeInTheDocument()
+    expect(screen.queryByText('Card 8')).not.toBeInTheDocument()
+    expect(screen.queryByText('Card 42')).not.toBeInTheDocument()
     // invisible spacers keep the scroll width of the full list
     const spacers = container.querySelectorAll('.spacer')
     expect(spacers).toHaveLength(2)
-    // 7 missing before: 7*(170+24)-24, 1 missing after: 170
-    expect((spacers[0] as HTMLElement).style.width).toBe('1334px')
-    expect((spacers[1] as HTMLElement).style.width).toBe('170px')
+    // 9 missing before: 9*(170+24)-24, 8 missing after: 8*170+7*24
+    expect((spacers[0] as HTMLElement).style.width).toBe('1722px')
+    expect((spacers[1] as HTMLElement).style.width).toBe('1528px')
   })
 
-  it('moves the window as the focus moves and keeps the focused card mounted', () => {
-    const { container, rerender } = render(
+  it('clips at the start of the list (no leading spacer at focus 0)', () => {
+    const { container } = render(
       <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} />,
     )
+    // 0 before + focused (0) + 16 after (1..16) = 17 cards
+    expect(container.querySelectorAll('article')).toHaveLength(17)
     expect(screen.getByText('Card 0')).toBeInTheDocument()
-    expect(screen.queryByText('Card 12')).not.toBeInTheDocument()
-
-    rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={19} />)
-
-    expect(screen.getByText('Card 19')).toBeInTheDocument()
-    expect(screen.getByText('Card 16')).toBeInTheDocument()
-    expect(screen.queryByText('Card 0')).not.toBeInTheDocument()
-    // at the end of the list the window is clipped to the available cards
-    expect(container.querySelectorAll('article')).toHaveLength(4)
-    // only the leading spacer remains
-    expect(container.querySelectorAll('.spacer')).toHaveLength(1)
-    expect((container.querySelector('.spacer') as HTMLElement).style.width).toBe('3080px')
+    expect(screen.queryByText('Card 17')).not.toBeInTheDocument()
+    const spacers = container.querySelectorAll('.spacer')
+    expect(spacers).toHaveLength(1)
+    // 33 missing after: 33*170+32*24
+    expect((spacers[0] as HTMLElement).style.width).toBe('6378px')
   })
 
-  it('renders short lists in full without spacers', () => {
+  it('clips at the end of the list (no trailing spacer at the last card)', () => {
     const { container } = render(
-      <ContentCarousel cards={CARDS_A} categoryId="recent" focusedIndex={0} />,
+      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={49} />,
     )
-    expect(container.querySelectorAll('article')).toHaveLength(3)
+    // 16 before (33..48) + focused (49) = 17 cards
+    expect(container.querySelectorAll('article')).toHaveLength(17)
+    expect(screen.getByText('Card 49')).toBeInTheDocument()
+    expect(screen.getByText('Card 33')).toBeInTheDocument()
+    const spacers = container.querySelectorAll('.spacer')
+    expect(spacers).toHaveLength(1)
+    // 33 missing before: 33*(170+24)-24
+    expect((spacers[0] as HTMLElement).style.width).toBe('6378px')
+  })
+
+  it('renders short lists (< 40 items) in full without spacers (bug18)', () => {
+    const SHORT: MenuCard[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `s-${i}`,
+      title: `Short ${i}`,
+      subtitle: '',
+    }))
+    const { container } = render(
+      <ContentCarousel cards={SHORT} categoryId="playlists" focusedIndex={10} />,
+    )
+    expect(container.querySelectorAll('article')).toHaveLength(20)
     expect(container.querySelectorAll('.spacer')).toHaveLength(0)
   })
 })
