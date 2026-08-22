@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { MainMenuView } from '../MainMenuView'
@@ -340,6 +340,42 @@ describe('MainMenuView', () => {
       const lastEl = scrollSpy.mock.instances.at(-1)
       expect(lastEl).toBe(screen.getByText('Workout').closest('.card'))
       scrollSpy.mockRestore()
+    })
+  })
+
+  describe('bug8.2: pre-decoded covers', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('warms every menu cover once with AlbumArt cache attributes', async () => {
+      const created: HTMLImageElement[] = []
+      const RealImage = window.Image
+      vi.stubGlobal('Image', function () {
+        const img = new RealImage()
+        created.push(img)
+        return img
+      })
+
+      render(<MainMenuView nowPlaying={nowPlaying} />)
+
+      // wait until the dynamic card data (playlists/recent) has arrived and
+      // every dynamic cover is warmed (pl-2 has no images → no entry)
+      await waitFor(() => {
+        expect(new Set(created.map((img) => img.src))).toEqual(
+          new Set(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg']),
+        )
+      })
+
+      const srcs = created.map((img) => img.src).sort()
+      expect(srcs).toEqual(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg'])
+      // no duplicate warming: each URL is fetched exactly once
+      expect(new Set(created.map((img) => img.src)).size).toBe(created.length)
+      // same fetch attributes as AlbumArt so the browser reuses one cache entry
+      for (const img of created) {
+        expect(img.crossOrigin).toBe('anonymous')
+        expect(img.referrerPolicy).toBe('no-referrer')
+      }
     })
   })
 })
