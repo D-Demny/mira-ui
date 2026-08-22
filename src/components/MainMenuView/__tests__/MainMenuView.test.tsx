@@ -118,6 +118,7 @@ describe('MainMenuView', () => {
                 uri: `spotify:track:tr-${params.id}-1`,
                 artists: [{ name: 'Someone' }],
                 album: { name: 'An Album', images: [{ url: 'http://img/tr.jpg' }] },
+                position: 0,
               },
             },
           ],
@@ -231,7 +232,7 @@ describe('MainMenuView', () => {
     expect(onExit).toHaveBeenCalledTimes(1)
   })
 
-  it('opens the track list when a playlist is confirmed and plays the focused track (bug4)', async () => {
+  it('opens the track list when a playlist is confirmed and plays the focused track with playlist context (bug4, bug16)', async () => {
     const onPlay = vi.fn()
     render(<MainMenuView onPlay={onPlay} />)
 
@@ -245,9 +246,13 @@ describe('MainMenuView', () => {
     await waitFor(() => expect(screen.getByText('Track 1 of pl-1')).toBeInTheDocument())
     expect(onPlay).not.toHaveBeenCalled()
 
-    // confirming the focused track starts playback
+    // confirming the focused track plays the parent playlist context starting at
+    // the track's position, keeping the rest of the playlist in the queue (bug16)
     confirmDial()
-    expect(onPlay).toHaveBeenCalledWith('spotify:track:tr-pl-1-1')
+    expect(onPlay).toHaveBeenCalledWith('spotify:playlist:pl-1', {
+      position: 0,
+      uri: 'spotify:track:tr-pl-1-1',
+    })
     expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveAttribute(
       'aria-current',
       'true',

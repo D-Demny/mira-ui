@@ -47,7 +47,7 @@ import { usePrefetch } from '@/hooks/usePrefetch'
 import { useSavedTrack } from '@/hooks/useSavedTrack'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { resumeLastDevice, transferToDevice } from '@/api/client'
-import type { ConnectDevice, ObserverStatusActive } from '@/api/types'
+import type { ConnectDevice, ObserverStatusActive, PlayOffset } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
 import { artSizeFor, heroArtSizeFor } from '@/uiScale'
 import styles from './App.module.scss'
@@ -556,8 +556,8 @@ export default function App() {
 
   // start playback from the main menu → stay in the menu, it switches to 'Läuft gerade'
   const onPlayFromMenu = useCallback(
-    (uri: string) => {
-      void Promise.resolve(playContext(uri)).catch(() => {})
+    (uri: string, offset?: PlayOffset) => {
+      void Promise.resolve(playContext(uri, offset)).catch(() => {})
     },
     [playContext],
   )
