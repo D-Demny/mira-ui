@@ -238,11 +238,18 @@ describe('ContentCarousel', () => {
     expect(screen.getByText('Next Song')).toBeInTheDocument()
   })
 
-  it('tapping Läuft gerade in the sidebar exits the menu', () => {
+  it('bug20: tapping Läuft gerade in the sidebar opens the queue pane, it no longer exits', () => {
     const onExit = vi.fn()
     render(<MainMenuView onExit={onExit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
-    expect(onExit).toHaveBeenCalledTimes(1)
+    // the sidebar item behaves like every other category: it switches to the
+    // content pane (the queue) instead of jumping straight to the player
+    expect(onExit).not.toHaveBeenCalled()
+    expect(screen.getByText('Nichts läuft')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    )
   })
 })
 
