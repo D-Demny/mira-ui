@@ -9,6 +9,7 @@ import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
+import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
 const mockPlaylists = [
@@ -108,6 +109,10 @@ describe('MainMenuView', () => {
     clearRecentCache()
     clearTracksCache()
     clearColorCache()
+    // bug25: the settings store persists to localStorage — start every test
+    // from the pristine defaults
+    localStorage.clear()
+    __resetSettings()
     server.use(
       http.get('*/web-api/me/playlists', () =>
         HttpResponse.json({
@@ -330,9 +335,9 @@ describe('MainMenuView', () => {
     wheel(-10)
     wheel(-10)
     confirmDial()
-    await waitFor(() => expect(screen.getByText('Lyrics')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Show Lyrics')).toBeInTheDocument())
 
-    // strictly the settings cards — no leftover track cards (bug15)
+    // strictly the settings rows — no leftover track cards (bug15)
     expect(screen.queryByText('Track 1 of pl-1')).not.toBeInTheDocument()
   })
 
@@ -761,6 +766,190 @@ describe('MainMenuView', () => {
       wheel(-10)
       expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([120, 60, 180]))
       expect(view.style.getPropertyValue('--menu-glow-a')).toBe(rgba([120, 60, 180], 0.5))
+    })
+  })
+
+  describe('bug25: settings vertical list', () => {
+    it('renders the six root rows instead of a carousel', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      for (const label of [
+        'Settings',
+        'Show Lyrics',
+        'Karaoke Lyrics',
+        'Mic',
+        'Devices',
+        'Bluetooth Pairing',
+      ]) {
+        expect(await screen.findByText(label)).toBeInTheDocument()
+      }
+    })
+
+    it('confirming Show Lyrics flips the live value', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Show Lyrics')
+      expect(getSettings().showLyrics).toBe(true)
+
+      wheel(-10) // from 'Settings' (0) to 'Show Lyrics' (1)
+      confirmDial()
+
+      expect(getSettings().showLyrics).toBe(false)
+      expect(screen.getByText('Show Lyrics').closest('[role="button"]')?.textContent).toContain(
+        'Off',
+      )
+    })
+
+    it('Settings opens the sub-level and back returns to the root rows', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // the focused 'Settings' row (index 0) descends
+
+      expect(await screen.findByText('Default Device')).toBeInTheDocument()
+      expect(screen.getByText('Display Size')).toBeInTheDocument()
+      expect(screen.getByText('Lyric Sync')).toBeInTheDocument()
+      expect(screen.getByText('Volume per turn')).toBeInTheDocument()
+      expect(screen.getByText('Brightness')).toBeInTheDocument()
+      expect(screen.queryByText('Bluetooth Pairing')).not.toBeInTheDocument()
+
+      pressBack()
+      expect(screen.getByText('Show Lyrics')).toBeInTheDocument()
+      expect(screen.queryByText('Display Size')).not.toBeInTheDocument()
+    })
+
+    it('confirming a slider row toggles its adjust mode', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10) // to 'Display Size' (1)
+
+      confirmDial() // enter adjust mode
+      const row = screen.getByText('Display Size').closest('[role="button"]')
+      expect(row?.className).toContain('rowAdjusting')
+
+      confirmDial() // leave it again
+      expect(screen.getByText('Display Size').closest('[role="button"]')?.className).not.toContain(
+        'rowAdjusting',
+      )
+    })
+
+    it('the wheel adjusts the slider value while adjust mode is active', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10) // to 'Display Size' (1), value 100
+      confirmDial() // enter adjust mode
+
+      wheel(-10) // consumed by the slider: 100 → 105, the focus stays
+      expect(getSettings().uiScalePct).toBe(105)
+      wheel(10) // 105 → 100
+      expect(getSettings().uiScalePct).toBe(100)
+    })
+
+    it('turning past the slider boundary leaves adjust mode and moves the focus', async () => {
+      updateSettings({ uiScalePct: 115 })
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10) // to 'Display Size' (1, already at the 115 max)
+      confirmDial() // enter adjust mode
+
+      wheel(-10) // boundary: adjust mode ends and the focus moves to 'Lyric Sync'
+      expect(getSettings().uiScalePct).toBe(115)
+      expect(screen.getByText('Lyric Sync').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+      wheel(-10) // plain navigation on again: to 'Volume per turn'
+      expect(screen.getByText('Volume per turn').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+    })
+
+    it('Devices and Bluetooth Pairing open their panels', async () => {
+      const onOpenDevices = vi.fn()
+      const onOpenBluetooth = vi.fn()
+      render(
+        <MainMenuView onOpenDevices={onOpenDevices} onOpenBluetooth={onOpenBluetooth} />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+
+      wheel(-10) // 1 Show Lyrics
+      wheel(-10) // 2 Karaoke Lyrics
+      wheel(-10) // 3 Mic
+      wheel(-10) // 4 Devices
+      confirmDial()
+      expect(onOpenDevices).toHaveBeenCalledTimes(1)
+
+      wheel(-10) // 5 Bluetooth Pairing
+      confirmDial()
+      expect(onOpenBluetooth).toHaveBeenCalledTimes(1)
+    })
+
+    it('Default Device in the sub-level opens the default device panel', async () => {
+      const onOpenDefaultDevice = vi.fn()
+      render(<MainMenuView onOpenDefaultDevice={onOpenDefaultDevice} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      confirmDial()
+      expect(onOpenDefaultDevice).toHaveBeenCalledTimes(1)
+    })
+
+    it('adjust mode does not survive leaving the sub-level', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10) // to 'Display Size' (1)
+      confirmDial() // enter adjust mode
+      expect(screen.getByText('Display Size').closest('[role="button"]')?.className).toContain(
+        'rowAdjusting',
+      )
+
+      pressBack() // back to the root rows
+      confirmDial() // 'Settings' again — a fresh sub-level
+      wheel(-10) // to 'Display Size'
+      expect(screen.getByText('Display Size').closest('[role="button"]')?.className).not.toContain(
+        'rowAdjusting',
+      )
+    })
+
+    it('the wheel navigates freely through the sub-level rows', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+
+      wheel(-10) // 1 Display Size
+      wheel(-10) // 2 Lyric Sync
+      wheel(-10) // 3 Volume per turn
+      wheel(-10) // 4 Brightness
+      expect(screen.getByText('Brightness').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+    })
+
+    it('the sun chip toggles auto brightness and reveals the level value', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4)
+      fireEvent.click(screen.getByRole('switch', { name: 'Auto brightness' }))
+
+      expect(getSettings().autoBrightness).toBe(false)
+      expect(screen.getByText('Brightness').closest('[role="button"]')?.textContent).toContain(
+        '50%',
+      )
     })
   })
 })

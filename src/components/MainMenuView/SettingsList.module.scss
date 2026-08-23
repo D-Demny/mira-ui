@@ -1,0 +1,106 @@
+// bug25: vertical settings list for the 'Einstellungen' pane
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: $s-3;
+  height: 100%;
+  box-sizing: border-box;
+  padding: $s-5 $s-6;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: $s-4;
+  flex-shrink: 0;
+  min-height: $touch-min;
+  padding: $s-3 $s-4;
+  border-radius: $r-lg;
+  background: rgba(255, 255, 255, 0.05);
+  box-sizing: border-box;
+  transition:
+    background-color $dur-base $ease-standard,
+    transform $dur-fast $ease-standard;
+}
+
+.rowFocused {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateX(4px);
+}
+
+// bug25: a slider row the dial is currently adjusting
+.rowAdjusting {
+  background: rgba(30, 215, 96, 0.14);
+}
+
+.chevron {
+  flex: 0 0 auto;
+  width: 24px;
+  text-align: center;
+  color: $text-tertiary;
+  font-size: $fs-2xl;
+  line-height: 1;
+}
+
+.autoChip {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.07);
+  color: $text-secondary;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition:
+    background-color $dur-base $ease-standard,
+    color $dur-base $ease-standard;
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.autoChipOn {
+  background: $accent-dim;
+  color: $accent;
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $s-2;
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $s-4;
+}
+
+.title {
+  font-size: $fs-lg;
+  font-weight: $fw-medium;
+  color: $text-primary;
+}
+
+.value {
+  font-size: $fs-md;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

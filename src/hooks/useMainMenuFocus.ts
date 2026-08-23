@@ -16,6 +16,10 @@ export interface UseMainMenuFocusOptions {
   // the sidebar; returning true consumes the back press (e.g. closes a
   // playlist track sub-menu)
   onContentBack?: () => boolean
+  // called for a vertical tick while focus is in the content pane, before
+  // the content focus moves; returning true consumes the tick (bug25: a
+  // focused slider row adjusts its value instead)
+  onWheelContent?: (dir: 1 | -1) => boolean
 }
 
 export interface UseMainMenuFocusResult {
@@ -44,6 +48,7 @@ export function useMainMenuFocus({
   onSelectSidebar,
   onConfirmContent,
   onContentBack,
+  onWheelContent,
 }: UseMainMenuFocusOptions): UseMainMenuFocusResult {
   const [activePane, setActivePaneState] = useState<MainMenuPane>('sidebar')
   const [sidebarIndex, setSidebarIndexState] = useState(0)
@@ -61,12 +66,14 @@ export function useMainMenuFocus({
   const onSelectSidebarRef = useRef(onSelectSidebar)
   const onConfirmContentRef = useRef(onConfirmContent)
   const onContentBackRef = useRef(onContentBack)
+  const onWheelContentRef = useRef(onWheelContent)
   const countsRef = useRef({ sidebarCount, contentCount })
   useLayoutEffect(() => {
     onExitRef.current = onExit
     onSelectSidebarRef.current = onSelectSidebar
     onConfirmContentRef.current = onConfirmContent
     onContentBackRef.current = onContentBack
+    onWheelContentRef.current = onWheelContent
     countsRef.current = { sidebarCount, contentCount }
   })
 
@@ -144,6 +151,8 @@ export function useMainMenuFocus({
       if (activePaneRef.current === 'sidebar') {
         moveSidebar(dir)
       } else {
+        // bug25: the view may consume the tick to adjust a focused slider
+        if (onWheelContentRef.current?.(dir)) return
         moveContent(dir)
       }
     },
