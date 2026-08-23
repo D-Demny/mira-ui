@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
 export type MainMenuPane = 'sidebar' | 'content'
@@ -53,13 +53,16 @@ export function useMainMenuFocus({
   const sidebarIndexRef = useRef(0)
   const contentIndexRef = useRef(0)
 
-  // keep the latest callbacks/counts without re-registering the listeners
+  // keep the latest callbacks/counts without re-registering the listeners;
+  // useLayoutEffect (not the passive useEffect) so a dial event that lands
+  // right after a render commit — e.g. a test firing wheel/confirm in the
+  // next task — never reads a stale closure
   const onExitRef = useRef(onExit)
   const onSelectSidebarRef = useRef(onSelectSidebar)
   const onConfirmContentRef = useRef(onConfirmContent)
   const onContentBackRef = useRef(onContentBack)
   const countsRef = useRef({ sidebarCount, contentCount })
-  useEffect(() => {
+  useLayoutEffect(() => {
     onExitRef.current = onExit
     onSelectSidebarRef.current = onSelectSidebar
     onConfirmContentRef.current = onConfirmContent
