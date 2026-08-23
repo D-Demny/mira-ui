@@ -3,18 +3,23 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { HomeMenuView } from '../HomeMenuView'
 import { server } from '@/__tests__/msw-server'
-import { clearCache } from '@/hooks/usePlaylists'
+import { __resetHomeLightStore } from '@/hooks/useHomeLight'
 
 describe('HomeMenuView', () => {
   beforeEach(() => {
-    clearCache()
+    __resetHomeLightStore()
   })
 
-  it('renders the light with its real-time status', async () => {
+  it('renders all lights with their rooms and real-time status', async () => {
     render(<HomeMenuView />)
     expect(screen.getByText('Home')).toBeInTheDocument()
     expect(screen.getByText('3er Stehlampe Gold')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText('OFF')).toBeInTheDocument())
+    expect(screen.getByText('Esstisch Hängelampe')).toBeInTheDocument()
+    expect(screen.getByText('3er Deko')).toBeInTheDocument()
+    expect(screen.getByText('Stehlampe Gold')).toBeInTheDocument()
+    expect(screen.getAllByText('Esszimmer')).toHaveLength(3)
+    expect(screen.getByText('Wohnzimmer')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(4))
   })
 
   it('highlights the light by default', () => {
@@ -45,10 +50,30 @@ describe('HomeMenuView', () => {
       }),
     )
     render(<HomeMenuView />)
-    await waitFor(() => expect(screen.getByText('OFF')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(4))
     fireEvent.click(screen.getByText('3er Stehlampe Gold'))
     await waitFor(() => expect(screen.getByText('ON')).toBeInTheDocument())
     expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer'])
+  })
+
+  it('toggles each light independently', async () => {
+    const toggled: string[] = []
+    server.use(
+      http.post('*/ha-api/services/light/toggle', async ({ request }) => {
+        const body = (await request.json()) as { entity_id?: string }
+        toggled.push(body.entity_id ?? '')
+        return HttpResponse.json([
+          { entity_id: body.entity_id, state: 'on', attributes: {} },
+        ])
+      }),
+    )
+    render(<HomeMenuView />)
+    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(4))
+    fireEvent.click(screen.getByText('Esstisch Hängelampe'))
+    await waitFor(() => expect(screen.getByText('ON')).toBeInTheDocument())
+    expect(toggled).toEqual(['light.esstisch_hangelampe_3er'])
+    // the first light keeps its own state
+    expect(screen.getAllByText('OFF')).toHaveLength(3)
   })
 
   it('shows an Offline badge when Home Assistant is unreachable', async () => {
@@ -59,11 +84,11 @@ describe('HomeMenuView', () => {
       ),
     )
     render(<HomeMenuView />)
-    await waitFor(() => expect(screen.getByText('Offline')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('Offline')).toHaveLength(4))
   })
 
   it('exposes every home item as an accessible button', () => {
     render(<HomeMenuView />)
-    expect(screen.getAllByRole('button')).toHaveLength(3)
+    expect(screen.getAllByRole('button')).toHaveLength(6)
   })
 })
