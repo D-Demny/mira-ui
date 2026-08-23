@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchPlaylistTracks } from '@/api/client'
+import { fetchPlaylistTracks, fetchSavedTracks } from '@/api/client'
 import type { SpotifyPlaylistTrack } from '@/api/types'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 const PAGE_SIZE = 50
+
+// the Liked Songs pseudo-playlist (bug22): it has no playlist id, its pages
+// come from Web API me/tracks instead of playlists/<id>/tracks
+export const LIKED_SONGS_ID = 'spotify:collection:tracks'
 
 interface CacheEntry {
   tracks: SpotifyPlaylistTrack[]
@@ -64,7 +68,11 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
         setLoadingMore(true)
       }
       try {
-        const page = await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
+        // bug22: Liked Songs pages from me/tracks, everything else from playlists/<id>/tracks
+        const page =
+          id === LIKED_SONGS_ID
+            ? await fetchSavedTracks(offset, PAGE_SIZE, controller.signal)
+            : await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
         if (controller.signal.aborted) return
         const seen = new Set(listRef.current.map((track) => track.id))
         const next = [...listRef.current]

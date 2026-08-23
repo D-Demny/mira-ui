@@ -249,6 +249,33 @@ export async function fetchPlaylistTracks(
   }
 }
 
+// one page of the saved tracks (Liked Songs; the daemon serves the Web API
+// me/tracks shape from the library tracks query, bug22)
+export async function fetchSavedTracks(
+  offset = 0,
+  limit = 50,
+  signal?: AbortSignal,
+): Promise<SpotifyPlaylistTracksResponse> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/web-api/me/tracks?limit=${limit}&offset=${offset}`,
+      { signal },
+    )
+    if (!res.ok) throw new Error(`web-api/me/tracks ${res.status}`)
+    const body: SpotifyPlaylistTracksResponse = (await safeJson(res)) as SpotifyPlaylistTracksResponse
+    return {
+      items: Array.isArray(body.items) ? body.items : [],
+      total: body.total ?? 0,
+      limit: body.limit ?? limit,
+      offset: body.offset ?? offset,
+      next: body.next ?? null,
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`web-api/me/tracks: ${message}`, { cause: err })
+  }
+}
+
 export async function fetchRecentlyPlayed(
   limit = 20,
   signal?: AbortSignal,
