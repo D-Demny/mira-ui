@@ -551,4 +551,68 @@ describe('MainMenuView', () => {
       expect(screen.queryByText('Track 1 of pl-1')).not.toBeInTheDocument()
     })
   })
+
+  describe('bug19: recently played context & error state', () => {
+    it('plays the context uri when the track was played from a context', async () => {
+      server.use(
+        http.get('*/web-api/me/player/recently-played', () =>
+          HttpResponse.json({
+            items: [
+              {
+                track: {
+                  id: 't-ctx',
+                  name: 'Contexted',
+                  artists: [{ name: 'Someone' }],
+                  album: { name: 'An Album', images: [{ url: 'http://img/c.jpg' }] },
+                  uri: 'spotify:track:t-ctx',
+                },
+                played_at: '2026-08-21T10:00:00Z',
+                context_uri: 'spotify:playlist:ctx-1',
+              },
+            ],
+          }),
+        ),
+      )
+      const onPlay = vi.fn()
+      render(<MainMenuView onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await screen.findByText('Contexted')
+      fireEvent.click(screen.getByText('Contexted'))
+
+      expect(onPlay).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:playlist:ctx-1')
+    })
+
+    it('falls back to the track uri when no context is known', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await screen.findByText('Siamese Dream')
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      expect(onPlay).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:track:t-1')
+    })
+
+    it('shows an error card and retries the recents fetch on confirm', async () => {
+      let calls = 0
+      server.use(
+        http.get('*/web-api/me/player/recently-played', () => {
+          calls += 1
+          return new HttpResponse(null, { status: 500 })
+        }),
+      )
+      render(<MainMenuView />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      const retry = await screen.findByText('Erneut versuchen')
+      expect(calls).toBe(1)
+
+      // confirming the error card triggers a refetch
+      fireEvent.click(retry)
+      await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2))
+    })
+  })
 })

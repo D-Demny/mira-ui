@@ -49,7 +49,12 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
   // destructured so the categories memo keys on stable primitives — the hook
   // results are new object literals on every render (bug8.1/8.2)
   const { items: playlistItems, loading: playlistsLoading } = usePlaylists()
-  const { items: recentItems, loading: recentLoading } = useRecent()
+  const {
+    items: recentItems,
+    loading: recentLoading,
+    error: recentError,
+    refetch: refetchRecent,
+  } = useRecent()
   const { state: lightState, loading: lightLoading, error: lightError, toggle: lightToggle } =
     useHomeLight()
   const settings = useSettings()
@@ -133,15 +138,22 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
         subtitle: entry.track.artists.map((artist) => artist.name).join(', '),
         art: pickSpotifyImage(entry.track.album.images),
         kind: 'media',
-        uri: entry.track.uri,
+        // bug19: replay the context the track was played from (keeps the rest
+        // of the queue) and fall back to the bare track uri when unknown
+        uri: entry.context_uri || entry.track.uri,
       })
     }
     if (recentLoading && recentCards.length === 0) {
       recentCards.push({ id: 'rc-loading', title: 'Lade…', subtitle: '' })
     } else if (!recentLoading && recentCards.length === 0) {
-      // bug2.6: no play history yet — show an inert placeholder instead of an
-      // empty carousel
-      recentCards.push({ id: 'rc-empty', title: 'Noch nichts abgespielt', subtitle: '' })
+      if (recentError) {
+        // the history fetch failed (e.g. pathfinder payload drift) — offer a retry
+        recentCards.push({ id: 'rc-error', title: recentError, subtitle: 'Erneut versuchen' })
+      } else {
+        // bug2.6: no play history yet — show an inert placeholder instead of an
+        // empty carousel
+        recentCards.push({ id: 'rc-empty', title: 'Noch nichts abgespielt', subtitle: '' })
+      }
     }
 
     const nowPlayingCards: MenuCard[] = []
@@ -241,6 +253,7 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     playlistsLoading,
     recentItems,
     recentLoading,
+    recentError,
     lightState,
     lightLoading,
     lightError,
@@ -337,6 +350,9 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     } else if (card.id === 'tr-error') {
       // error placeholder: dial press retries the track list fetch
       refetchTracks()
+    } else if (card.id === 'rc-error') {
+      // error placeholder (bug19): dial press retries the recents fetch
+      refetchRecent()
     }
   }
 
