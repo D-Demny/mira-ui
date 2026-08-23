@@ -485,6 +485,23 @@ export function MainMenuView({
       onExit?.()
       return
     }
+    // bug26: confirming an upcoming queue card skips WITHIN the active queue —
+    // play the live context starting at that track (offset) instead of the
+    // bare track uri, which would restart single-track playback and clear the
+    // queue. position is the queue index (the active track is 0, so the first
+    // upcoming card is 1). Single-track contexts (context_uri is a track uri
+    // or empty) have no shared queue: play the track directly, as before.
+    if (confirmedCategory.id === 'now-playing' && index > 0 && card.id.startsWith('np-q-')) {
+      if (!card.uri) return
+      setActiveCategoryId('now-playing')
+      const contextUri = nowPlaying?.context_uri ?? ''
+      if (contextUri && !contextUri.startsWith('spotify:track:')) {
+        onPlay?.(contextUri, { position: index, uri: card.uri })
+      } else {
+        onPlay?.(card.uri)
+      }
+      return
+    }
     if (
       confirmedCategory.id === 'playlists' &&
       !openTracklist &&

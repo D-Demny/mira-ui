@@ -82,6 +82,31 @@ const nowPlaying: ObserverStatusActive = {
   next_tracks: [],
 }
 
+// the 'Läuft gerade' fixture with an upcoming queue (bug3) — the queue belongs
+// to a playlist context so bug26's in-queue skip can be asserted
+const queueNowPlaying: ObserverStatusActive = {
+  ...nowPlaying,
+  context_uri: 'spotify:playlist:queue-pl',
+  next_tracks: [
+    {
+      uri: 'spotify:track:t-10',
+      track_id: 't-10',
+      name: 'Next Song',
+      artist: 'Someone',
+      album: '',
+      image_url: '',
+    },
+    {
+      uri: 'spotify:track:t-11',
+      track_id: 't-11',
+      name: 'Song After',
+      artist: 'Another',
+      album: '',
+      image_url: '',
+    },
+  ],
+}
+
 function wheel(deltaX: number) {
   act(() => {
     ListFocusContext.entry.onWheel({
@@ -526,28 +551,6 @@ describe('MainMenuView', () => {
   })
 
   describe('bug3: interactive queue & smart select', () => {
-    const queueNowPlaying: ObserverStatusActive = {
-      ...nowPlaying,
-      next_tracks: [
-        {
-          uri: 'spotify:track:t-10',
-          track_id: 't-10',
-          name: 'Next Song',
-          artist: 'Someone',
-          album: '',
-          image_url: '',
-        },
-        {
-          uri: 'spotify:track:t-11',
-          track_id: 't-11',
-          name: 'Song After',
-          artist: 'Another',
-          album: '',
-          image_url: '',
-        },
-      ],
-    }
-
     it('shows every upcoming queue track as a card', () => {
       render(<MainMenuView nowPlaying={queueNowPlaying} />)
 
@@ -586,8 +589,100 @@ describe('MainMenuView', () => {
       wheel(-10) // focus the first upcoming track
       confirmDial()
 
+      // bug26: the track plays inside the live queue context, not as an
+      // isolated single track (queue index 1 = first upcoming card)
+      expect(onPlay).toHaveBeenCalledTimes(2)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:playlist:queue-pl', {
+        position: 1,
+        uri: 'spotify:track:t-10',
+      })
+    })
+  })
+
+  describe('bug26: full queue & in-queue skip', () => {
+    // more than the three cards the bug reported — the whole queue feeds the
+    // cards (daemon delivers it, the UI no longer truncates it)
+    const longQueueNowPlaying: ObserverStatusActive = {
+      ...queueNowPlaying,
+      next_tracks: Array.from({ length: 10 }, (_, i) => ({
+        uri: `spotify:track:q-${i}`,
+        track_id: `q-${i}`,
+        name: `Queue Song ${i + 1}`,
+        artist: 'Someone',
+        album: '',
+        image_url: '',
+      })),
+    }
+
+    it('shows every upcoming queue track as a card, far beyond three', () => {
+      render(<MainMenuView nowPlaying={longQueueNowPlaying} />)
+
+      wheel(-10) // focus 'Läuft gerade' in the sidebar (live preview)
+
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      for (let i = 1; i <= 10; i++) {
+        expect(screen.getByText(`Queue Song ${i}`)).toBeInTheDocument()
+      }
+    })
+
+    it('skips directly to a deeper queue track via the context offset', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView nowPlaying={longQueueNowPlaying} onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      wheel(-10) // focus 'Queue Song 1' (queue index 1)
+      wheel(-10) // focus 'Queue Song 2' (queue index 2)
+      confirmDial()
+
+      // the live context starts at the selected track; the remaining queue
+      // items keep playing after it
+      expect(onPlay).toHaveBeenCalledTimes(2)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:playlist:queue-pl', {
+        position: 2,
+        uri: 'spotify:track:q-1',
+      })
+    })
+
+    it('plays the bare track uri when the queue has no shared context', async () => {
+      const onPlay = vi.fn()
+      render(
+        <MainMenuView
+          nowPlaying={{ ...queueNowPlaying, context_uri: 'spotify:track:t-9' }}
+          onPlay={onPlay}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      wheel(-10) // focus the first upcoming track
+      confirmDial()
+
+      // single-track context: the offset trick would restart the first track,
+      // so fall back to the direct track play
       expect(onPlay).toHaveBeenCalledTimes(2)
       expect(onPlay).toHaveBeenLastCalledWith('spotify:track:t-10')
+    })
+
+    it('still exits on the current track card without a play call', async () => {
+      const onPlay = vi.fn()
+      const onExit = vi.fn()
+      render(
+        <MainMenuView nowPlaying={longQueueNowPlaying} onPlay={onPlay} onExit={onExit} />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      // the focused card is the current track (index 0): exit only
+      confirmDial()
+      expect(onExit).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenCalledTimes(1)
     })
   })
 
