@@ -169,6 +169,48 @@ describe('useMainMenuFocus', () => {
     expect(onConfirmContent).toHaveBeenCalledWith(3)
   })
 
+  it('bug25: onWheelContent=true consumes the tick without moving the content focus', () => {
+    const onWheelContent = vi.fn(() => true)
+    const { result } = renderFocus({ onWheelContent })
+
+    act(() => {
+      ListFocusContext.entry.onConfirm?.() // enter content
+    })
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+    expect(onWheelContent).toHaveBeenCalledTimes(2)
+    expect(onWheelContent).toHaveBeenCalledWith(1)
+    expect(result.current.contentIndex).toBe(0)
+  })
+
+  it('bug25: onWheelContent=false lets the content focus move as usual', () => {
+    const onWheelContent = vi.fn(() => false)
+    const { result } = renderFocus({ onWheelContent })
+
+    act(() => {
+      ListFocusContext.entry.onConfirm?.() // enter content
+    })
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+    expect(onWheelContent).toHaveBeenCalledTimes(1)
+    expect(result.current.contentIndex).toBe(1)
+  })
+
+  it('bug25: onWheelContent is not called while the sidebar is focused', () => {
+    const onWheelContent = vi.fn(() => true)
+    renderFocus({ onWheelContent })
+
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+    expect(onWheelContent).not.toHaveBeenCalled()
+  })
+
   it('keeps the content focus in range when the card list shrinks', () => {
     const { result, rerender } = renderHook(
       ({ contentCount }: { contentCount: number }) =>

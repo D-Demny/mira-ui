@@ -6,15 +6,135 @@ import { usePlaylists } from '@/hooks/usePlaylists'
 import { usePlaylistTracks, LIKED_SONGS_ID } from '@/hooks/usePlaylistTracks'
 import { useRecent } from '@/hooks/useRecent'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
-import { useSettings } from '@/settings'
+import {
+  BRIGHTNESS_MAX,
+  BRIGHTNESS_MIN,
+  UI_SCALE_DEFAULT,
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
+  UI_SCALE_STEP,
+  updateSettings,
+  useSettings,
+  VOLUME_STEP_MAX,
+  VOLUME_STEP_MIN,
+  type Settings,
+} from '@/settings'
 import { pickSpotifyImage } from '@/api/client'
 import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorExtract'
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
+import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard } from './mockData'
 import styles from './MainMenuView.module.scss'
+
+// bug25: the lyric sync offset range mirrors the player SettingsSheet
+const OFFSET_MIN = -500
+const OFFSET_MAX = 500
+const OFFSET_STEP = 50
+
+function fmtOffset(ms: number): string {
+  if (ms === 0) return '0 ms'
+  return `${ms > 0 ? '+' : ''}${ms} ms`
+}
+
+// bug25: root rows of the 'Einstellungen' vertical list
+function buildRootSettingsRows(settings: Settings, deviceName: string): SettingsRow[] {
+  return [
+    { id: 'set-main', title: 'Settings', value: '', kind: 'open-settings' },
+    { id: 'set-lyrics', title: 'Show Lyrics', value: settings.showLyrics ? 'On' : 'Off', kind: 'toggle' },
+    {
+      id: 'set-karaoke',
+      title: 'Karaoke Lyrics',
+      value: settings.karaokeLyrics ? 'On' : 'Off',
+      kind: 'toggle',
+    },
+    { id: 'set-mic', title: 'Mic', value: settings.voiceMic ? 'On' : 'Off', kind: 'toggle' },
+    { id: 'set-devices', title: 'Devices', value: deviceName, kind: 'open-link' },
+    { id: 'set-bt', title: 'Bluetooth Pairing', value: '', kind: 'open-link' },
+  ]
+}
+
+// bug25: the 'Settings' sub-level rows (slider rows are dial-adjustable)
+function buildAdjustSettingsRows(
+  settings: Settings,
+  defaultDevice: string | undefined,
+  phoneVolume: boolean,
+): SettingsRow[] {
+  return [
+    {
+      id: 'set-default-device',
+      title: 'Default Device',
+      value: defaultDevice ?? 'None',
+      kind: 'open-link',
+    },
+    {
+      id: 'set-display',
+      title: 'Display Size',
+      value: `${settings.uiScalePct}%`,
+      kind: 'slider',
+      slider: {
+        ariaLabel: 'Display size',
+        value: settings.uiScalePct,
+        min: UI_SCALE_MIN,
+        max: UI_SCALE_MAX,
+        step: UI_SCALE_STEP,
+        format: (v) => `${v}%`,
+        defaultValue: UI_SCALE_DEFAULT,
+      },
+    },
+    {
+      id: 'set-lyricsync',
+      title: 'Lyric Sync',
+      value: fmtOffset(settings.lyricOffsetMs),
+      kind: 'slider',
+      slider: {
+        ariaLabel: 'Lyric sync offset',
+        value: settings.lyricOffsetMs,
+        min: OFFSET_MIN,
+        max: OFFSET_MAX,
+        step: OFFSET_STEP,
+        format: fmtOffset,
+        defaultValue: 0,
+      },
+    },
+    {
+      id: 'set-volume',
+      title: 'Volume per turn',
+      value: phoneVolume ? 'Set by phone' : `${settings.volumeStepPct}%`,
+      kind: 'slider',
+      slider: {
+        ariaLabel: 'Volume per turn',
+        value: settings.volumeStepPct,
+        min: VOLUME_STEP_MIN,
+        max: VOLUME_STEP_MAX,
+        step: 1,
+        format: (v) => `${v}%`,
+        disabled: phoneVolume,
+        defaultValue: 2,
+      },
+    },
+    {
+      id: 'set-brightness',
+      title: 'Brightness',
+      value: settings.autoBrightness ? 'Auto' : `${settings.brightness * 10}%`,
+      kind: 'slider',
+      autoToggle: true,
+      autoOn: settings.autoBrightness,
+      slider: {
+        ariaLabel: 'Brightness',
+        value: settings.brightness,
+        min: BRIGHTNESS_MIN,
+        max: BRIGHTNESS_MAX,
+        step: 1,
+        format: (v) => `${v * 10}%`,
+        disabled: settings.autoBrightness,
+        defaultValue: 5,
+      },
+    },
+  ]
+}
 
 // the playlist track sub-menu (bug4): confirming a playlist card opens its
 // track list; dial-back returns to the playlist list without playing.
@@ -45,13 +165,35 @@ export interface MainMenuViewProps {
   // close the menu and return to the player (card 0 of the 'Läuft gerade'
   // carousel confirmed / back pressed while focus is on the sidebar)
   onExit?: () => void
+  // bug25: settings list integration — the value/name of the default device
+  // and the App-level panels the list's link rows open
+  defaultDevice?: string
+  // playback volume is phone-controlled, so the step-size slider is inert
+  phoneVolume?: boolean
+  onOpenDefaultDevice?: () => void
+  onOpenDevices?: () => void
+  onOpenBluetooth?: () => void
 }
 
 // Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4b, 8.4c).
-export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) {
+export function MainMenuView({
+  onPlay,
+  nowPlaying,
+  onExit,
+  defaultDevice,
+  phoneVolume = false,
+  onOpenDefaultDevice,
+  onOpenDevices,
+  onOpenBluetooth,
+}: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
   // bug4: non-null while a playlist's track list is open as a sub-menu
   const [openTracklist, setOpenTracklist] = useState<OpenTracklist | null>(null)
+  // bug25: the settings pane level — 'root' list or the 'Settings' sub-level
+  const [settingsLevel, setSettingsLevel] = useState<'root' | 'adjust'>('root')
+  // bug25: the sub-level row in 'adjust mode' — dial-confirm on a slider row
+  // starts it, and while active the wheel changes the value instead of the focus
+  const [adjustingRowId, setAdjustingRowId] = useState<string | null>(null)
   const viewRef = useRef<HTMLDivElement>(null)
 
   // destructured so the categories memo keys on stable primitives — the hook
@@ -111,6 +253,23 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     nowPlaying?.track_uri,
     nowPlayingQueueKey,
   ])
+
+  // bug25: the 'Einstellungen' vertical list rows (root + sub-level); the
+  // confirmed level is what the focus hook counts and confirms
+  const settingsRootRows = useMemo(
+    () => buildRootSettingsRows(settings, nowPlaying?.device_name ?? ''),
+    [settings, nowPlaying?.device_name],
+  )
+  const settingsAdjustRows = useMemo(
+    () => buildAdjustSettingsRows(settings, defaultDevice, phoneVolume),
+    [settings, defaultDevice, phoneVolume],
+  )
+  // bug25: the sub-level (and its adjust mode) belong to the confirmed
+  // 'Einstellungen' category — derived, not reset in an effect, so a focus
+  // change writes no state; (re)entering settings resets both (onSelectSidebar)
+  const isAdjustLevel = activeCategoryId === 'settings' && settingsLevel === 'adjust'
+  const activeAdjustingRowId = activeCategoryId === 'settings' ? adjustingRowId : null
+  const settingsRows = isAdjustLevel ? settingsAdjustRows : settingsRootRows
 
   const categories = useMemo(() => {
     const lightSubtitle =
@@ -188,30 +347,13 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       nowPlayingCards.push({ id: 'np-idle', title: 'Nichts läuft', subtitle: '' })
     }
 
-    const settingsCards: MenuCard[] = [
-      {
-        id: 'set-lyrics',
-        title: 'Lyrics',
-        subtitle: settings.showLyrics ? (settings.karaokeLyrics ? 'Karaoke' : 'An') : 'Aus',
-      },
-      {
-        id: 'set-display',
-        title: 'Display',
-        subtitle: settings.autoBrightness
-          ? `Auto · ${settings.brightness}%`
-          : `${settings.brightness}%`,
-      },
-      {
-        id: 'set-volume',
-        title: 'Lautstärke',
-        subtitle: `+${settings.volumeStepPct}% pro Schritt`,
-      },
-      {
-        id: 'set-mic',
-        title: 'Sprach-Mikrofon',
-        subtitle: settings.voiceMic ? 'An' : 'Aus',
-      },
-    ]
+    // bug25: the settings rows double as the category's focus cards (count +
+    // confirm target); the values mirror the live settings store
+    const settingsCards: MenuCard[] = settingsRows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      subtitle: row.value,
+    }))
 
     // bug4: while a playlist's track list is open, the 'Playlists' pane shows
     // that playlist's tracks instead of the playlist library
@@ -265,7 +407,7 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     lightState,
     lightLoading,
     lightError,
-    settings,
+    settingsRows,
     nowPlayingSnapshot,
     openTracklist,
     trackItems,
@@ -380,6 +522,66 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       // error placeholder (bug19): dial press retries the recents fetch
       refetchRecent()
     }
+    // bug25: settings root rows
+    else if (card.id === 'set-main') {
+      setSettingsLevel('adjust')
+      setAdjustingRowId(null)
+      focusRef.current?.focusContent(0)
+    } else if (card.id === 'set-lyrics') {
+      updateSettings({ showLyrics: !settings.showLyrics })
+    } else if (card.id === 'set-karaoke') {
+      updateSettings({ karaokeLyrics: !settings.karaokeLyrics })
+    } else if (card.id === 'set-mic') {
+      updateSettings({ voiceMic: !settings.voiceMic })
+    } else if (card.id === 'set-devices') {
+      onOpenDevices?.()
+    } else if (card.id === 'set-bt') {
+      onOpenBluetooth?.()
+    } else if (card.id === 'set-default-device') {
+      onOpenDefaultDevice?.()
+    } else if (
+      // bug25: dial-confirm on a slider row toggles its adjust mode; while
+      // active the wheel changes the value (handleWheelContent)
+      card.id === 'set-display' ||
+      card.id === 'set-lyricsync' ||
+      card.id === 'set-volume' ||
+      card.id === 'set-brightness'
+    ) {
+      setAdjustingRowId(activeAdjustingRowId === card.id ? null : card.id)
+    }
+  }
+
+  // bug25: adjust mode — the wheel changes the value of the adjusting row
+  // instead of moving the focus; turning past the min/max boundary leaves
+  // adjust mode and the focus moves on with the same tick
+  const handleWheelContent = (dir: 1 | -1): boolean => {
+    if (confirmedCategory.id !== 'settings' || !isAdjustLevel) return false
+    const row = settingsAdjustRows[focus.contentIndex]
+    const slider = row?.slider
+    if (!row || activeAdjustingRowId !== row.id || !slider || slider.disabled) return false
+    const next = Math.max(slider.min, Math.min(slider.max, slider.value + dir * slider.step))
+    if (next === slider.value) {
+      setAdjustingRowId(null)
+      return false
+    }
+    const patch: Partial<Settings> =
+      row.id === 'set-display'
+        ? { uiScalePct: next }
+        : row.id === 'set-lyricsync'
+          ? { lyricOffsetMs: next }
+          : row.id === 'set-volume'
+            ? { volumeStepPct: next }
+            : { brightness: next }
+    updateSettings(patch)
+    return true
+  }
+
+  // bug25: NotchedSlider drag (touch) updates the same store the dial does
+  const handleSliderChange = (rowId: string, value: number) => {
+    if (rowId === 'set-display') updateSettings({ uiScalePct: value })
+    else if (rowId === 'set-lyricsync') updateSettings({ lyricOffsetMs: value })
+    else if (rowId === 'set-volume') updateSettings({ volumeStepPct: value })
+    else if (rowId === 'set-brightness') updateSettings({ brightness: value })
   }
 
   const focus = useMainMenuFocus({
@@ -393,6 +595,11 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
         setActiveCategoryId(category.id)
         // leaving 'Playlists' closes the track sub-menu
         if (category.id !== 'playlists' && openTracklist) setOpenTracklist(null)
+        // bug25: (re)entering 'Einstellungen' always starts on the root rows
+        if (category.id === 'settings') {
+          setSettingsLevel('root')
+          setAdjustingRowId(null)
+        }
       }
     },
     onConfirmContent: (index) => {
@@ -400,8 +607,19 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       const card = confirmedCategory.cards[index]
       if (card) handleCardAction(card, index)
     },
-    // bug4: back in the content pane first closes the track sub-menu
-    onContentBack: () => closeTracklist(),
+    // bug4/bug25: back in the content pane first leaves the settings sub-level,
+    // then closes the track sub-menu
+    onContentBack: () => {
+      if (isAdjustLevel) {
+        setSettingsLevel('root')
+        setAdjustingRowId(null)
+        focusRef.current?.focusContent(0)
+        return true
+      }
+      return closeTracklist()
+    },
+    // bug25: a slider row in adjust mode consumes the tick to adjust its value
+    onWheelContent: handleWheelContent,
   })
 
   // the handlers above close over focus; the hook's options are read through
@@ -515,17 +733,30 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
         />
       </aside>
       <main className={styles.contentPane} aria-label="Menü-Inhalt">
-        <ContentCarousel
-          cards={displayedCategory.cards}
-          // the track sub-menu gets its own id so the carousel scroll resets
-          // when it opens/closes (bug8.1's reset is keyed on this value)
-          categoryId={
-            openTracklist ? `playlists:tracks:${openTracklist.playlistId}` : displayedCategory.id
-          }
-          // selectContent confirms the tapped card (runs the card action exactly once)
-          onCardTap={handleCardTap}
-          focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
-        />
+        {displayedCategory.id === 'settings' ? (
+          // bug25: the settings pane is a vertical list; the sidebar preview
+          // always shows the root rows, the confirmed pane the open level
+          <SettingsList
+            rows={settingsRows}
+            focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+            adjustingRowId={activeAdjustingRowId}
+            onRowTap={(index) => selectFocusedCard(index)}
+            onSliderChange={handleSliderChange}
+            onToggleAuto={() => updateSettings({ autoBrightness: !settings.autoBrightness })}
+          />
+        ) : (
+          <ContentCarousel
+            cards={displayedCategory.cards}
+            // the track sub-menu gets its own id so the carousel scroll resets
+            // when it opens/closes (bug8.1's reset is keyed on this value)
+            categoryId={
+              openTracklist ? `playlists:tracks:${openTracklist.playlistId}` : displayedCategory.id
+            }
+            // selectContent confirms the tapped card (runs the card action exactly once)
+            onCardTap={handleCardTap}
+            focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+          />
+        )}
       </main>
     </div>
   )

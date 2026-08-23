@@ -89,26 +89,33 @@ vi.mock('@/hooks/useHomeLight', () => ({
   }),
 }))
 
-vi.mock('@/settings', () => ({
-  useSettings: () => ({
-    showLyrics: false,
-    karaokeLyrics: false,
-    lyricOffsetMs: 0,
-    volumeStepPct: 5,
-    autoBrightness: true,
-    brightness: 70,
-    voiceMic: false,
-    uiScalePct: 100,
-    presets: {},
-    defaultDeviceId: null,
-  }),
-}))
+vi.mock('@/settings', async (importOriginal) => {
+  // the real constants + updateSettings stay in place; only the store values
+  // are pinned for the assertions below
+  const actual = (await importOriginal()) as typeof SettingsModule
+  return {
+    ...actual,
+    useSettings: () => ({
+      showLyrics: false,
+      karaokeLyrics: false,
+      lyricOffsetMs: 0,
+      volumeStepPct: 5,
+      autoBrightness: true,
+      brightness: 7,
+      voiceMic: false,
+      uiScalePct: 100,
+      presets: {},
+      defaultDeviceId: null,
+    }),
+  }
+})
 
 import { MainMenuView } from '../MainMenuView'
 import { ContentCarousel } from '../ContentCarousel'
 import { carouselCardAreEqual } from '../carouselCardCompare'
 import type { MenuCard } from '../mockData'
 import type { ObserverStatusActive } from '@/api/types'
+import type * as SettingsModule from '@/settings'
 
 const nowPlaying: ObserverStatusActive = {
   active: true,
@@ -176,13 +183,22 @@ describe('ContentCarousel', () => {
     expect(screen.getByText('The Smashing Pumpkins')).toBeInTheDocument()
   })
 
-  it('binds the Einstellungen category to live settings values', () => {
+  it('binds the Einstellungen category to the vertical settings list (bug25)', () => {
     render(<MainMenuView />)
     fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
-    expect(screen.getByText('Lyrics')).toBeInTheDocument()
-    expect(screen.getByText('Auto · 70%')).toBeInTheDocument()
-    expect(screen.getByText('+5% pro Schritt')).toBeInTheDocument()
-    expect(screen.getByText('Sprach-Mikrofon')).toBeInTheDocument()
+    for (const label of [
+      'Settings',
+      'Show Lyrics',
+      'Karaoke Lyrics',
+      'Mic',
+      'Devices',
+      'Bluetooth Pairing',
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+    // the mocked store has everything off
+    const micRow = screen.getByText('Mic').closest('[aria-label]')
+    expect(micRow?.textContent).toContain('Off')
   })
 
   it('tapping a playlist card opens its track list without starting playback (bug4)', () => {

@@ -1117,6 +1117,17 @@ export default function App() {
             onPlay={onPlayFromMenu}
             nowPlaying={status && status.active ? status : null}
             onExit={() => setShowingLibrary(false)}
+            // bug25: the settings list's link rows open the App-level panels
+            // (rendered by globalOverlays above the menu)
+            defaultDevice={
+              settings.defaultDeviceId
+                ? connectDevices.find((d) => d.id === settings.defaultDeviceId)?.name
+                : undefined
+            }
+            phoneVolume={status?.active === true && status.volume_disabled === true}
+            onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
+            onOpenDevices={() => setDeviceMenuOpen(true)}
+            onOpenBluetooth={() => setBtMenuOpen(true)}
           />
           {globalOverlays}
         </div>
