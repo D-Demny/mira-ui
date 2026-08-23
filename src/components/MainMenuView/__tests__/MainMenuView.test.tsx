@@ -29,6 +29,17 @@ const mockPlaylists = [
     collaborative: false,
     uri: 'spotify:playlist:pl-2',
   },
+  // bug22: the Liked Songs pseudo-playlist (kept last so the playlist-card
+  // focus math of the existing tests stays unchanged)
+  {
+    id: 'spotify:collection:tracks',
+    name: 'Liked Songs',
+    owner: { display_name: 'Mira Mix' },
+    images: [{ url: 'http://img/liked.jpg' }],
+    tracks: { total: 501 },
+    collaborative: false,
+    uri: 'spotify:collection:tracks',
+  },
 ]
 
 const mockRecent = [
@@ -123,6 +134,39 @@ describe('MainMenuView', () => {
             },
           ],
           total: 1,
+          limit: 50,
+          offset: 0,
+          next: null,
+        }),
+      ),
+      // bug22: Liked Songs pages from me/tracks
+      http.get('*/web-api/me/tracks', () =>
+        HttpResponse.json({
+          items: [
+            {
+              is_local: false,
+              track: {
+                id: 'lk-1',
+                name: 'Faded',
+                uri: 'spotify:track:lk-1',
+                artists: [{ name: 'Alan Walker' }],
+                album: { name: 'Faded', images: [{ url: 'http://img/lk.jpg' }] },
+                position: 0,
+              },
+            },
+            {
+              is_local: false,
+              track: {
+                id: 'lk-2',
+                name: 'Lean On',
+                uri: 'spotify:track:lk-2',
+                artists: [{ name: 'Major Lazer' }],
+                album: { name: 'Peace Is the Mission', images: [{ url: 'http://img/lk2.jpg' }] },
+                position: 1,
+              },
+            },
+          ],
+          total: 2,
           limit: 50,
           offset: 0,
           next: null,
@@ -444,12 +488,12 @@ describe('MainMenuView', () => {
       // every dynamic cover is warmed (pl-2 has no images → no entry)
       await waitFor(() => {
         expect(new Set(created.map((img) => img.src))).toEqual(
-          new Set(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg']),
+          new Set(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg', 'http://img/liked.jpg']),
         )
       })
 
       const srcs = created.map((img) => img.src).sort()
-      expect(srcs).toEqual(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg'])
+      expect(srcs).toEqual(['http://img/h.jpg', 'http://img/liked.jpg', 'http://img/r.jpg', 'http://img/s.jpg'])
       // no duplicate warming: each URL is fetched exactly once
       expect(new Set(created.map((img) => img.src)).size).toBe(created.length)
       // same fetch attributes as AlbumArt so the browser reuses one cache entry
@@ -634,6 +678,42 @@ describe('MainMenuView', () => {
       // confirming the error card triggers a refetch
       fireEvent.click(retry)
       await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2))
+    })
+  })
+
+  describe('bug22: Liked Songs opens the track sub-menu', () => {
+    it('does not play track 1 immediately; the sub-menu lists the saved tracks', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Liked Songs')
+      fireEvent.click(screen.getByText('Liked Songs'))
+
+      expect(onPlay).not.toHaveBeenCalled()
+      expect(await screen.findByText('Faded')).toBeInTheDocument()
+      expect(screen.getByText('Lean On')).toBeInTheDocument()
+    })
+
+    it('plays the collection context at the track position when a saved track is confirmed', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Liked Songs')
+      fireEvent.click(screen.getByText('Liked Songs'))
+      await screen.findByText('Faded')
+      fireEvent.click(screen.getByText('Faded'))
+
+      expect(onPlay).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenCalledWith('spotify:collection:tracks', {
+        position: 0,
+        uri: 'spotify:track:lk-1',
+      })
+      expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveAttribute(
+        'aria-current',
+        'true',
+      )
     })
   })
 })

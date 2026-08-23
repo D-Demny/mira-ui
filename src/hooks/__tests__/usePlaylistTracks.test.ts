@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
-import { usePlaylistTracks, clearTracksCache } from '../usePlaylistTracks'
+import { usePlaylistTracks, clearTracksCache, LIKED_SONGS_ID } from '../usePlaylistTracks'
 
 const PAGE = 50
 
@@ -54,6 +54,30 @@ describe('usePlaylistTracks', () => {
     expect(result.current.total).toBe(60)
     expect(result.current.tracks[0].id).toBe('pl-1-0')
     expect(result.current.tracks[49].id).toBe('pl-1-49')
+  })
+
+  it('bug22: Liked Songs pages from me/tracks instead of playlists/<id>/tracks', async () => {
+    let playlistHits = 0
+    let savedHits = 0
+    server.use(
+      http.get('*/web-api/playlists/*/tracks', () => {
+        playlistHits++
+        return trackPage('x', 0, 0)
+      }),
+      http.get('*/web-api/me/tracks', ({ request }) => {
+        savedHits++
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        return trackPage('liked', offset, 10)
+      }),
+    )
+
+    const { result } = renderHook(() => usePlaylistTracks(LIKED_SONGS_ID))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.tracks).toHaveLength(10)
+    expect(result.current.tracks[0].id).toBe('liked-0')
+    expect(savedHits).toBe(1)
+    expect(playlistHits).toBe(0)
   })
 
   it('appends the next page via loadMore and stops at the total (bug5)', async () => {

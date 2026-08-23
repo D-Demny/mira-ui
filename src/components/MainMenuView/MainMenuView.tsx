@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { useHomeLight, HOME_LIGHT_LABEL } from '@/hooks/useHomeLight'
 import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
 import { usePlaylists } from '@/hooks/usePlaylists'
-import { usePlaylistTracks } from '@/hooks/usePlaylistTracks'
+import { usePlaylistTracks, LIKED_SONGS_ID } from '@/hooks/usePlaylistTracks'
 import { useRecent } from '@/hooks/useRecent'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { useSettings } from '@/settings'
@@ -16,9 +16,15 @@ import type { MenuCard } from './mockData'
 import styles from './MainMenuView.module.scss'
 
 // the playlist track sub-menu (bug4): confirming a playlist card opens its
-// track list; dial-back returns to the playlist list without playing
+// track list; dial-back returns to the playlist list without playing.
+// bug22: Liked Songs (spotify:collection:tracks) opens the same sub-menu,
+// paged from me/tracks and played as its own collection context.
 interface OpenTracklist {
+  // the paging id for usePlaylistTracks (playlist id or LIKED_SONGS_ID)
   playlistId: string
+  // the context uri played when a sub-menu track is confirmed
+  // (spotify:playlist:<id> or spotify:collection:tracks)
+  contextUri: string
   playlistName: string
   // where to restore the focus when the sub-menu closes
   playlistIndex: number
@@ -293,13 +299,26 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
   const confirmedCategory =
     categories.find((category) => category.id === activeCategoryId) ?? categories[0]
 
-  // bug4: open a playlist's track list as a sub-menu (focus resets to track 0)
+  // bug4/bug22: open a playlist's (or Liked Songs') track list as a sub-menu
+  // (focus resets to track 0)
   const openPlaylistTracklist = (card: MenuCard, index: number) => {
     if (confirmedCategory.id !== 'playlists' || openTracklist) return
     const match = /^spotify:playlist:([^/]+)/.exec(card.uri ?? '')
-    if (!match) return
+    let playlistId = ''
+    let contextUri = ''
+    if (match) {
+      playlistId = match[1]
+      contextUri = card.uri ?? ''
+    } else if (card.uri === LIKED_SONGS_ID) {
+      // bug22: Liked Songs is a pseudo-playlist (me/tracks) with its own
+      // collection context
+      playlistId = LIKED_SONGS_ID
+      contextUri = LIKED_SONGS_ID
+    }
+    if (!playlistId) return
     setOpenTracklist({
-      playlistId: match[1],
+      playlistId,
+      contextUri,
       playlistName: card.title,
       playlistIndex: index,
     })
@@ -323,14 +342,19 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       onExit?.()
       return
     }
-    if (confirmedCategory.id === 'playlists' && !openTracklist && card.uri?.startsWith('spotify:playlist:')) {
-      // bug4: playlist card opens the track sub-menu instead of playing
+    if (
+      confirmedCategory.id === 'playlists' &&
+      !openTracklist &&
+      (card.uri?.startsWith('spotify:playlist:') || card.uri === LIKED_SONGS_ID)
+    ) {
+      // bug4/bug22: playlist / Liked Songs card opens the track sub-menu
+      // instead of playing
       openPlaylistTracklist(card, index)
       return
     }
-    // bug16: confirming a track in the track sub-menu plays the parent
-    // playlist context starting at that track, so the rest of the playlist
-    // stays in the upcoming queue
+    // bug16/bug22: confirming a track in the track sub-menu plays the parent
+    // context (playlist or Liked Songs collection) starting at that track, so
+    // the rest of the list stays in the upcoming queue
     if (openTracklist && card.id.startsWith('tr-')) {
       const track = trackItems.find((t) => t.id === card.id.slice('tr-'.length))
       const offset: PlayOffset =
@@ -338,7 +362,7 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
           ? { position: track.position, uri: card.uri }
           : { position: index, uri: card.uri }
       setActiveCategoryId('now-playing')
-      onPlay?.(`spotify:playlist:${openTracklist.playlistId}`, offset)
+      onPlay?.(openTracklist.contextUri, offset)
       return
     }
     if (card.kind === 'media' && card.uri) {

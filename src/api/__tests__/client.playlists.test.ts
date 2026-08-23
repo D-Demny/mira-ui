@@ -4,6 +4,7 @@ import {
   fetchPlaylistTracks,
   fetchUserPlaylists,
   fetchRecentlyPlayed,
+  fetchSavedTracks,
   pickSpotifyImage,
 } from '../client'
 import { server } from '../../__tests__/msw-server'
@@ -119,6 +120,64 @@ describe('fetchPlaylistTracks (bug4)', () => {
     )
 
     await expect(fetchPlaylistTracks('pl1')).rejects.toThrow('404')
+  })
+})
+
+describe('fetchSavedTracks (bug22)', () => {
+  it('returns one page of saved tracks with total count', async () => {
+    server.use(
+      http.get('*/web-api/me/tracks', () =>
+        HttpResponse.json({
+          items: [
+            {
+              is_local: false,
+              track: {
+                id: 't1',
+                name: 'Song 1',
+                uri: 'spotify:track:t1',
+                artists: [{ name: 'Artist' }],
+                album: { name: 'Album', images: [{ url: 'https://i.scdn.co/img/300' }] },
+                position: 0,
+              },
+            },
+          ],
+          total: 12,
+          limit: 50,
+          offset: 0,
+          next: null,
+        }),
+      ),
+    )
+
+    const result = await fetchSavedTracks()
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].track.name).toBe('Song 1')
+    expect(result.items[0].track.position).toBe(0)
+    expect(result.total).toBe(12)
+  })
+
+  it('sends pagination params', async () => {
+    let capturedUrl = ''
+    server.use(
+      http.get('*/web-api/me/tracks', ({ request }) => {
+        capturedUrl = request.url
+        return HttpResponse.json({ items: [], total: 0, limit: 50, offset: 50, next: null })
+      }),
+    )
+
+    await fetchSavedTracks(50, 50)
+    expect(capturedUrl).toContain('limit=50')
+    expect(capturedUrl).toContain('offset=50')
+  })
+
+  it('throws on non-OK response', async () => {
+    server.use(
+      http.get('*/web-api/me/tracks', () =>
+        HttpResponse.json({ error: 'not found' }, { status: 404 }),
+      ),
+    )
+
+    await expect(fetchSavedTracks()).rejects.toThrow('404')
   })
 })
 
