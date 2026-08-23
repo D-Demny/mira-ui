@@ -7,9 +7,13 @@
   overflow: hidden;
 }
 
-// bug8: lightweight background layer — static per-category colors only,
-// no image blur/filters. Own composite layer so dial card scrolling
-// never repaints it; the base tone transitions via background-color.
+// bug8/bug24: lightweight background layer — no image blur/filters. Own
+// composite layer so dial card scrolling never repaints it. The base tone
+// transitions via background-color; the two glows live on pseudo elements
+// that use currentColor, so changing the --menu-glow-a/b CSS variables
+// interpolates smoothly (CSS gradients can't animate their colors directly).
+// Variables are set in MainMenuView.tsx: static per-category colors, or the
+// dominant colors extracted from the focused card's artwork (bug24).
 .bg {
   position: absolute;
   top: 0;
@@ -19,14 +23,37 @@
   z-index: 0;
   pointer-events: none;
   background-color: var(--menu-bg, #0a0a12);
-  // per-category glow colors set via --menu-glow-a/--menu-glow-b in MainMenuView.tsx
-  background-image:
-    radial-gradient(ellipse 110% 150% at 8% 0%, var(--menu-glow-a), transparent 72%),
-    radial-gradient(ellipse 110% 140% at 95% 20%, var(--menu-glow-b), transparent 72%),
-    linear-gradient(165deg, rgba(22, 22, 46, 0.55) 0%, rgba(10, 10, 18, 0.7) 60%, rgba(13, 13, 22, 0.85) 100%);
-  transition: background-color 0.3s ease;
+  background-image: linear-gradient(
+    165deg,
+    rgba(22, 22, 46, 0.55) 0%,
+    rgba(10, 10, 18, 0.7) 60%,
+    rgba(13, 13, 22, 0.85) 100%
+  );
+  transition: background-color 0.4s ease;
   will-change: transform;
   transform: translateZ(0);
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transition: color 0.4s ease;
+    pointer-events: none;
+  }
+
+  &::before {
+    color: var(--menu-glow-a, transparent);
+    background: radial-gradient(ellipse 110% 150% at 8% 0%, currentColor, transparent 72%);
+  }
+
+  &::after {
+    color: var(--menu-glow-b, transparent);
+    background: radial-gradient(ellipse 110% 140% at 95% 20%, currentColor, transparent 72%);
+  }
 }
 
 // panes must sit above the background layer (z-index 0)

@@ -23,6 +23,18 @@ export function clearColorCache() {
   cache.clear()
 }
 
+// the already-extracted color for the given url (synchronous read; lets a
+// newly focused card skip the one-frame gray default while its cover is
+// still being processed)
+export function colorCacheGet(url: string | undefined): RGB | undefined {
+  return url ? cache.get(url) : undefined
+}
+
+// test helper: pre-seed the extraction cache
+export function seedColorCache(url: string, rgb: RGB) {
+  cache.set(url, rgb)
+}
+
 function remember(url: string, rgb: RGB) {
   if (!cache.has(url) && cache.size >= CACHE_MAX) {
     const oldest = cache.keys().next().value
