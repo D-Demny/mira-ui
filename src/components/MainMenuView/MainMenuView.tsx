@@ -224,24 +224,57 @@ export function MainMenuView({
   // feed the cards so card identities survive the polls (bug8.2)
   // bug3: the full queue (daemon caps it) feeds the 'Läuft gerade' cards
   const nowPlayingQueueKey = (nowPlaying?.next_tracks ?? [])
-    .map((track) => `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`)
+    .map(
+      (track) =>
+        track
+          ? `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`
+          : '',
+    )
     .join('\u0000')
 
+  // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
+  // single-track playback (entries with a uri but no metadata → blank card)
+  // plus an echo of the currently playing track (duplicate card). Sanitize
+  // the queue: drop null/empty slots (no uri or no name) and the current
+  // track's echo, and keep each remaining entry's position in the ORIGINAL
+  // next_tracks list (Spotify queue index, the active track being 0) so
+  // bug26's in-queue skip offset stays correct after the list shrinks.
   const nowPlayingSnapshot = useMemo(() => {
     if (!nowPlaying) return null
+    const queue: {
+      id: string
+      title: string
+      subtitle: string
+      art?: string
+      uri: string
+      position: number
+    }[] = []
+    const nextTracks = nowPlaying.next_tracks ?? []
+    for (let i = 0; i < nextTracks.length; i++) {
+      const track = nextTracks[i]
+      if (!track || !track.uri || !track.name) continue
+      if (
+        track.uri === nowPlaying.track_uri ||
+        (track.track_id !== '' && track.track_id === nowPlaying.track_id)
+      ) {
+        continue
+      }
+      queue.push({
+        id: track.track_id || track.uri,
+        title: track.name,
+        subtitle: track.artist,
+        art: track.image_url || undefined,
+        uri: track.uri,
+        position: i + 1,
+      })
+    }
     return {
       id: nowPlaying.track_id,
       title: nowPlaying.track_name,
       subtitle: nowPlaying.track_artist,
       art: nowPlaying.track_image || undefined,
       uri: nowPlaying.track_uri,
-      queue: (nowPlaying.next_tracks ?? []).map((track) => ({
-        id: track.track_id,
-        title: track.name,
-        subtitle: track.artist,
-        art: track.image_url || undefined,
-        uri: track.uri,
-      })),
+      queue,
     }
     // deliberately keyed on the scalar fields above, not on nowPlaying identity
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -341,6 +374,9 @@ export function MainMenuView({
           art: track.art,
           kind: 'media',
           uri: track.uri,
+          // bug26/bug28: the track's position in the Spotify queue — not the
+          // card index, which shifts once ghost slots are sanitized out
+          queuePosition: track.position,
         })
       }
     } else {
@@ -488,15 +524,17 @@ export function MainMenuView({
     // bug26: confirming an upcoming queue card skips WITHIN the active queue —
     // play the live context starting at that track (offset) instead of the
     // bare track uri, which would restart single-track playback and clear the
-    // queue. position is the queue index (the active track is 0, so the first
-    // upcoming card is 1). Single-track contexts (context_uri is a track uri
-    // or empty) have no shared queue: play the track directly, as before.
+    // queue. position is the track's index in the SPOTIFY queue (the active
+    // track is 0) — carried on the card (bug28: sanitizing ghost slots out of
+    // the card list must not shift the queue positions). Single-track contexts
+    // (context_uri is a track uri or empty) have no shared queue: play the
+    // track directly, as before.
     if (confirmedCategory.id === 'now-playing' && index > 0 && card.id.startsWith('np-q-')) {
       if (!card.uri) return
       setActiveCategoryId('now-playing')
       const contextUri = nowPlaying?.context_uri ?? ''
       if (contextUri && !contextUri.startsWith('spotify:track:')) {
-        onPlay?.(contextUri, { position: index, uri: card.uri })
+        onPlay?.(contextUri, { position: card.queuePosition ?? index, uri: card.uri })
       } else {
         onPlay?.(card.uri)
       }

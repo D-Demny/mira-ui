@@ -723,6 +723,160 @@ describe('MainMenuView', () => {
     })
   })
 
+  describe('bug28: single-track queue — no ghost cards', () => {
+    // the reported ghost payload: a single isolated track (context = the track
+    // itself) whose Connect next_tracks ship a metadata-less ghost slot (uri
+    // without a name → blank card) plus an echo of the current track
+    const ghostQueueNowPlaying: ObserverStatusActive = {
+      ...nowPlaying,
+      context_uri: 'spotify:track:t-9',
+      next_tracks: [
+        { uri: 'spotify:track:t-9', track_id: 't-9', name: '', artist: '', album: '', image_url: '' },
+        {
+          uri: 'spotify:track:t-9',
+          track_id: 't-9',
+          name: 'Heat Waves',
+          artist: 'Glass Animals',
+          album: '',
+          image_url: '',
+        },
+      ],
+    }
+
+    it('renders exactly one card for a single track with an empty upcoming queue', () => {
+      const { container } = render(<MainMenuView nowPlaying={nowPlaying} />)
+
+      wheel(-10) // focus 'Läuft gerade' in the sidebar (live preview)
+
+      const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+      expect(content.querySelectorAll('.card')).toHaveLength(1)
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+    })
+
+    it('drops the ghost slot and the current-track echo, keeping exactly one card', () => {
+      const { container } = render(<MainMenuView nowPlaying={ghostQueueNowPlaying} />)
+
+      wheel(-10) // focus 'Läuft gerade' in the sidebar (live preview)
+
+      const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+      const cards = content.querySelectorAll('.card')
+      // the reported [active, blank, duplicate] collapses to the active track
+      expect(cards).toHaveLength(1)
+      const titles = Array.from(cards).map((card) => card.querySelector('h3')?.textContent)
+      expect(titles).toEqual(['Heat Waves'])
+    })
+
+    it('drops the current-track echo in a real queue and keeps the in-queue skip positions (bug26)', async () => {
+      const onPlay = vi.fn()
+      render(
+        <MainMenuView
+          nowPlaying={{
+            ...queueNowPlaying,
+            next_tracks: [
+              {
+                uri: 'spotify:track:t-9',
+                track_id: 't-9',
+                name: 'Heat Waves',
+                artist: 'Glass Animals',
+                album: '',
+                image_url: '',
+              },
+              {
+                uri: 'spotify:track:t-10',
+                track_id: 't-10',
+                name: 'Next Song',
+                artist: 'Someone',
+                album: '',
+                image_url: '',
+              },
+              {
+                uri: 'spotify:track:t-11',
+                track_id: 't-11',
+                name: 'Song After',
+                artist: 'Another',
+                album: '',
+                image_url: '',
+              },
+            ],
+          }}
+          onPlay={onPlay}
+        />,
+      )
+
+      // land in the now-playing pane via a recent track
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      // the echo must not render a second 'Heat Waves' card
+      expect(screen.getAllByText('Heat Waves')).toHaveLength(1)
+      expect(screen.getByText('Next Song')).toBeInTheDocument()
+      expect(screen.getByText('Song After')).toBeInTheDocument()
+
+      wheel(-10) // focus 'Next Song' (the first upcoming card)
+      confirmDial()
+
+      // the offset refers to the SPOTIFY queue (t-9=0, echo=1, t-10=2) —
+      // removing the echo card must not shift the positions
+      expect(onPlay).toHaveBeenCalledTimes(2)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:playlist:queue-pl', {
+        position: 2,
+        uri: 'spotify:track:t-10',
+      })
+    })
+
+    it('drops metadata-less ghost slots and keeps the in-queue skip positions (bug26)', async () => {
+      const onPlay = vi.fn()
+      render(
+        <MainMenuView
+          nowPlaying={{
+            ...queueNowPlaying,
+            next_tracks: [
+              { uri: 'spotify:track:t-99', track_id: 't-99', name: '', artist: '', album: '', image_url: '' },
+              {
+                uri: 'spotify:track:t-10',
+                track_id: 't-10',
+                name: 'Next Song',
+                artist: 'Someone',
+                album: '',
+                image_url: '',
+              },
+              {
+                uri: 'spotify:track:t-11',
+                track_id: 't-11',
+                name: 'Song After',
+                artist: 'Another',
+                album: '',
+                image_url: '',
+              },
+            ],
+          }}
+          onPlay={onPlay}
+        />,
+      )
+
+      // land in the now-playing pane via a recent track
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      // the empty slot renders no card at all
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      expect(screen.getByText('Next Song')).toBeInTheDocument()
+      expect(screen.getByText('Song After')).toBeInTheDocument()
+
+      wheel(-10) // focus 'Next Song'
+      confirmDial()
+
+      // the ghost slot still occupies position 1 in the Spotify queue
+      expect(onPlay).toHaveBeenCalledTimes(2)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:playlist:queue-pl', {
+        position: 2,
+        uri: 'spotify:track:t-10',
+      })
+    })
+  })
+
   describe('bug4: track sub-menu back behavior', () => {
     it('back inside the track list returns to the playlist list without exiting', async () => {
       const onExit = vi.fn()
