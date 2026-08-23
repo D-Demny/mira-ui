@@ -251,6 +251,9 @@ export interface SpotifyRecentlyPlayedItem {
     uri: string
   }
   played_at: string
+  // context the track was played from (album/playlist/collection), when known —
+  // playing the context resumes the queue (bug19)
+  context_uri?: string
 }
 
 export interface SpotifyRecentlyPlayedResponse {
