@@ -182,11 +182,34 @@ export function eventsUrl(): string {
 // The device decodes covers at native size, so full-res 640x640 images are a
 // main-thread cost for small cards — prefer the smaller variants (bug8.2).
 export function pickSpotifyImage(
-  images: Array<{ url: string }> | null | undefined,
+  images: Array<{ url?: string | null } | null> | null | undefined,
   index = 1,
 ): string | undefined {
   if (!images || images.length === 0) return undefined
-  return images[index]?.url ?? images[0]?.url
+  // bug27: skip empty/invalid urls — an empty string is not a usable image
+  // src (it would leave a black box instead of the AlbumArt placeholder)
+  const urlAt = (i: number): string | undefined => {
+    const url = images[i]?.url
+    return typeof url === 'string' && url !== '' ? url : undefined
+  }
+  return urlAt(index) ?? urlAt(0)
+}
+
+// an item that may carry artwork (track or playlist shaped like the Web API)
+export interface ArtworkSource {
+  album?: { images?: Array<{ url?: string | null } | null> | null } | null
+  images?: Array<{ url?: string | null } | null> | null
+}
+
+// bug27: central artwork extraction for cards — walks every image fallback
+// layer (album images first, then the item's own images), preferring the
+// 300px variant over the full-res 640px image like pickSpotifyImage (bug8.2)
+// and skipping empty urls, so a card without any usable cover ends up with
+// `undefined` and AlbumArt shows the music-note placeholder instead of a
+// black box with an empty/invalid src.
+export function pickArtUrl(item: ArtworkSource | null | undefined): string | undefined {
+  if (!item) return undefined
+  return pickSpotifyImage(item.album?.images) ?? pickSpotifyImage(item.images)
 }
 
 async function safeJson(res: Response): Promise<unknown> {

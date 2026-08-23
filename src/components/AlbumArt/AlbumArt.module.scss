@@ -24,19 +24,29 @@
   opacity: 0;
 }
 
+// bug27: styled placeholder (music note on a card-toned gradient, not a
+// pure black box) shown when a cover is missing, failed, or still loading —
+// the loading/loaded image is positioned over it and covers it once ready
 .placeholder {
   width: 100%;
   height: 100%;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, $surface-elev, $surface);
-  color: $text-tertiary;
+  background: linear-gradient(135deg, #2a2a30, #1d1d21);
+  color: $text-secondary;
+
+  img {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
 }
 
 // bug15: music-note glyph for missing/failed cover art
 .fallbackIcon {
-  width: 38%;
-  height: 38%;
-  opacity: 0.55;
+  width: 42%;
+  height: 42%;
+  opacity: 0.8;
 }

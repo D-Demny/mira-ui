@@ -9,11 +9,18 @@ describe('AlbumArt', () => {
     expect(img).toHaveAttribute('src', 'http://img/a.jpg')
   })
 
-  it('renders a plain placeholder when no source is given', () => {
+  // bug27: a missing src shows the music-note placeholder immediately — never
+  // an <img> with an empty src (which would leave a pure black box)
+  it('renders the music-note placeholder when no source is given', () => {
     const { container } = render(<AlbumArt src={undefined} alt="" size={100} />)
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
-    // the placeholder is shown without a music note (no image was expected)
-    expect(container.querySelector('svg')).not.toBeInTheDocument()
+    expect(container.querySelector('.placeholder svg')).toBeInTheDocument()
+  })
+
+  it('renders the music-note placeholder for an empty src string (bug27)', () => {
+    const { container } = render(<AlbumArt src="" alt="Cover" size={100} />)
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(container.querySelector('.placeholder svg')).toBeInTheDocument()
   })
 
   it('shows the music-note placeholder when the image fails to load (bug15)', () => {
@@ -25,8 +32,6 @@ describe('AlbumArt', () => {
     fireEvent.error(img)
 
     expect(screen.queryByRole('img', { name: 'Cover' })).not.toBeInTheDocument()
-    // exactly one layer is visible and carries the music-note glyph
-    const icons = container.querySelectorAll('svg')
-    expect(icons.length).toBe(1)
+    expect(container.querySelector('.placeholder svg')).toBeInTheDocument()
   })
 })

@@ -686,6 +686,43 @@ describe('MainMenuView', () => {
     })
   })
 
+  describe('bug27: artwork fallback — no black boxes', () => {
+    it('queue cards without image urls render the music-note placeholder, not an empty img', () => {
+      render(<MainMenuView nowPlaying={queueNowPlaying} />)
+
+      wheel(-10) // focus 'Läuft gerade' in the sidebar (live preview)
+
+      // the current track carries a cover, the two upcoming queue tracks do
+      // not (connect queue items often ship no image metadata at all)
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      expect(screen.getByText('Next Song')).toBeInTheDocument()
+      expect(screen.getByText('Song After')).toBeInTheDocument()
+
+      const content = document.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+      const images = content.querySelectorAll('img')
+      expect(images).toHaveLength(1)
+      expect(images[0]).toHaveAttribute('src', 'http://img/h.jpg')
+      // every image-less queue card shows the styled music-note placeholder
+      expect(content.querySelectorAll('.placeholder svg').length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('a playlist without cover images renders the music-note placeholder in its card', async () => {
+      render(<MainMenuView />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Workout')
+
+      const content = document.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+      // only Road Trip and Liked Songs carry covers in the fixture
+      expect(content.querySelectorAll('img')).toHaveLength(2)
+      // the image-less 'Workout' card renders the placeholder, no empty <img>
+      const workoutCard = screen.getByText('Workout').closest('.card')
+      expect(workoutCard).not.toBeNull()
+      expect(workoutCard?.querySelector('img')).toBeNull()
+      expect(workoutCard?.querySelector('.placeholder svg')).not.toBeNull()
+    })
+  })
+
   describe('bug4: track sub-menu back behavior', () => {
     it('back inside the track list returns to the playlist list without exiting', async () => {
       const onExit = vi.fn()

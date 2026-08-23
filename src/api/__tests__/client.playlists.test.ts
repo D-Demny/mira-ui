@@ -5,6 +5,7 @@ import {
   fetchUserPlaylists,
   fetchRecentlyPlayed,
   fetchSavedTracks,
+  pickArtUrl,
   pickSpotifyImage,
 } from '../client'
 import { server } from '../../__tests__/msw-server'
@@ -246,5 +247,57 @@ describe('pickSpotifyImage (bug8.2)', () => {
     expect(pickSpotifyImage(undefined)).toBeUndefined()
     expect(pickSpotifyImage(null)).toBeUndefined()
     expect(pickSpotifyImage([])).toBeUndefined()
+  })
+
+  // bug27: empty urls are invalid image srcs — they must be skipped, not
+  // returned (a black box is worse than the AlbumArt placeholder)
+  it('skips empty urls and falls back to the next usable image', () => {
+    expect(pickSpotifyImage([{ url: '' }, { url: 'b' }])).toBe('b')
+    expect(pickSpotifyImage([{ url: 'a' }, { url: '' }])).toBe('a')
+    expect(pickSpotifyImage([{ url: '' }])).toBeUndefined()
+    expect(pickSpotifyImage([{ url: null }, { url: 'b' }])).toBe('b')
+  })
+})
+
+describe('pickArtUrl (bug27)', () => {
+  const sized = { url: 'https://i.scdn.co/img/640' }
+  const medium = { url: 'https://i.scdn.co/img/300' }
+  const small = { url: 'https://i.scdn.co/img/64' }
+
+  it('prefers the album images over the item images', () => {
+    expect(
+      pickArtUrl({
+        album: { images: [sized, medium, small] },
+        images: [{ url: 'https://i.scdn.co/own' }],
+      }),
+    ).toBe('https://i.scdn.co/img/300')
+  })
+
+  it('falls back to the item images when the album carries none', () => {
+    expect(
+      pickArtUrl({ album: { images: [] }, images: [{ url: 'https://i.scdn.co/own' }] }),
+    ).toBe('https://i.scdn.co/own')
+    expect(pickArtUrl({ images: [{ url: 'https://i.scdn.co/own' }] })).toBe(
+      'https://i.scdn.co/own',
+    )
+  })
+
+  it('skips empty urls down the whole fallback chain', () => {
+    expect(
+      pickArtUrl({
+        album: { images: [{ url: 'https://i.scdn.co/img/640' }, { url: '' }] },
+        images: [],
+      }),
+    ).toBe('https://i.scdn.co/img/640')
+    expect(
+      pickArtUrl({ album: { images: [{ url: '' }, { url: '' }] }, images: [{ url: '' }] }),
+    ).toBeUndefined()
+  })
+
+  it('returns undefined for missing items or without any image layer', () => {
+    expect(pickArtUrl(undefined)).toBeUndefined()
+    expect(pickArtUrl(null)).toBeUndefined()
+    expect(pickArtUrl({})).toBeUndefined()
+    expect(pickArtUrl({ album: null, images: null })).toBeUndefined()
   })
 })
