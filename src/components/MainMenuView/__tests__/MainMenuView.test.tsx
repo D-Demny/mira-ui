@@ -206,14 +206,17 @@ describe('MainMenuView', () => {
     expect(screen.getByText('Road Trip').closest('.card')).not.toHaveClass('cardFocused')
   })
 
-  it('exits the menu immediately when Läuft gerade is confirmed', () => {
+  it('bug20: confirming Läuft gerade in the sidebar opens the queue pane instead of exiting', async () => {
     const onExit = vi.fn()
-    render(<MainMenuView onExit={onExit} />)
+    const { container } = render(<MainMenuView onExit={onExit} />)
 
-    wheel(-10)
+    wheel(-10) // focus 'Läuft gerade'
     confirmDial()
 
-    expect(onExit).toHaveBeenCalledTimes(1)
+    expect(onExit).not.toHaveBeenCalled()
+    expect(container.querySelector('.contentFocus')).not.toBeNull()
+    // no session: the queue pane shows the idle placeholder
+    expect(await screen.findByText('Nichts läuft')).toBeInTheDocument()
   })
 
   it('returns from content to sidebar on back and exits on the second back', () => {
@@ -356,14 +359,32 @@ describe('MainMenuView', () => {
       expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveClass('itemFocused')
     })
 
-    it('exits the menu when the dial is confirmed on Läuft gerade', () => {
+    it('bug20: confirming Läuft gerade opens the queue pane with the current track', async () => {
       const onExit = vi.fn()
-      render(<MainMenuView nowPlaying={nowPlaying} onExit={onExit} />)
+      const { container } = render(<MainMenuView nowPlaying={nowPlaying} onExit={onExit} />)
 
       wheel(-10)
       confirmDial()
 
+      expect(onExit).not.toHaveBeenCalled()
+      expect(container.querySelector('.contentFocus')).not.toBeNull()
+      expect(await screen.findByText('Heat Waves')).toBeInTheDocument()
+    })
+
+    it('bug20: confirming card 0 inside the Läuft gerade queue exits to the player', async () => {
+      const onExit = vi.fn()
+      const onPlay = vi.fn()
+      render(<MainMenuView nowPlaying={nowPlaying} onPlay={onPlay} onExit={onExit} />)
+
+      // enter the now-playing content pane via the sidebar
+      wheel(-10)
+      confirmDial()
+      expect(onExit).not.toHaveBeenCalled()
+
+      // confirming the focused current-track card (index 0) exits to the player
+      confirmDial()
       expect(onExit).toHaveBeenCalledTimes(1)
+      expect(onPlay).not.toHaveBeenCalled()
     })
 
     it('keeps content focus on the first card when the sidebar item changes', async () => {

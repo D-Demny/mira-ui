@@ -6,9 +6,7 @@ export type MainMenuPane = 'sidebar' | 'content'
 export interface UseMainMenuFocusOptions {
   sidebarCount: number
   contentCount: number
-  // index of the sidebar item that exits the menu immediately ('Läuft gerade')
-  exitSidebarIndex: number
-  // called when the menu should close (exit item confirmed / back on the sidebar)
+  // called when the menu should close (back on the sidebar)
   onExit: () => void
   // called when a sidebar item is selected (dial press or tap)
   onSelectSidebar?: (index: number) => void
@@ -42,7 +40,6 @@ export interface UseMainMenuFocusResult {
 export function useMainMenuFocus({
   sidebarCount,
   contentCount,
-  exitSidebarIndex,
   onExit,
   onSelectSidebar,
   onConfirmContent,
@@ -61,14 +58,12 @@ export function useMainMenuFocus({
   const onSelectSidebarRef = useRef(onSelectSidebar)
   const onConfirmContentRef = useRef(onConfirmContent)
   const onContentBackRef = useRef(onContentBack)
-  const exitSidebarIndexRef = useRef(exitSidebarIndex)
   const countsRef = useRef({ sidebarCount, contentCount })
   useEffect(() => {
     onExitRef.current = onExit
     onSelectSidebarRef.current = onSelectSidebar
     onConfirmContentRef.current = onConfirmContent
     onContentBackRef.current = onContentBack
-    exitSidebarIndexRef.current = exitSidebarIndex
     countsRef.current = { sidebarCount, contentCount }
   })
 
@@ -100,13 +95,12 @@ export function useMainMenuFocus({
     setContentIndexState(next)
   }, [])
 
+  // bug20: every sidebar item (including 'Läuft gerade') transfers focus to
+  // the content pane — there is no sidebar item that exits the menu any more;
+  // the full-screen player is reached only from card 0 of the now-playing
+  // carousel (handled by the view's card action)
   const selectSidebar = useCallback(
     (index: number) => {
-      if (index === exitSidebarIndexRef.current) {
-        // 'Läuft gerade' exits the menu immediately
-        onExitRef.current()
-        return
-      }
       sidebarIndexRef.current = index
       setSidebarIndexState(index)
       // move focus to the first card of the carousel

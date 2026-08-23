@@ -12,7 +12,6 @@ function renderFocus(options?: Partial<Parameters<typeof useMainMenuFocus>[0]>) 
     useMainMenuFocus({
       sidebarCount: 5,
       contentCount: 4,
-      exitSidebarIndex: 1,
       onExit: vi.fn(),
       onConfirmContent: vi.fn(),
       ...options,
@@ -99,7 +98,7 @@ describe('useMainMenuFocus', () => {
     expect(result.current.sidebarIndex).toBe(2)
   })
 
-  it('exits the menu immediately when the Läuft gerade item is confirmed', () => {
+  it('bug20: confirming the Läuft gerade item enters the content pane, it no longer exits', () => {
     const onExit = vi.fn()
     const { result } = renderFocus({ onExit })
 
@@ -109,8 +108,10 @@ describe('useMainMenuFocus', () => {
     act(() => {
       ListFocusContext.entry.onConfirm?.()
     })
-    expect(onExit).toHaveBeenCalledTimes(1)
-    expect(result.current.activePane).toBe('sidebar')
+    expect(onExit).not.toHaveBeenCalled()
+    expect(result.current.activePane).toBe('content')
+    expect(result.current.sidebarIndex).toBe(1)
+    expect(result.current.contentIndex).toBe(0)
   })
 
   it('pressing the dial in content mode confirms the focused card', () => {
@@ -174,7 +175,6 @@ describe('useMainMenuFocus', () => {
         useMainMenuFocus({
           sidebarCount: 5,
           contentCount,
-          exitSidebarIndex: 1,
           onExit: vi.fn(),
           onConfirmContent: vi.fn(),
         }),

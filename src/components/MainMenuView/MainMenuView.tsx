@@ -35,7 +35,8 @@ export interface MainMenuViewProps {
   onPlay?: (uri: string, offset?: PlayOffset) => void
   // live player status so the 'Läuft gerade' pane can show current track + queue
   nowPlaying?: ObserverStatusActive | null
-  // close the menu and return to the player ('Läuft gerade' confirm / back on the sidebar)
+  // close the menu and return to the player (card 0 of the 'Läuft gerade'
+  // carousel confirmed / back pressed while focus is on the sidebar)
   onExit?: () => void
 }
 
@@ -359,7 +360,6 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
   const focus = useMainMenuFocus({
     sidebarCount: categories.length,
     contentCount: confirmedCategory.cards.length,
-    exitSidebarIndex: categories.findIndex((category) => category.id === 'now-playing'),
     onExit: () => onExit?.(),
     // keep the rendered pane in sync when a sidebar item is selected (dial press or tap)
     onSelectSidebar: (index) => {
@@ -440,14 +440,11 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
     enabled: true,
   })
 
+  // bug20: tapping any sidebar item (including 'Läuft gerade') transfers focus
+  // to the content pane; there is no tap target that exits the menu
   const onCategorySelect = (id: string) => {
     const index = categories.findIndex((category) => category.id === id)
     if (index < 0) return
-    if (id === 'now-playing') {
-      // 'Läuft gerade' exits the menu immediately
-      onExit?.()
-      return
-    }
     // selectSidebar triggers onSelectSidebar, which updates activeCategoryId
     focus.selectSidebar(index)
   }
