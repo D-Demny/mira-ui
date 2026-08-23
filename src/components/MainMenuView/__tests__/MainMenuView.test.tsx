@@ -8,6 +8,7 @@ import { server } from '@/__tests__/msw-server'
 import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
+import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
 const mockPlaylists = [
@@ -106,6 +107,7 @@ describe('MainMenuView', () => {
     clearCache()
     clearRecentCache()
     clearTracksCache()
+    clearColorCache()
     server.use(
       http.get('*/web-api/me/playlists', () =>
         HttpResponse.json({
@@ -714,6 +716,51 @@ describe('MainMenuView', () => {
         'aria-current',
         'true',
       )
+    })
+  })
+
+  describe('bug24: dynamic artwork-based ambient background', () => {
+    it('derives the background from the focused card artwork when its color is known', async () => {
+      seedColorCache('http://img/r.jpg', [245, 192, 74])
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([245, 192, 74]))
+      expect(view.style.getPropertyValue('--menu-glow-a')).toBe(rgba([245, 192, 74], 0.5))
+      expect(view.style.getPropertyValue('--menu-glow-b')).toBe(rgba([245, 192, 74], 0.42))
+    })
+
+    it('keeps the static category colors for cards without artwork', () => {
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+
+      const settings = MENU_CATEGORIES.find((category) => category.id === 'settings')!
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(settings.bg)
+      expect(view.style.getPropertyValue('--menu-glow-a')).toBe(settings.accent.a)
+      expect(view.style.getPropertyValue('--menu-glow-b')).toBe(settings.accent.b)
+    })
+
+    it('transitions to the new card color when the dial focus moves', async () => {
+      seedColorCache('http://img/r.jpg', [245, 192, 74])
+      seedColorCache('http://img/liked.jpg', [120, 60, 180])
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([245, 192, 74]))
+
+      // rotate past Workout (no art → static category colors) to the
+      // Liked Songs card, whose seeded cover drives the ambient colors
+      wheel(-10)
+      wheel(-10)
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([120, 60, 180]))
+      expect(view.style.getPropertyValue('--menu-glow-a')).toBe(rgba([120, 60, 180], 0.5))
     })
   })
 })

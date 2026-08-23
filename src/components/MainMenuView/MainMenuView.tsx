@@ -8,6 +8,7 @@ import { useRecent } from '@/hooks/useRecent'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { useSettings } from '@/settings'
 import { pickSpotifyImage } from '@/api/client'
+import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorExtract'
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
@@ -448,11 +449,34 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       ? categories[focus.sidebarIndex] ?? confirmedCategory
       : confirmedCategory
 
+  // bug24: the ambient background follows the focused card's artwork. The
+  // hook extracts (and caches) the focused cover; the style reads the cache
+  // synchronously, so an already-processed cover applies on the very first
+  // focused render and an uncached one keeps the static category colors
+  // until extraction finishes (the hook's state update then re-renders from
+  // the freshly filled cache)
+  const focusedCard =
+    focus.activePane === 'content'
+      ? confirmedCategory.cards[focus.contentIndex]
+      : displayedCategory.cards[0]
+  const focusedArt = focusedCard?.art
+  useColorExtract(focusedArt)
+  const ambientAccent = focusedArt ? colorCacheGet(focusedArt) : null
+
   const viewStyle = {
-    '--menu-glow-a': displayedCategory.accent.a,
-    '--menu-glow-b': displayedCategory.accent.b,
-    // bug8: static per-category base tone, transitioned via background-color
-    '--menu-bg': displayedCategory.bg,
+    ...(ambientAccent
+      ? {
+          // bug24: ambient colors derived from the focused card's artwork
+          '--menu-bg': darkBg(ambientAccent),
+          '--menu-glow-a': rgba(ambientAccent, 0.5),
+          '--menu-glow-b': rgba(ambientAccent, 0.42),
+        }
+      : {
+          '--menu-glow-a': displayedCategory.accent.a,
+          '--menu-glow-b': displayedCategory.accent.b,
+          // bug8: static per-category base tone, transitioned via background-color
+          '--menu-bg': displayedCategory.bg,
+        }),
   } as CSSProperties
 
   useSwipeGestures(viewRef, {
@@ -479,7 +503,8 @@ export function MainMenuView({ onPlay, nowPlaying, onExit }: MainMenuViewProps) 
       className={`${styles.view} ${focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus}`}
       style={viewStyle}
     >
-      {/* bug8: lightweight static category background (no image blur) */}
+      {/* bug8/bug24: ambient background — static per category, or driven by
+          the focused card's artwork colors */}
       <div className={styles.bg} aria-hidden="true" />
       <aside className={styles.sidebarPane} aria-label="Menü-Navigation">
         <SidebarNav
