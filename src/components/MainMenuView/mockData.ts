@@ -15,6 +15,11 @@ export interface MenuCard {
   kind?: MenuCardKind
   uri?: string
   actionId?: string
+  // bug28: position of the track inside the Spotify queue (active track = 0);
+  // set on 'Läuft gerade' queue cards and used for the in-queue skip offset
+  // (bug26) — the card index shifts when ghost slots are sanitized out, the
+  // queue position does not
+  queuePosition?: number
 }
 
 export interface MenuCategory {
