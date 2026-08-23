@@ -180,4 +180,9 @@ describe('useHomeLight', () => {
     setIntervalSpy.mockRestore()
     clearIntervalSpy.mockRestore()
   })
+
+  it('has unique entity ids in HOME_LIGHTS', () => {
+    const ids = HOME_LIGHTS.map((l) => l.entityId)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
 })

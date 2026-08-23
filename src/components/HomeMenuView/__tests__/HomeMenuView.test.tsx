@@ -19,7 +19,14 @@ describe('HomeMenuView', () => {
     expect(screen.getByText('Stehlampe Gold')).toBeInTheDocument()
     expect(screen.getAllByText('Esszimmer')).toHaveLength(3)
     expect(screen.getByText('Wohnzimmer')).toBeInTheDocument()
-    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(4))
+    expect(screen.getByText('Tischlampe')).toBeInTheDocument()
+    expect(screen.getByText('Lampe 3er')).toBeInTheDocument()
+    expect(screen.getByText('Treppenspot Treppe')).toBeInTheDocument()
+    expect(screen.getByText('Treppenspot Mitte')).toBeInTheDocument()
+    expect(screen.getByText('Treppenspot Tür')).toBeInTheDocument()
+    expect(screen.getAllByText('Gaderobe')).toHaveLength(2)
+    expect(screen.getAllByText('Flur Oben')).toHaveLength(3)
+    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(9))
   })
 
   it('highlights the light by default', () => {
@@ -50,7 +57,7 @@ describe('HomeMenuView', () => {
       }),
     )
     render(<HomeMenuView />)
-    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(4))
+    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(9))
     fireEvent.click(screen.getByText('3er Stehlampe Gold'))
     await waitFor(() => expect(screen.getByText('ON')).toBeInTheDocument())
     expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer'])
@@ -68,12 +75,12 @@ describe('HomeMenuView', () => {
       }),
     )
     render(<HomeMenuView />)
-    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(4))
+    await waitFor(() => expect(screen.getAllByText('OFF')).toHaveLength(9))
     fireEvent.click(screen.getByText('Esstisch Hängelampe'))
     await waitFor(() => expect(screen.getByText('ON')).toBeInTheDocument())
     expect(toggled).toEqual(['light.esstisch_hangelampe_3er'])
     // the first light keeps its own state
-    expect(screen.getAllByText('OFF')).toHaveLength(3)
+    expect(screen.getAllByText('OFF')).toHaveLength(8)
   })
 
   it('shows an Offline badge when Home Assistant is unreachable', async () => {
@@ -84,11 +91,11 @@ describe('HomeMenuView', () => {
       ),
     )
     render(<HomeMenuView />)
-    await waitFor(() => expect(screen.getAllByText('Offline')).toHaveLength(4))
+    await waitFor(() => expect(screen.getAllByText('Offline')).toHaveLength(9))
   })
 
   it('exposes every home item as an accessible button', () => {
     render(<HomeMenuView />)
-    expect(screen.getAllByRole('button')).toHaveLength(6)
+    expect(screen.getAllByRole('button')).toHaveLength(11)
   })
 })
