@@ -19,7 +19,7 @@ import {
   VOLUME_STEP_MIN,
   type Settings,
 } from '@/settings'
-import { pickSpotifyImage } from '@/api/client'
+import { pickArtUrl } from '@/api/client'
 import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorExtract'
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
@@ -286,7 +286,7 @@ export function MainMenuView({
       id: `pl-${playlist.id}`,
       title: playlist.name,
       subtitle: '',
-      art: pickSpotifyImage(playlist.images),
+      art: pickArtUrl(playlist),
       kind: 'media',
       uri: playlist.uri,
     }))
@@ -303,7 +303,7 @@ export function MainMenuView({
         id: `rc-${entry.track.id}`,
         title: entry.track.name,
         subtitle: entry.track.artists.map((artist) => artist.name).join(', '),
-        art: pickSpotifyImage(entry.track.album.images),
+        art: pickArtUrl(entry.track),
         kind: 'media',
         // bug19: replay the context the track was played from (keeps the rest
         // of the queue) and fall back to the bare track uri when unknown
@@ -363,7 +363,7 @@ export function MainMenuView({
         id: `tr-${track.id}`,
         title: track.name,
         subtitle: track.artists.map((artist) => artist.name).join(', '),
-        art: pickSpotifyImage(track.album?.images),
+        art: pickArtUrl(track),
         kind: 'media',
         uri: track.uri,
       }))

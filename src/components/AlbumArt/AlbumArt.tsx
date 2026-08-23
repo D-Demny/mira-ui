@@ -56,25 +56,27 @@ function AlbumArtImpl({ src, size = 200, alt = '' }: Props) {
 
   const sizePx: React.CSSProperties = { width: size, height: size }
 
-  // a layer renders its image while it is loaded and not failed; a failed image
-  // (or the initial no-src state) falls back to the placeholder, with the music
-  // note only when an image was expected but could not be shown
-  const renderLayer = (image: string | undefined, failed: boolean, onErr: () => void) =>
-    image && !failed ? (
-      <img
-        src={image}
-        alt={alt}
-        decoding="async"
-        crossOrigin="anonymous"
-        referrerPolicy="no-referrer"
-        draggable={false}
-        onError={onErr}
-      />
-    ) : (
-      <div className={styles.placeholder}>
-        {failed ? <MusicNoteIcon /> : null}
-      </div>
-    )
+  // bug27: the styled placeholder (music note on the card background) is the
+  // base of every layer — it shows while the image is missing (src not set
+  // or empty), while it is still loading (the img is transparent until it
+  // loads, so no black box), and when it fails (onError). A loaded image
+  // simply covers the placeholder.
+  const renderLayer = (image: string | undefined, failed: boolean, onErr: () => void) => (
+    <div className={styles.placeholder}>
+      <MusicNoteIcon />
+      {image && !failed ? (
+        <img
+          src={image}
+          alt={alt}
+          decoding="async"
+          crossOrigin="anonymous"
+          referrerPolicy="no-referrer"
+          draggable={false}
+          onError={onErr}
+        />
+      ) : null}
+    </div>
+  )
 
   return (
     <div className={styles.art} style={sizePx}>
