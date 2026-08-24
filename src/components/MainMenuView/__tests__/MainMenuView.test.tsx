@@ -1023,13 +1023,111 @@ describe('MainMenuView', () => {
       )
       render(<MainMenuView />)
 
+      // bug30: the switch to 'Zuletzt' itself triggers a fresh fetch, so by
+      // the time the error card is visible the mount fetch and the switch
+      // refetch have both failed
       fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
       const retry = await screen.findByText('Erneut versuchen')
-      expect(calls).toBe(1)
+      expect(calls).toBeGreaterThanOrEqual(2)
 
       // confirming the error card triggers a refetch
+      const callsBeforeRetry = calls
       fireEvent.click(retry)
-      await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2))
+      await waitFor(() => expect(calls).toBeGreaterThan(callsBeforeRetry))
+    })
+  })
+
+  describe('bug30: dynamic recently-played refresh', () => {
+    function recentItem(id: string, name: string, artist: string, playedAt: string) {
+      return {
+        track: {
+          id,
+          name,
+          artists: [{ name: artist }],
+          album: { name: `${name} Album`, images: [] },
+          uri: `spotify:track:${id}`,
+        },
+        played_at: playedAt,
+      }
+    }
+
+    it('refetches the play history when "Zuletzt" is confirmed and renders the newer items', async () => {
+      const stale = recentItem('t-stale', 'Stale Track', 'Old Band', '2026-08-24T09:00:00Z')
+      const fresh = recentItem('t-fresh', 'Fresh Track', 'New Band', '2026-08-24T10:00:00Z')
+      let calls = 0
+      server.use(
+        http.get('*/web-api/me/player/recently-played', () => {
+          calls += 1
+          return HttpResponse.json({ items: calls === 1 ? [stale] : [fresh] })
+        }),
+      )
+      render(<MainMenuView />)
+
+      // the mount fetch delivers the stale history (call 1)
+      await waitFor(() => expect(calls).toBeGreaterThanOrEqual(1))
+
+      // confirming "Zuletzt" must bypass the fresh cache and fetch again
+      // (call 2) even though nothing has expired
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      expect(await screen.findByText('Fresh Track')).toBeInTheDocument()
+      expect(screen.queryByText('Stale Track')).not.toBeInTheDocument()
+      expect(calls).toBe(2)
+    })
+
+    it('does not fetch recents while lingering in other categories or previewing "Zuletzt"', async () => {
+      let calls = 0
+      server.use(
+        http.get('*/web-api/me/player/recently-played', () => {
+          calls += 1
+          return HttpResponse.json({ items: mockRecent })
+        }),
+      )
+      render(<MainMenuView />)
+      await waitFor(() => expect(calls).toBe(1))
+
+      // confirm other categories — none of them involve the recents fetch
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await waitFor(() => expect(screen.getByText('Show Lyrics')).toBeInTheDocument())
+
+      // back to the sidebar and dial UP to "Zuletzt" (one above the last
+      // item) without confirming: the live preview shows the already-loaded
+      // history, still no new fetch
+      pressBack()
+      wheel(10)
+
+      expect(screen.getByText('Siamese Dream')).toBeInTheDocument()
+      expect(calls).toBe(1)
+    })
+
+    it('refetches again when "Zuletzt" is re-entered', async () => {
+      const pages = [
+        recentItem('t-1', 'First Entry', 'Band 1', '2026-08-24T09:00:00Z'),
+        recentItem('t-2', 'Second Entry', 'Band 2', '2026-08-24T09:30:00Z'),
+        recentItem('t-3', 'Third Entry', 'Band 3', '2026-08-24T10:00:00Z'),
+      ]
+      let calls = 0
+      server.use(
+        http.get('*/web-api/me/player/recently-played', () => {
+          calls += 1
+          return HttpResponse.json({ items: [pages[Math.min(calls, pages.length) - 1]] })
+        }),
+      )
+      render(<MainMenuView />)
+
+      // first confirmed entry (mount = page 1, switch = page 2)
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      expect(await screen.findByText('Second Entry')).toBeInTheDocument()
+
+      // leave for another category, then come back
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+
+      expect(await screen.findByText('Third Entry')).toBeInTheDocument()
+      expect(screen.queryByText('Second Entry')).not.toBeInTheDocument()
+      expect(calls).toBe(3)
     })
   })
 
