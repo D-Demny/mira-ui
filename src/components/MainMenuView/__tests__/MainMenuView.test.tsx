@@ -129,6 +129,27 @@ function pressBack() {
   })
 }
 
+// jsdom gives every element a zero-sized rect and no pointer capture, so the
+// NotchedSlider drag handlers need both patched (same approach as
+// SettingsSheet.test.tsx)
+function stubBar(el: HTMLElement, left = 100, width = 300): void {
+  el.getBoundingClientRect = () =>
+    ({
+      left,
+      width,
+      right: left + width,
+      top: 0,
+      bottom: 40,
+      height: 40,
+      x: left,
+      y: 0,
+      toJSON: () => ({}),
+    }) as DOMRect
+  el.setPointerCapture = () => undefined
+  el.releasePointerCapture = () => undefined
+  el.hasPointerCapture = () => false
+}
+
 describe('MainMenuView', () => {
   beforeEach(() => {
     clearCache()
@@ -1551,6 +1572,201 @@ describe('MainMenuView', () => {
       expect(screen.getByText('Brightness').closest('[role="button"]')?.textContent).toContain(
         '50%',
       )
+    })
+  })
+
+  describe('bug35: brightness dual-mode', () => {
+    it('dial confirm on the brightness row toggles auto brightness without an adjust mode', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4), auto ON by default → 'Auto'
+
+      const row = () => screen.getByText('Brightness').closest('[role="button"]')
+      expect(row()?.textContent).toContain('Auto')
+
+      confirmDial() // bug35: toggles auto brightness OFF (no adjust mode)
+      expect(getSettings().autoBrightness).toBe(false)
+      expect(row()?.textContent).toContain('50%')
+      expect(row()?.className).not.toContain('rowAdjusting')
+
+      confirmDial() // ...and back ON
+      expect(getSettings().autoBrightness).toBe(true)
+      expect(row()?.textContent).toContain('Auto')
+    })
+
+    it('a click on the brightness row also toggles auto brightness', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Brightness' }))
+      expect(getSettings().autoBrightness).toBe(false)
+      expect(screen.getByText('Brightness').closest('[role="button"]')?.textContent).toContain(
+        '50%',
+      )
+    })
+
+    it('the wheel adjusts the manual brightness directly while auto is off', async () => {
+      updateSettings({ autoBrightness: false })
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4)
+      expect(getSettings().brightness).toBe(5)
+      const row = () => screen.getByText('Brightness').closest('[role="button"]')
+
+      wheel(-10) // +1 step: 50% → 60%, the focus stays on the row
+      expect(getSettings().brightness).toBe(6)
+      expect(row()?.textContent).toContain('60%')
+      expect(row()?.className).toContain('rowFocused')
+
+      wheel(10) // -1 step: back to 50%
+      expect(getSettings().brightness).toBe(5)
+      expect(row()?.textContent).toContain('50%')
+    })
+
+    it('turning past the brightness bounds clamps the value and keeps row navigation', async () => {
+      updateSettings({ autoBrightness: false, brightness: 1 })
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4), at the 10% minimum
+
+      wheel(10) // value stays clamped, the focus moves up to 'Volume per turn'
+      expect(getSettings().brightness).toBe(1)
+      expect(screen.getByText('Volume per turn').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+
+      updateSettings({ brightness: 10 })
+      wheel(-10) // back down to Brightness (4), at the 100% maximum
+      expect(screen.getByText('Brightness').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+      wheel(-10) // value stays clamped, the focus clamps on the row
+      expect(getSettings().brightness).toBe(10)
+      expect(screen.getByText('Brightness').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+    })
+
+    it('the wheel never changes the level while auto is on (row navigation stays)', async () => {
+      render(<MainMenuView />) // auto ON by default
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4)
+
+      wheel(10) // plain row navigation: up to 'Volume per turn'
+      expect(getSettings().brightness).toBe(5)
+      expect(screen.getByText('Volume per turn').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+      wheel(-10) // back to Brightness
+      wheel(-10) // at the end of the list: the focus stays on the row
+      expect(getSettings().brightness).toBe(5)
+      expect(screen.getByText('Brightness').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
+    })
+
+    it('the slider drag stays locked while auto is on and adjusts the level when auto is off', async () => {
+      render(<MainMenuView />) // auto ON by default
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4)
+      const slider = screen.getByRole('slider', { name: 'Brightness' })
+      expect(slider).toHaveAttribute('aria-disabled', 'true')
+      stubBar(slider)
+
+      fireEvent.pointerDown(slider, { clientX: 400, pointerId: 1 })
+      fireEvent.pointerUp(slider, { clientX: 400, pointerId: 1 })
+      expect(getSettings().brightness).toBe(5) // locked
+
+      confirmDial() // auto OFF → the slider unlocks
+      expect(slider).toHaveAttribute('aria-disabled', 'false')
+      const unlocked = screen.getByRole('slider', { name: 'Brightness' })
+      stubBar(unlocked)
+      fireEvent.pointerDown(unlocked, { clientX: 400, pointerId: 1 }) // 100%
+      expect(getSettings().brightness).toBe(10)
+      fireEvent.pointerMove(unlocked, { clientX: 190, pointerId: 1 })
+      fireEvent.pointerUp(unlocked, { clientX: 190, pointerId: 1 })
+      expect(getSettings().brightness).toBe(4) // 40%
+      expect(screen.getByText('Brightness').closest('[role="button"]')?.textContent).toContain(
+        '40%',
+      )
+    })
+
+    it('clicking the brightness slider adjusts the value but never toggles auto brightness', async () => {
+      updateSettings({ autoBrightness: false })
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Brightness (4)
+      const slider = screen.getByRole('slider', { name: 'Brightness' })
+      stubBar(slider)
+
+      fireEvent.pointerDown(slider, { clientX: 400, pointerId: 1 })
+      fireEvent.pointerUp(slider, { clientX: 400, pointerId: 1 })
+      expect(getSettings().brightness).toBe(10)
+      // the touch release fires a click on the bar — it must adjust the value
+      // only, never toggle auto brightness (which the row tap would do)
+      fireEvent.click(slider)
+      expect(getSettings().autoBrightness).toBe(false)
+      expect(screen.getByRole('switch', { name: 'Auto brightness' })).toHaveAttribute(
+        'aria-checked',
+        'false',
+      )
+    })
+
+    it('the other slider rows keep confirm = adjust mode (volume per turn)', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // Volume per turn (3)
+      const row = () => screen.getByText('Volume per turn').closest('[role="button"]')
+
+      confirmDial() // enter adjust mode
+      expect(row()?.className).toContain('rowAdjusting')
+
+      wheel(-10) // consumed by the slider: 2 → 3, the focus stays
+      expect(getSettings().volumeStepPct).toBe(3)
+      expect(row()?.className).toContain('rowFocused')
+
+      confirmDial() // leave adjust mode again
+      expect(row()?.className).not.toContain('rowAdjusting')
     })
   })
 })
