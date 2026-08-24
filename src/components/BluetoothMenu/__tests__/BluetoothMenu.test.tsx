@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, act } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '../../../__tests__/msw-server'
+import { ListFocusContext } from '@/navigation/listFocusContext'
 
 const busState = vi.hoisted(() => ({
   eventListeners: [] as Array<(evt: { type: string; data: unknown }) => void>,
@@ -254,5 +255,104 @@ describe('BluetoothMenu', () => {
 
     unmount()
     await waitFor(() => expect(calls).toContain('off'))
+  })
+})
+
+describe('bug31: BluetoothMenu dial + back', () => {
+  function dialWheel(deltaX: number) {
+    act(() => {
+      ListFocusContext.entry.onWheel({
+        deltaX,
+        preventDefault: vi.fn(),
+      } as unknown as WheelEvent)
+    })
+  }
+
+  function dialConfirm() {
+    act(() => {
+      ListFocusContext.entry.onConfirm?.()
+    })
+  }
+
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+  })
+
+  it('starts with the first device focused and the dial moves through the rows', async () => {
+    mockKnown()
+    render(<BluetoothMenu online={true} onClose={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('Old Pixel')).toBeInTheDocument())
+
+    const rows = document.querySelectorAll('li.row')
+    expect(rows[0]).toHaveClass('focused')
+
+    dialWheel(-10) // to 'Old Pixel'
+    expect(rows[1]).toHaveClass('focused')
+
+    dialWheel(-10) // to the 'Pair new device' button
+    expect(screen.getByText('Pair new device').closest('button')).toHaveClass('focused')
+  })
+
+  it('the dial press connects the focused device', async () => {
+    mockKnown()
+    let paged = ''
+    server.use(
+      http.post('*/bluetooth/known/:addr/connect', ({ params }) => {
+        paged = String(params.addr)
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    render(<BluetoothMenu online={true} onClose={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('Old Pixel')).toBeInTheDocument())
+
+    dialWheel(-10) // to 'Old Pixel' (Samsung, the settled first row, needs no connect)
+    dialConfirm()
+    await waitFor(() => expect(paged).toBe('11:22:33:44:55:66'))
+  })
+
+  it('the dial press on the pair button starts pairing', async () => {
+    mockKnown()
+    const calls: string[] = []
+    server.use(
+      http.post('*/bluetooth/discover/:mode', ({ params }) => {
+        calls.push(String(params.mode))
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    render(<BluetoothMenu online={true} onClose={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('Pair new device')).toBeInTheDocument())
+
+    dialWheel(-10) // 'Samsung'
+    dialWheel(-10) // 'Pair new device'
+    dialConfirm()
+    await waitFor(() => expect(calls).toContain('on'))
+  })
+
+  it('the back button closes the menu and is consumed by the entry', async () => {
+    mockKnown()
+    const onClose = vi.fn()
+    render(<BluetoothMenu online={true} onClose={onClose} />)
+    await waitFor(() => expect(screen.getByText('Old Pixel')).toBeInTheDocument())
+
+    let consumed: boolean | undefined
+    act(() => {
+      consumed = ListFocusContext.entry.onBack?.()
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(consumed).toBe(true)
+  })
+
+  it('restores the parent entry after the menu unmounts', async () => {
+    mockKnown()
+    const parent = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    ListFocusContext.setActive(parent)
+
+    const { unmount } = render(<BluetoothMenu online={true} onClose={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText('Old Pixel')).toBeInTheDocument())
+    expect(ListFocusContext.entry).not.toBe(parent)
+
+    unmount()
+    expect(ListFocusContext.entry).toBe(parent)
   })
 })

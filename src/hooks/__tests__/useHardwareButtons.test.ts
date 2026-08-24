@@ -169,3 +169,88 @@ describe('useHardwareButtons list-focus wheel throttling (bug8.2)', () => {
     expect(dropped.defaultPrevented).toBe(true)
   })
 })
+
+// bug31: the list focus context is a stack, so a modal overlay pushed on top
+// of a view's entry must receive the hardware buttons until it is popped
+describe('useHardwareButtons focus-stack routing (bug31)', () => {
+  function setupWithStatus() {
+    const onBack = vi.fn()
+    renderHook(() =>
+      useHardwareButtons({
+        status: activeStatus,
+        onPlayPause: vi.fn(),
+        setVolume: vi.fn(),
+        playContext: vi.fn(),
+        onBack,
+        onTogglePowerMenu: vi.fn(),
+        onScreensaver: vi.fn(),
+        onOpenDebug: vi.fn(),
+        notify: vi.fn(),
+      }),
+    )
+    return { onBack }
+  }
+
+  function turnWheel(deltaX: number): WheelEvent {
+    const e = new WheelEvent('wheel', { deltaX, deltaY: 0, cancelable: true, bubbles: true })
+    window.dispatchEvent(e)
+    return e
+  }
+
+  function pressEscape() {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  }
+
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+    vi.useRealTimers()
+  })
+
+  it('routes Escape to the top of the stack, not the view entry below it', () => {
+    const { onBack } = setupWithStatus()
+    const parentBack = vi.fn(() => true)
+    ListFocusContext.setActive({
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: parentBack,
+      active: true,
+    })
+    const modalBack = vi.fn(() => true)
+    const pop = ListFocusContext.pushEntry({
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: modalBack,
+      active: true,
+    })
+
+    pressEscape()
+    // the modal consumed the press; the parent and the app back are untouched
+    expect(modalBack).toHaveBeenCalledTimes(1)
+    expect(parentBack).not.toHaveBeenCalled()
+    expect(onBack).not.toHaveBeenCalled()
+
+    pop()
+    pressEscape()
+    // the view entry regains the button once the modal is gone
+    expect(parentBack).toHaveBeenCalledTimes(1)
+    expect(onBack).not.toHaveBeenCalled()
+  })
+
+  it('routes the wheel to the top of the stack', () => {
+    vi.useFakeTimers()
+    setupWithStatus()
+    const parentWheel = vi.fn()
+    ListFocusContext.setActive({ onWheel: parentWheel, onConfirm: null, active: true })
+    const modalWheel = vi.fn()
+    const pop = ListFocusContext.pushEntry({ onWheel: modalWheel, onConfirm: null, active: true })
+
+    turnWheel(-1)
+    expect(modalWheel).toHaveBeenCalledTimes(1)
+    expect(parentWheel).not.toHaveBeenCalled()
+
+    pop()
+    vi.advanceTimersByTime(35)
+    turnWheel(-1)
+    expect(parentWheel).toHaveBeenCalledTimes(1)
+  })
+})
