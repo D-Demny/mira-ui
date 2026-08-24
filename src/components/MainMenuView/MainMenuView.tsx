@@ -707,6 +707,20 @@ export function MainMenuView({
     }
   }, [openTracklist, activeCategoryId, focus.activePane])
 
+  // bug30: the 'Zuletzt' pane shows the play history, which goes stale as soon
+  // as anything is played after the hook's mount fetch (the module cache only
+  // refetches on remount or after the TTL expires). Refresh the history on
+  // every confirmed entry into the category — keyed on the CONFIRMED category,
+  // never on the sidebar preview, so dial ticks alone don't spam fetches.
+  const prevCategoryIdRef = useRef(activeCategoryId)
+  useEffect(() => {
+    const prev = prevCategoryIdRef.current
+    prevCategoryIdRef.current = activeCategoryId
+    if (activeCategoryId === 'recent' && prev !== 'recent') {
+      refetchRecent()
+    }
+  }, [activeCategoryId, refetchRecent])
+
   // stable across renders so the memoized carousel cards (bug8.2) never see a
   // changed onCardTap and re-render for nothing
   const selectFocusedCard = focus.selectContent
