@@ -936,6 +936,72 @@ describe('MainMenuView', () => {
     })
   })
 
+  describe('bug32: full queue windowing — infinite scroll beyond item #3', () => {
+    // 12 upcoming tracks → 13 cards total, below the carousel's
+    // NO_WINDOW_THRESHOLD: every card is mounted at once, no 3-item cap
+    const twelveQueueNowPlaying: ObserverStatusActive = {
+      ...queueNowPlaying,
+      next_tracks: Array.from({ length: 12 }, (_, i) => ({
+        uri: `spotify:track:b32-${i}`,
+        track_id: `b32-${i}`,
+        name: `Track ${i + 1}`,
+        artist: 'Someone',
+        album: '',
+        image_url: '',
+      })),
+    }
+
+    // 60 upcoming tracks → 61 cards, above NO_WINDOW_THRESHOLD: the carousel
+    // mounts a window around the focus (bug5/6/18) and scrolling right must
+    // keep revealing upcoming tracks
+    const sixtyQueueNowPlaying: ObserverStatusActive = {
+      ...queueNowPlaying,
+      next_tracks: Array.from({ length: 60 }, (_, i) => ({
+        uri: `spotify:track:w32-${i}`,
+        track_id: `w32-${i}`,
+        name: `Window ${i + 1}`,
+        artist: 'Someone',
+        album: '',
+        image_url: '',
+      })),
+    }
+
+    it('renders every card of a 12-track queue at once (no 3-item cap)', () => {
+      render(<MainMenuView nowPlaying={twelveQueueNowPlaying} />)
+
+      // tapping the sidebar item enters the now-playing content pane
+      fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
+
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      for (let i = 1; i <= 12; i++) {
+        expect(screen.getByText(`Track ${i}`)).toBeInTheDocument()
+      }
+    })
+
+    it('scrolls right through a 60-track queue, mounting upcoming tracks beyond item #3', () => {
+      render(<MainMenuView nowPlaying={sixtyQueueNowPlaying} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
+
+      // the initial window around the focused current track already reaches
+      // well past the reported 3-item cap
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      expect(screen.getByText('Window 1')).toBeInTheDocument()
+      expect(screen.getByText('Window 3')).toBeInTheDocument()
+      expect(screen.getByText('Window 15')).toBeInTheDocument()
+      // the window is bounded, not the full list (windowed rendering)
+      expect(screen.queryByText('Window 40')).not.toBeInTheDocument()
+
+      // dial right past the initial window — the window follows the focus
+      for (let i = 0; i < 25; i++) wheel(-10)
+      expect(screen.getByText('Window 25')).toBeInTheDocument()
+
+      // and keep going all the way to the last track of the queue
+      for (let i = 0; i < 35; i++) wheel(-10)
+      expect(screen.getByText('Window 60')).toBeInTheDocument()
+    })
+  })
+
   describe('bug4: track sub-menu back behavior', () => {
     it('back inside the track list returns to the playlist list without exiting', async () => {
       const onExit = vi.fn()
