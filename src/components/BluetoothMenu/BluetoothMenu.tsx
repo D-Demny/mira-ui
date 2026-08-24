@@ -4,6 +4,7 @@ import { subscribeEvents } from '@/api/eventBus'
 import type { DevicePairedPayload, KnownBluetoothDevice } from '@/api/types'
 import { BT_DEVICE_NAME } from '@/brand'
 import { useKnownDevices } from '@/hooks/useKnownDevices'
+import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import { useNotify } from '@/notify/notifyContext'
 import styles from './BluetoothMenu.module.scss'
 
@@ -125,6 +126,23 @@ function BluetoothMenuImpl({ online, onClose }: Props) {
     )
   }
 
+  // bug31: the dial/back hardware buttons are routed to the menu while it is
+  // open. Each device row is one focusable item (confirm connects it, the
+  // primary tap action), followed by the 'Pair new device' button.
+  const deviceList = devices ?? []
+  const pairIndex = deviceList.length // the 'Pair new device' button's focus index
+  const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
+    itemCount: deviceList.length + (pairMode ? 0 : 1),
+    onConfirm: (index) => {
+      if (index < deviceList.length) {
+        onConnect(deviceList[index])
+        return
+      }
+      if (!pairMode) onPairNew()
+    },
+    onBack: onClose,
+  })
+
   return (
     <div className={styles.backdrop} onClick={onClose}>
       <div
@@ -145,8 +163,12 @@ function BluetoothMenuImpl({ online, onClose }: Props) {
           </div>
         ) : (
           <ul className={styles.list}>
-            {(devices ?? []).map((d) => (
-              <li key={d.address} className={styles.row}>
+            {(devices ?? []).map((d, index) => (
+              <li
+                key={d.address}
+                className={`${styles.row} ${focusedIndex === index ? styles.focused : ''}`}
+                ref={focusedIndex === index ? setFocusRef : undefined}
+              >
                 <button
                   type="button"
                   className={`${styles.iconBtn} ${d.starred ? styles.starOn : ''}`}
@@ -161,7 +183,10 @@ function BluetoothMenuImpl({ online, onClose }: Props) {
                   className={`${styles.info} ${isSettled(d) ? '' : styles.connectable}`}
                   role={isSettled(d) ? undefined : 'button'}
                   tabIndex={isSettled(d) ? undefined : 0}
-                  onClick={() => onConnect(d)}
+                  onClick={() => {
+                    tapItem(index)
+                    onConnect(d)
+                  }}
                 >
                   <span className={styles.name}>{deviceLabel(d)}</span>
                   <span
@@ -199,7 +224,15 @@ function BluetoothMenuImpl({ online, onClose }: Props) {
             Discoverable as "{BT_DEVICE_NAME}" pair from your phone's Bluetooth settings
           </div>
         ) : (
-          <button type="button" className={styles.pairBtn} onClick={onPairNew}>
+          <button
+            type="button"
+            className={`${styles.pairBtn} ${focusedIndex === pairIndex ? styles.focused : ''}`}
+            ref={focusedIndex === pairIndex ? setFocusRef : undefined}
+            onClick={() => {
+              tapItem(pairIndex)
+              onPairNew()
+            }}
+          >
             <PlusIcon />
             <span>Pair new device</span>
           </button>

@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { ConnectDevice } from '@/api/types'
+import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import styles from './DevicePicker.module.scss'
 
 interface Props {
@@ -49,23 +50,39 @@ function DeviceTypeIcon({ type, size = 22 }: { type: string; size?: number }) {
 function DeviceList({
   devices,
   onSelect,
+  focusedIndex,
+  setFocusRef,
+  onFocusRow,
 }: {
   devices: ConnectDevice[]
   onSelect?: (d: ConnectDevice) => void
+  // bug31: rotary dial focus (passed by the modal placement only)
+  focusedIndex?: number
+  setFocusRef?: (el: HTMLElement | null) => void
+  onFocusRow?: (index: number) => void
 }) {
   return (
     <ul className={styles.list}>
-      {devices.map((d) => {
+      {devices.map((d, index) => {
         const interactive = Boolean(onSelect) && d.can_transfer && !d.is_offline
+        const focused = focusedIndex === index
         return (
           <li key={d.id}>
             <div
               className={`${styles.row} ${d.is_active ? styles.active : ''} ${
                 interactive ? styles.interactive : ''
-              }`}
-              role={interactive ? 'button' : undefined}
-              tabIndex={interactive ? 0 : undefined}
-              onClick={interactive ? () => onSelect?.(d) : undefined}
+              } ${focused ? styles.focused : ''}`}
+              ref={focused && setFocusRef ? setFocusRef : undefined}
+              role={interactive || focused ? 'button' : undefined}
+              tabIndex={interactive || focused ? 0 : undefined}
+              onClick={
+                interactive
+                  ? () => {
+                      onFocusRow?.(index)
+                      onSelect?.(d)
+                    }
+                  : undefined
+              }
             >
               <span className={styles.icon}>
                 <DeviceTypeIcon type={d.type} />
@@ -80,19 +97,57 @@ function DeviceList({
   )
 }
 
-function DevicePickerImpl({ devices, onSelect, placement = 'inline', onClose }: Props) {
+// bug31: the modal placement registers a list focus entry so the dial/back
+// buttons work inside the popup. It is a separate component because the hook
+// must not run conditionally.
+function DevicePickerModal({
+  devices,
+  onSelect,
+  onClose,
+}: {
+  devices: ConnectDevice[]
+  onSelect?: (device: ConnectDevice) => void
+  onClose?: () => void
+}) {
+  const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
+    itemCount: devices.length,
+    onConfirm: (index) => {
+      const d = devices[index]
+      // only the interactive rows (can transfer, online) select, like a tap
+      if (d && d.can_transfer && !d.is_offline) onSelect?.(d)
+    },
+    onBack: () => onClose?.(),
+    initialIndex: Math.max(0, devices.findIndex((d) => d.is_active)),
+  })
+
   const empty = <div className={styles.empty}>No active devices to select from for playback</div>
 
-  if (placement === 'modal') {
-    return (
-      <div className={styles.backdrop} onClick={onClose}>
-        <div className={styles.cardModal} onClick={(e) => e.stopPropagation()}>
-          <div className={styles.header}>Devices</div>
-          {devices.length === 0 ? empty : <DeviceList devices={devices} onSelect={onSelect} />}
-        </div>
+  return (
+    <div className={styles.backdrop} onClick={onClose}>
+      <div className={styles.cardModal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.header}>Devices</div>
+        {devices.length === 0 ? (
+          empty
+        ) : (
+          <DeviceList
+            devices={devices}
+            onSelect={onSelect}
+            focusedIndex={focusedIndex}
+            setFocusRef={setFocusRef}
+            onFocusRow={tapItem}
+          />
+        )}
       </div>
-    )
+    </div>
+  )
+}
+
+function DevicePickerImpl({ devices, onSelect, placement = 'inline', onClose }: Props) {
+  if (placement === 'modal') {
+    return <DevicePickerModal devices={devices} onSelect={onSelect} onClose={onClose} />
   }
+
+  const empty = <div className={styles.empty}>No active devices to select from for playback</div>
 
   // always render the box even if no items
   return (

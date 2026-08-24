@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { DefaultDeviceModal } from '../DefaultDeviceModal'
 import type { ConnectDevice } from '@/api/types'
+import { ListFocusContext } from '@/navigation/listFocusContext'
+import type { ListFocusEntry } from '@/navigation/listFocusContext'
 
 const makeDevice = (overrides: Partial<ConnectDevice> = {}): ConnectDevice => ({
   id: 'dev-001',
@@ -242,5 +244,129 @@ describe('DefaultDeviceModal', () => {
       />,
     )
     expect(screen.getByText(/Play on Living Room/)).toBeInTheDocument()
+  })
+})
+
+describe('bug31: DefaultDeviceModal dial + back', () => {
+  function dialWheel(deltaX: number) {
+    act(() => {
+      ListFocusContext.entry.onWheel({
+        deltaX,
+        preventDefault: vi.fn(),
+      } as unknown as WheelEvent)
+    })
+  }
+
+  function dialConfirm() {
+    act(() => {
+      ListFocusContext.entry.onConfirm?.()
+    })
+  }
+
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+  })
+
+  it('starts with the current default device focused', () => {
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        currentDefaultId="dev-002"
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    const focused = document.querySelector('.option.focused')
+    expect(focused).toBeTruthy()
+    expect(focused?.textContent).toContain('MacBook')
+  })
+
+  it('moves the focus with the dial and confirms the focused device', () => {
+    const onChange = vi.fn()
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        currentDefaultId={null}
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={onChange}
+        onClose={vi.fn()}
+      />,
+    )
+
+    // focus starts at 'None' (index 0); turn down to 'Living Room' (index 1)
+    dialWheel(-10)
+    const focused = document.querySelector('.option.focused')
+    expect(focused?.textContent).toContain('Living Room')
+
+    dialConfirm()
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('dev-001')
+  })
+
+  it('confirms None via the dial', () => {
+    const onChange = vi.fn()
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        currentDefaultId="dev-001"
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={onChange}
+        onClose={vi.fn()}
+      />,
+    )
+
+    // focus starts at the current default 'Living Room' (index 1); turn up to 'None'
+    dialWheel(10)
+    const focused = document.querySelector('.option.focused')
+    expect(focused?.textContent).toContain('None')
+
+    dialConfirm()
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+
+  it('the back button closes the modal and is consumed by the entry', () => {
+    const onClose = vi.fn()
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        currentDefaultId={null}
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={vi.fn()}
+        onClose={onClose}
+      />,
+    )
+
+    let consumed: boolean | undefined
+    act(() => {
+      consumed = ListFocusContext.entry.onBack?.()
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(consumed).toBe(true)
+  })
+
+  it('restores the parent entry after the modal unmounts', () => {
+    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, active: true }
+    ListFocusContext.setActive(parent)
+
+    const { unmount } = render(
+      <DefaultDeviceModal
+        devices={devices}
+        currentDefaultId={null}
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(ListFocusContext.entry).not.toBe(parent)
+
+    unmount()
+    expect(ListFocusContext.entry).toBe(parent)
   })
 })

@@ -80,6 +80,11 @@
   padding: 0 $s-3;
   border-radius: $r-pill;
   background: rgba(255, 255, 255, 0.07);
+
+  // bug31: the row the rotary dial is focused on
+  &.focused {
+    background: rgba(255, 255, 255, 0.14);
+  }
 }
 
 .iconBtn {
@@ -182,6 +187,11 @@
 
   &:hover {
     background: rgba(255, 255, 255, 0.07);
+  }
+
+  // bug31: the row the rotary dial is focused on
+  &.focused {
+    background: rgba(255, 255, 255, 0.09);
   }
 
   &:active {

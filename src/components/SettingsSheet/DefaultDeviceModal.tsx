@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import type { ConnectDevice } from '@/api/types'
+import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import styles from './DefaultDeviceModal.module.scss'
 
 interface Props {
@@ -57,6 +58,36 @@ function DefaultDeviceModalImpl({
     onChange(null)
   }
 
+  // bug31: the dial/back hardware buttons are routed to the modal while it is
+  // open (its entry sits on top of the settings list's entry). Index 0 is the
+  // 'None' row, then the devices follow.
+  const initialFocusIndex =
+    currentDefaultId == null
+      ? 0
+      : Math.max(0, devices.findIndex((d) => d.id === currentDefaultId) + 1)
+  const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
+    itemCount: devices.length + 1,
+    onConfirm: (index) => {
+      if (index === 0) {
+        handleClear()
+        return
+      }
+      const device = devices[index - 1]
+      if (device) handleSelect(device.id)
+    },
+    onBack: onClose,
+    initialIndex: initialFocusIndex,
+  })
+
+  const optionClass = (isSelected: boolean, isFocused: boolean) =>
+    [
+      styles.option,
+      isSelected ? styles.selected : '',
+      isFocused ? styles.focused : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+
   return (
     <div className={styles.backdrop} onClick={onClose}>
       <div className={styles.card} onClick={(e) => e.stopPropagation()}>
@@ -88,10 +119,14 @@ function DefaultDeviceModalImpl({
 
         <ul className={styles.list}>
           <li
-            className={`${styles.option} ${currentDefaultId === null ? styles.selected : ''}`}
+            className={optionClass(currentDefaultId === null, focusedIndex === 0)}
+            ref={focusedIndex === 0 ? setFocusRef : undefined}
             role="button"
             tabIndex={0}
-            onClick={handleClear}
+            onClick={() => {
+              tapItem(0)
+              handleClear()
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
@@ -102,17 +137,22 @@ function DefaultDeviceModalImpl({
             <span className={styles.radio} />
             <span className={styles.optionName}>None</span>
           </li>
-          {devices.map((d) => {
+          {devices.map((d, i) => {
+            const index = i + 1
             const isSelected = d.id === currentDefaultId
             return (
               <li
                 key={d.id}
-                className={`${styles.option} ${isSelected ? styles.selected : ''} ${
+                className={`${optionClass(isSelected, focusedIndex === index)} ${
                   d.is_offline ? styles.offline : ''
                 }`}
+                ref={focusedIndex === index ? setFocusRef : undefined}
                 role="button"
                 tabIndex={0}
-                onClick={() => handleSelect(d.id)}
+                onClick={() => {
+                  tapItem(index)
+                  handleSelect(d.id)
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()

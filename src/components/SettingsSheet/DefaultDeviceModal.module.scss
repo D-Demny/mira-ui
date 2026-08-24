@@ -149,6 +149,11 @@
     }
   }
 
+  // bug31: the row the rotary dial is focused on
+  &.focused {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
   &.offline {
     opacity: 0.5;
   }

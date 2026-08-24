@@ -1,4 +1,9 @@
-// Module-level callback stack for list focus priority over volume controls
+// Module-level callback stack for list focus priority over volume controls.
+// The top of the stack (the last pushed entry) receives the hardware dial and
+// back button. setActive() replaces the whole stack for views that exclusively
+// own the hardware buttons (menu panes, list views); pushEntry() adds a scoped
+// overlay entry (bug31: the settings popups) and returns a cleanup that removes
+// exactly that entry, restoring the previous top on unmount.
 
 export interface ListFocusEntry {
   onWheel: (e: WheelEvent) => void
@@ -10,15 +15,29 @@ export interface ListFocusEntry {
 
 const noopEntry: ListFocusEntry = { onWheel: () => {}, onConfirm: null, active: false }
 
-let currentEntry: ListFocusEntry = noopEntry
+let stack: ListFocusEntry[] = []
 
 export const ListFocusContext: {
   entry: ListFocusEntry
   setActive: (entry: ListFocusEntry | null) => void
+  pushEntry: (entry: ListFocusEntry) => () => void
 } = {
-  get entry() { return currentEntry },
+  // the top of the stack; the noop entry while it is empty
+  get entry() {
+    return stack.length > 0 ? stack[stack.length - 1] : noopEntry
+  },
   setActive(entry: ListFocusEntry | null) {
-    currentEntry = entry ?? noopEntry
+    stack = entry ? [entry] : []
+  },
+  pushEntry(entry: ListFocusEntry) {
+    stack = [...stack, entry]
+    return () => {
+      // remove exactly this entry (a newer entry may have been pushed on top
+      // since); a stale or repeated cleanup is a no-op
+      if (stack.includes(entry)) {
+        stack = stack.filter((e) => e !== entry)
+      }
+    }
   },
 }
 
