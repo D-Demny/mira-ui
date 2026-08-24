@@ -3,6 +3,19 @@ import { render, screen, fireEvent } from '@testing-library/react'
 
 const hookState = vi.hoisted(() => ({
   toggle: vi.fn(),
+  // bug34: the main menu renders every configured light via useHomeLights()
+  // (same entity list as the real hook's HOME_LIGHTS)
+  lights: [
+    { entityId: 'light.3er_stehlampe_gold_esszimmer', label: '3er Stehlampe Gold', room: 'Esszimmer' },
+    { entityId: 'light.esstisch_hangelampe_3er', label: 'Esstisch Hängelampe', room: 'Esszimmer' },
+    { entityId: 'light.3er_deko_esszimmer', label: '3er Deko', room: 'Esszimmer' },
+    { entityId: 'light.kajplats_e27_ws_g60_clear_470lm', label: 'Stehlampe Gold', room: 'Wohnzimmer' },
+    { entityId: 'light.kajplats_e14_ws_globe_806lm', label: 'Tischlampe', room: 'Gaderobe' },
+    { entityId: 'light.gaderobe_lampe_3er', label: 'Lampe 3er', room: 'Gaderobe' },
+    { entityId: 'light.kajplats_gu10_ws_575lm_3', label: 'Treppenspot Treppe', room: 'Flur Oben' },
+    { entityId: 'light.kajplats_gu10_ws_575lm_5', label: 'Treppenspot Mitte', room: 'Flur Oben' },
+    { entityId: 'light.kajplats_gu10_ws_575lm_6', label: 'Treppenspot Tür', room: 'Flur Oben' },
+  ],
 }))
 
 vi.mock('@/hooks/usePlaylists', () => ({
@@ -79,14 +92,17 @@ vi.mock('@/hooks/usePlaylistTracks', () => ({
 }))
 
 vi.mock('@/hooks/useHomeLight', () => ({
-  HOME_LIGHT_LABEL: '3er Stehlampe Gold',
-  useHomeLight: () => ({
-    state: 'on',
-    loading: false,
-    error: null,
-    toggling: false,
-    toggle: hookState.toggle,
-  }),
+  HOME_LIGHTS: hookState.lights,
+  useHomeLights: () =>
+    hookState.lights.map((light) => ({
+      ...light,
+      state: 'on',
+      loading: false,
+      error: null,
+      toggling: false,
+      toggle: hookState.toggle,
+      refetch: () => {},
+    })),
 }))
 
 vi.mock('@/settings', async (importOriginal) => {
@@ -159,7 +175,8 @@ describe('ContentCarousel', () => {
   it('binds the Home category to the live light state', () => {
     render(<MainMenuView />)
     expect(screen.getByText('3er Stehlampe Gold')).toBeInTheDocument()
-    expect(screen.getByText('An')).toBeInTheDocument()
+    // bug34: all nine lights render, each with the live on/off subtitle
+    expect(screen.getAllByText('An')).toHaveLength(9)
   })
 
   it('binds the Playlists category to the fetched playlists, title only (bug2.3)', () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { useHomeLight, HOME_LIGHT_LABEL } from '@/hooks/useHomeLight'
+import { useHomeLights, type HomeLightView } from '@/hooks/useHomeLight'
 import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { usePlaylistTracks, LIKED_SONGS_ID } from '@/hooks/usePlaylistTracks'
@@ -37,6 +37,14 @@ const OFFSET_STEP = 50
 function fmtOffset(ms: number): string {
   if (ms === 0) return '0 ms'
   return `${ms > 0 ? '+' : ''}${ms} ms`
+}
+
+// bug34: on/off subtitle of a home light card — same states as the single
+// primary light card had before (loading/unknown '…', error 'Offline', An/Aus)
+function lightSubtitleFor(view: Pick<HomeLightView, 'state' | 'loading' | 'error'>): string {
+  if (view.loading || view.state === null) return '…'
+  if (view.error) return 'Offline'
+  return view.state === 'on' ? 'An' : 'Aus'
 }
 
 // bug25: root rows of the 'Einstellungen' vertical list
@@ -205,8 +213,10 @@ export function MainMenuView({
     error: recentError,
     refetch: refetchRecent,
   } = useRecent()
-  const { state: lightState, loading: lightLoading, error: lightError, toggle: lightToggle } =
-    useHomeLight()
+  // bug34: every configured light in one hook (the same hook the Home
+  // sub-menu uses); the categories memo keys on the scalar snapshot below,
+  // never on the fresh per-render view objects (bug8.1)
+  const lightViews = useHomeLights()
   const settings = useSettings()
 
   // bug4/bug5/bug7: track list of the open playlist (lazy pages + 5 min cache)
@@ -230,6 +240,14 @@ export function MainMenuView({
           ? `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`
           : '',
     )
+    .join('\u0000')
+
+  // bug34: useHomeLights() returns fresh view objects on every render — collapse
+  // the per-light state into a scalar key (like nowPlayingQueueKey) so the
+  // categories memo only rebuilds when a light's on/off/loading/error state
+  // actually changes, never on the object churn alone (bug8.1)
+  const lightSnapshotKey = lightViews
+    .map((view) => `${view.state ?? ''}|${view.loading ? 1 : 0}|${view.error ?? ''}`)
     .join('\u0000')
 
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
@@ -305,14 +323,16 @@ export function MainMenuView({
   const settingsRows = isAdjustLevel ? settingsAdjustRows : settingsRootRows
 
   const categories = useMemo(() => {
-    const lightSubtitle =
-      lightLoading || lightState === null
-        ? '…'
-        : lightError
-          ? 'Offline'
-          : lightState === 'on'
-            ? 'An'
-            : 'Aus'
+    // bug34: every configured HA light is a home carousel card (previously
+    // only the primary light); card 0 stays the primary light and its tap
+    // toggles that light, exactly as before
+    const lightCards: MenuCard[] = lightViews.map((view) => ({
+      id: `light-${view.entityId}`,
+      title: view.label,
+      subtitle: lightSubtitleFor(view),
+      kind: 'action',
+      actionId: `toggle-light:${view.entityId}`,
+    }))
 
     // bug2.3: playlist cards show only the title — no owner name / track count
     const playlistCards: MenuCard[] = playlistItems.map((playlist) => ({
@@ -415,15 +435,7 @@ export function MainMenuView({
     }
 
     const cardsByCategory: Record<string, MenuCard[]> = {
-      home: [
-        {
-          id: 'light-main',
-          title: HOME_LIGHT_LABEL,
-          subtitle: lightSubtitle,
-          kind: 'action',
-          actionId: 'toggle-light',
-        },
-      ],
+      home: lightCards,
       'now-playing': nowPlayingCards,
       playlists: tracklistCards ?? playlistCards,
       recent: recentCards,
@@ -434,15 +446,16 @@ export function MainMenuView({
       ...category,
       cards: cardsByCategory[category.id] ?? category.cards,
     }))
+    // deliberately keyed on the scalar snapshot above (lightSnapshotKey), not
+    // on the lightViews objects, which are new on every render (bug8.1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     playlistItems,
     playlistsLoading,
     recentItems,
     recentLoading,
     recentError,
-    lightState,
-    lightLoading,
-    lightError,
+    lightSnapshotKey,
     settingsRows,
     nowPlayingSnapshot,
     openTracklist,
@@ -567,9 +580,13 @@ export function MainMenuView({
       // start playback and land directly on the 'Läuft gerade' pane
       setActiveCategoryId('now-playing')
       onPlay?.(card.uri)
-    } else if (card.kind === 'action' && card.actionId === 'toggle-light') {
-      // keep focus inside the carousel — no view transition
-      void lightToggle()
+    } else if (card.kind === 'action' && card.actionId?.startsWith('toggle-light:')) {
+      // bug34: per-light toggle — the action id carries the entity id, so each
+      // home card toggles its own light (card 0 = the former primary card).
+      // Keep focus inside the carousel — no view transition
+      const entityId = card.actionId.slice('toggle-light:'.length)
+      const view = lightViews.find((light) => light.entityId === entityId)
+      view?.toggle()
     } else if (card.id === 'tr-error') {
       // error placeholder: dial press retries the track list fetch
       refetchTracks()
