@@ -338,6 +338,65 @@ describe('MainMenuView', () => {
     )
   })
 
+  it('plays a later track of the playlist at its absolute position instead of track #1 (bug29)', async () => {
+    server.use(
+      http.get('*/web-api/playlists/pl-1/tracks', () =>
+        HttpResponse.json({
+          items: [
+            {
+              is_local: false,
+              track: {
+                id: 'lp-1',
+                name: 'Numb',
+                uri: 'spotify:track:lp-1',
+                artists: [{ name: 'Linkin Park' }],
+                position: 0,
+              },
+            },
+            {
+              is_local: false,
+              track: {
+                id: 'lp-2',
+                name: 'Faint',
+                uri: 'spotify:track:lp-2',
+                artists: [{ name: 'Linkin Park' }],
+                position: 1,
+              },
+            },
+            {
+              is_local: false,
+              track: {
+                id: 'lp-3',
+                name: 'In the End',
+                uri: 'spotify:track:lp-3',
+                artists: [{ name: 'Linkin Park' }],
+                position: 2,
+              },
+            },
+          ],
+          total: 3,
+          limit: 50,
+          offset: 0,
+          next: null,
+        }),
+      ),
+    )
+    const onPlay = vi.fn()
+    render(<MainMenuView onPlay={onPlay} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+    await screen.findByText('Road Trip')
+    fireEvent.click(screen.getByText('Road Trip'))
+    await screen.findByText('In the End')
+    fireEvent.click(screen.getByText('In the End'))
+
+    expect(onPlay).toHaveBeenCalledTimes(1)
+    expect(onPlay).toHaveBeenCalledWith('spotify:playlist:pl-1', {
+      position: 2,
+      uri: 'spotify:track:lp-3',
+    })
+  })
+
   it('does not leak track cards into other categories after closing the track sub-menu (bug15)', async () => {
     render(<MainMenuView />)
 
