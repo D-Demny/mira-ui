@@ -611,13 +611,17 @@ export function MainMenuView({
       onOpenBluetooth?.()
     } else if (card.id === 'set-default-device') {
       onOpenDefaultDevice?.()
+    } else if (card.id === 'set-brightness') {
+      // bug35: dial press / click on the brightness row toggles auto brightness
+      // (like the sun chip) — no adjust mode; while auto is OFF the wheel on
+      // the focused row adjusts the level directly (handleWheelContent)
+      updateSettings({ autoBrightness: !settings.autoBrightness })
     } else if (
       // bug25: dial-confirm on a slider row toggles its adjust mode; while
       // active the wheel changes the value (handleWheelContent)
       card.id === 'set-display' ||
       card.id === 'set-lyricsync' ||
-      card.id === 'set-volume' ||
-      card.id === 'set-brightness'
+      card.id === 'set-volume'
     ) {
       setAdjustingRowId(activeAdjustingRowId === card.id ? null : card.id)
     }
@@ -625,12 +629,23 @@ export function MainMenuView({
 
   // bug25: adjust mode — the wheel changes the value of the adjusting row
   // instead of moving the focus; turning past the min/max boundary leaves
-  // adjust mode and the focus moves on with the same tick
+  // adjust mode and the focus moves on with the same tick. bug35: the
+  // brightness row adjusts directly on the wheel while focused (no explicit
+  // adjust mode); while auto brightness is ON (slider disabled) or at the
+  // min/max bound the tick falls through to plain row navigation
   const handleWheelContent = (dir: 1 | -1): boolean => {
     if (confirmedCategory.id !== 'settings' || !isAdjustLevel) return false
     const row = settingsAdjustRows[focus.contentIndex]
     const slider = row?.slider
-    if (!row || activeAdjustingRowId !== row.id || !slider || slider.disabled) return false
+    if (!row || !slider) return false
+    if (row.id === 'set-brightness') {
+      if (slider.disabled) return false
+      const next = Math.max(slider.min, Math.min(slider.max, slider.value + dir * slider.step))
+      if (next === slider.value) return false // clamped at the bound: keep navigating
+      updateSettings({ brightness: next })
+      return true
+    }
+    if (activeAdjustingRowId !== row.id || slider.disabled) return false
     const next = Math.max(slider.min, Math.min(slider.max, slider.value + dir * slider.step))
     if (next === slider.value) {
       setAdjustingRowId(null)
@@ -641,9 +656,7 @@ export function MainMenuView({
         ? { uiScalePct: next }
         : row.id === 'set-lyricsync'
           ? { lyricOffsetMs: next }
-          : row.id === 'set-volume'
-            ? { volumeStepPct: next }
-            : { brightness: next }
+          : { volumeStepPct: next }
     updateSettings(patch)
     return true
   }

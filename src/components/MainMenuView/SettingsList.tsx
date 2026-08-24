@@ -133,17 +133,23 @@ function SettingsListImpl({
                 <span className={styles.value}>{row.value}</span>
               </div>
               {row.slider ? (
-                <NotchedSlider
-                  ariaLabel={row.slider.ariaLabel}
-                  value={row.slider.value}
-                  min={row.slider.min}
-                  max={row.slider.max}
-                  step={row.slider.step}
-                  format={row.slider.format}
-                  disabled={row.slider.disabled}
-                  defaultValue={row.slider.defaultValue}
-                  onChange={(v) => onSliderChange(row.id, v)}
-                />
+                // bug35: slider interactions (drag / step buttons) must not
+                // bubble to the row tap — on the brightness row the row tap
+                // toggles auto brightness, which a touch-release click would
+                // flip right after a manual drag
+                <div onClick={(e) => e.stopPropagation()}>
+                  <NotchedSlider
+                    ariaLabel={row.slider.ariaLabel}
+                    value={row.slider.value}
+                    min={row.slider.min}
+                    max={row.slider.max}
+                    step={row.slider.step}
+                    format={row.slider.format}
+                    disabled={row.slider.disabled}
+                    defaultValue={row.slider.defaultValue}
+                    onChange={(v) => onSliderChange(row.id, v)}
+                  />
+                </div>
               ) : null}
             </div>
           </div>
