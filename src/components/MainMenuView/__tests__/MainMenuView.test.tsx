@@ -8,6 +8,7 @@ import { server } from '@/__tests__/msw-server'
 import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
+import { HOME_LIGHTS } from '@/hooks/useHomeLight'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
@@ -999,6 +1000,97 @@ describe('MainMenuView', () => {
       // and keep going all the way to the last track of the queue
       for (let i = 0; i < 35; i++) wheel(-10)
       expect(screen.getByText('Window 60')).toBeInTheDocument()
+    })
+  })
+
+  describe('bug34: every configured HA light renders as a home card', () => {
+    it('renders a card for every HOME_LIGHTS entry, in menu order', () => {
+      const { container } = render(<MainMenuView />)
+
+      const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+      expect(content.querySelectorAll('.card')).toHaveLength(HOME_LIGHTS.length)
+      // the card order follows the HOME_LIGHTS menu order (card 0 = primary light)
+      const titles = Array.from(content.querySelectorAll('.card h3')).map((el) => el.textContent)
+      expect(titles).toEqual(HOME_LIGHTS.map((light) => light.label))
+    })
+
+    it('shows the live on/off subtitle per light (default mock: all off)', async () => {
+      render(<MainMenuView />)
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+    })
+
+    it('shows "An" only for the light that is on, independently of the others', async () => {
+      server.use(
+        http.get('*/ha-api/states/light.kajplats_gu10_ws_575lm_3', () =>
+          HttpResponse.json({
+            entity_id: 'light.kajplats_gu10_ws_575lm_3',
+            state: 'on',
+            attributes: {},
+          }),
+        ),
+      )
+      render(<MainMenuView />)
+
+      await screen.findByText('Treppenspot Treppe')
+      await waitFor(() => {
+        const card = screen.getByText('Treppenspot Treppe').closest('.card')
+        expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+      })
+      // the neighboring lights keep their own (off) state
+      const middle = screen.getByText('Treppenspot Mitte').closest('.card')
+      expect(middle?.querySelector('.subtitle')?.textContent).toBe('Aus')
+    })
+
+    it('tapping a light card sends a toggle request for that exact entity', async () => {
+      const toggled: string[] = []
+      server.use(
+        http.post('*/ha-api/services/light/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          toggled.push(body.entity_id ?? '')
+          return HttpResponse.json([
+            { entity_id: body.entity_id, state: 'on', attributes: {} },
+          ])
+        }),
+      )
+      render(<MainMenuView />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      fireEvent.click(screen.getByText('Esstisch Hängelampe'))
+
+      await waitFor(() => expect(toggled).toEqual(['light.esstisch_hangelampe_3er']))
+      // the card reflects the toggle result
+      const card = screen.getByText('Esstisch Hängelampe').closest('.card')
+      expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+    })
+
+    it('the primary light card keeps its behavior: tap toggles the primary entity, stays in Home', async () => {
+      const toggled: string[] = []
+      server.use(
+        http.post('*/ha-api/services/light/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          toggled.push(body.entity_id ?? '')
+          return HttpResponse.json([
+            { entity_id: body.entity_id, state: 'on', attributes: {} },
+          ])
+        }),
+      )
+      render(<MainMenuView />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      fireEvent.click(screen.getByText('3er Stehlampe Gold'))
+
+      await waitFor(() => expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer']))
+      // no view transition — the home category stays active
+      expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'true')
+      const card = screen.getByText('3er Stehlampe Gold').closest('.card')
+      expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
     })
   })
 

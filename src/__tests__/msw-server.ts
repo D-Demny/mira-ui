@@ -16,13 +16,17 @@ export const server = setupServer(
   http.put('*/settings', () => HttpResponse.json({ ok: true })),
   // Home Assistant (Epic 9) — default: light off, toggle turns it on
   // (the UI talks to the daemon's /ha-api/ CORS proxy, not to HA directly)
-  http.get('*/ha-api/states/light.*', () =>
-    HttpResponse.json({
-      entity_id: 'light.3er_stehlampe_gold_esszimmer',
+  // bug34: the main menu fetches every configured light — echo the entity id
+  // back from the requested path so the mock behaves like the real proxy
+  http.get('*/ha-api/states/light.*', ({ request }) => {
+    const path = new URL(request.url).pathname
+    const entityId = decodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
+    return HttpResponse.json({
+      entity_id: entityId,
       state: 'off',
       attributes: {},
-    }),
-  ),
+    })
+  }),
   http.post('*/ha-api/services/light/toggle', async ({ request }) => {
     const body = (await request.json()) as { entity_id?: string }
     return HttpResponse.json([
