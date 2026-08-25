@@ -49,7 +49,7 @@ import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { resumeLastDevice, transferToDevice } from '@/api/client'
 import type { ConnectDevice, ObserverStatusActive, PlayOffset } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
-import { artSizeFor, heroArtSizeFor } from '@/uiScale'
+import { artSizeFor, heroArtSizeFor, registerUiScaleTarget, usePlayerViewport } from '@/uiScale'
 import styles from './App.module.scss'
 
 const LAST_ART_KEY = 'mira.lastArtUrl'
@@ -118,6 +118,9 @@ export default function App() {
   const showLyricsReal = settings.showLyrics
   const artSize = artSizeFor(settings.uiScalePct)
   const heroArtSize = heroArtSizeFor(settings.uiScalePct)
+  // bug38: the display size zooms only the now-playing screen — the logical viewport +
+  // zoom the player wrapper below renders (and registers as the scale target)
+  const playerViewport = usePlayerViewport()
   const [menuOpenReal, setMenuOpen] = useState(false)
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [settingsOpenReal, setSettingsOpen] = useState(false)
@@ -1159,86 +1162,106 @@ export default function App() {
     forced === 'reconnect-banner' ? 'offline' : reconnecting ? dropReason : null
 
   return (
-    <div
-      className={`${styles.app} ${styles.appPlaying}`}
-      // the art is the only fixed-height block in the left column and never shrinks, so
-      // it has to give way when a larger display size shortens the logical viewport
-      style={{ '--art-size': `${artSize}px` } as React.CSSProperties}
-    >
-      {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
-      <div className={styles.stage} ref={stageRef}>
-        <div
-          className={`${styles.viewLayer} ${showLyrics ? styles.viewActive : styles.viewInactive}`}
-        >
-          <div className={styles.top}>
-            <div className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}>
-              <AlbumArt src={playerStatus.track_image} size={artSize} />
-              <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
+    <>
+      {/* bug38: the display size scales this wrapper (the now-playing screen) only — it
+          renders the logical viewport + zoom inline and registers itself as the scale
+          target; #root and every other view stay a fixed 800x480 at 100% */}
+      <div
+        className={styles.app}
+        ref={registerUiScaleTarget}
+        style={
+          {
+            width: `${playerViewport.w}px`,
+            height: `${playerViewport.h}px`,
+            zoom: playerViewport.zoom === 1 ? undefined : playerViewport.zoom,
+            // the art is the only fixed-height block in the left column and never
+            // shrinks, so it has to give way when a larger display size shortens the
+            // logical viewport
+            '--art-size': `${artSize}px`,
+          } as React.CSSProperties
+        }
+      >
+        <div className={styles.appPlaying}>
+          {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
+          <div className={styles.stage} ref={stageRef}>
+            <div
+              className={`${styles.viewLayer} ${showLyrics ? styles.viewActive : styles.viewInactive}`}
+            >
+              <div className={styles.top}>
+                <div
+                  className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}
+                >
+                  <AlbumArt src={playerStatus.track_image} size={artSize} />
+                  <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
+                </div>
+                <div className={styles.right}>
+                  <Lyrics status={playerStatus} onSeek={handleSeek} active={showLyrics} />
+                </div>
+              </div>
             </div>
-            <div className={styles.right}>
-              <Lyrics status={playerStatus} onSeek={handleSeek} active={showLyrics} />
+            <div
+              className={`${styles.viewLayer} ${!showLyrics ? styles.viewActive : styles.viewInactive}`}
+            >
+              <div
+                className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
+              >
+                <NoLyricsView status={playerStatus} active={!showLyrics} artSize={heroArtSize} />
+              </div>
             </div>
           </div>
-        </div>
-        <div
-          className={`${styles.viewLayer} ${!showLyrics ? styles.viewActive : styles.viewInactive}`}
-        >
-          <div
-            className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
-          >
-            <NoLyricsView status={playerStatus} active={!showLyrics} artSize={heroArtSize} />
+
+          <div className={styles.bottom}>
+            <ProgressBar status={playerStatus} onSeek={handleSeek} />
+            <Controls
+              isPaused={controls.isPaused}
+              shuffle={controls.shuffle}
+              repeat={controls.repeat}
+              disallowPrev={playerStatus.disallow_prev}
+              disallowNext={playerStatus.disallow_next}
+              isPodcast={isPodcast}
+              showSave={!isPodcast}
+              saved={liked.saved}
+              onToggleSaved={liked.toggle}
+              onPrev={controls.onPrev}
+              onNext={controls.onNext}
+              onPlayPause={controls.onPlayPause}
+              onToggleShuffle={controls.onToggleShuffle}
+              onCycleRepeat={controls.onCycleRepeat}
+              onRewind15={() => seekRelative(-15000)}
+              onForward15={() => seekRelative(15000)}
+              onMore={() => setMenuOpen(true)}
+            />
           </div>
+
+          <Menu
+            open={menuOpen}
+            onClose={closeMenu}
+            showLyrics={showLyrics}
+            onToggleLyrics={toggleLyrics}
+            karaokeLyrics={settings.karaokeLyrics}
+            onToggleKaraoke={toggleKaraoke}
+            voiceMic={settings.voiceMic}
+            onToggleVoiceMic={toggleVoiceMic}
+            currentDevice={playerStatus.device_name}
+            onOpenDevices={() => {
+              setMenuOpen(false)
+              setDeviceMenuOpen(true)
+            }}
+            onOpenBluetooth={() => {
+              setMenuOpen(false)
+              setBtMenuOpen(true)
+            }}
+            onOpenSettings={() => {
+              setMenuOpen(false)
+              setSettingsOpen(true)
+            }}
+          />
         </div>
       </div>
 
-      <div className={styles.bottom}>
-        <ProgressBar status={playerStatus} onSeek={handleSeek} />
-        <Controls
-          isPaused={controls.isPaused}
-          shuffle={controls.shuffle}
-          repeat={controls.repeat}
-          disallowPrev={playerStatus.disallow_prev}
-          disallowNext={playerStatus.disallow_next}
-          isPodcast={isPodcast}
-          showSave={!isPodcast}
-          saved={liked.saved}
-          onToggleSaved={liked.toggle}
-          onPrev={controls.onPrev}
-          onNext={controls.onNext}
-          onPlayPause={controls.onPlayPause}
-          onToggleShuffle={controls.onToggleShuffle}
-          onCycleRepeat={controls.onCycleRepeat}
-          onRewind15={() => seekRelative(-15000)}
-          onForward15={() => seekRelative(15000)}
-          onMore={() => setMenuOpen(true)}
-        />
-      </div>
-
-      <Menu
-        open={menuOpen}
-        onClose={closeMenu}
-        showLyrics={showLyrics}
-        onToggleLyrics={toggleLyrics}
-        karaokeLyrics={settings.karaokeLyrics}
-        onToggleKaraoke={toggleKaraoke}
-        voiceMic={settings.voiceMic}
-        onToggleVoiceMic={toggleVoiceMic}
-        currentDevice={playerStatus.device_name}
-        onOpenDevices={() => {
-          setMenuOpen(false)
-          setDeviceMenuOpen(true)
-        }}
-        onOpenBluetooth={() => {
-          setMenuOpen(false)
-          setBtMenuOpen(true)
-        }}
-        onOpenSettings={() => {
-          setMenuOpen(false)
-          setSettingsOpen(true)
-        }}
-      />
-
+      {/* the settings sheet and every other overlay stays a fixed 100% (bug38) — it
+          renders as a sibling of the zoomed player wrapper, never inside it */}
       {globalOverlays}
-    </div>
+    </>
   )
 }

@@ -45,9 +45,9 @@ function SettingsSheetImpl({
   const { lyricOffsetMs, volumeStepPct, autoBrightness, brightness, uiScalePct, defaultDeviceId } =
     useSettings()
 
-  // applying the scale mid-drag moves this very panel under the finger, which has no
-  // fixed point near a notch boundary and makes the whole ui flicker between two sizes.
-  // so track the drag locally and only commit on release
+  // the sheet itself stays a fixed 100% (bug38), but a mid-drag commit would still make
+  // the zoomed player behind it re-layout on every notch. so track the drag locally and
+  // only commit on release
   const [scalePreview, setScalePreview] = useState<number | null>(null)
   // drop an uncommitted drag if the sheet is dismissed mid-gesture
   const [wasOpen, setWasOpen] = useState(open)

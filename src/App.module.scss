@@ -6,9 +6,13 @@
   overflow: hidden;
 }
 
+// bug38: fills the (possibly zoomed) .app wrapper it lives in — before the split it
+// was the #root child itself, whose explicit size it inherited
 .appPlaying {
   display: grid;
   grid-template-rows: minmax(0, 1fr) $bottom-bar-h;
+  width: 100%;
+  height: 100%;
   padding: $pad-y $pad-x 28px;
   gap: $s-3;
 }

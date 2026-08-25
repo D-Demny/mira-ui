@@ -1,21 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
 import {
   applyUiScale,
   artSizeFor,
   getUiScale,
+  getUiScaleFor,
+  getUiScaleY,
   heroArtSizeFor,
   logicalSize,
+  registerUiScaleTarget,
   startUiScaleSync,
+  usePlayerViewport,
+  useUiScale,
 } from '../uiScale'
 import { __resetSettings, updateSettings } from '../settings'
 
-let root: HTMLDivElement | null = null
+let targetEl: HTMLDivElement | null = null
 
-function mountRoot(): HTMLDivElement {
+function mountTarget(): HTMLDivElement {
   const el = document.createElement('div')
-  el.id = 'root'
   document.body.appendChild(el)
-  root = el
+  registerUiScaleTarget(el)
+  targetEl = el
   return el
 }
 
@@ -24,8 +30,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  root?.remove()
-  root = null
+  registerUiScaleTarget(null)
+  targetEl?.remove()
+  targetEl = null
 })
 
 describe('logicalSize', () => {
@@ -91,62 +98,136 @@ describe('heroArtSizeFor', () => {
 })
 
 describe('applyUiScale', () => {
-  it('counter-sizes #root and zooms it back onto the panel', () => {
-    const el = mountRoot()
-    applyUiScale(115)
-    expect(el.style.width).toBe('696px')
-    expect(el.style.height).toBe('418px')
-    expect(el.style.getPropertyValue('zoom')).toBe(String(800 / 696))
-    expect(el.style.transform).toBe('')
-  })
-
-  it('lands the painted width on exactly 800 and never leaves a bottom seam', () => {
-    const el = mountRoot()
-    for (const pct of [85, 90, 95, 105, 110, 115]) {
-      applyUiScale(pct)
-      const z = Number(el.style.getPropertyValue('zoom'))
-      expect(parseFloat(el.style.width) * z).toBeCloseTo(800, 6)
-      const paintedH = parseFloat(el.style.height) * z
-      expect(paintedH).toBeGreaterThanOrEqual(480)
-      expect(paintedH).toBeLessThan(481)
+  // bug38: the zoom moved off #root onto the player view wrapper — #root stays a
+  // constant 800x480 no matter what display size is stored
+  it('no longer counter-sizes or zooms #root', () => {
+    const el = document.createElement('div')
+    el.id = 'root'
+    document.body.appendChild(el)
+    try {
+      applyUiScale(115)
+      expect(el.style.width).toBe('')
+      expect(el.style.height).toBe('')
+      expect(el.style.getPropertyValue('zoom')).toBe('')
+    } finally {
+      el.remove()
     }
   })
 
-  it('clears a previous zoom when returning to 100%', () => {
-    const el = mountRoot()
-    applyUiScale(115)
-    expect(el.style.getPropertyValue('zoom')).not.toBe('')
-    applyUiScale(100)
-    expect(el.style.getPropertyValue('zoom')).toBe('')
-    expect(el.style.width).toBe('800px')
-    expect(el.style.height).toBe('480px')
-  })
-
-  it('no-ops when #root is absent', () => {
-    expect(document.getElementById('root')).toBeNull()
-    expect(() => applyUiScale(110)).not.toThrow()
-  })
-
   // updateSettings is a raw spread, so coerce() is not on this path; a NaN reaching the
-  // dom writes "NaNpx" and would otherwise strand getUiScale at NaN forever
+  // store would otherwise strand getUiScale at NaN forever
   it.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -50, 100000])(
     'falls back to a usable scale for %p',
     (bad) => {
-      const el = mountRoot()
+      mountTarget()
       applyUiScale(bad)
-      expect(el.style.width).toMatch(/^\d+px$/)
       expect(Number.isFinite(getUiScale())).toBe(true)
       expect(getUiScale()).toBeGreaterThan(0)
     },
   )
 
   it('reports the achieved scale, not the requested ratio', () => {
-    mountRoot()
+    mountTarget()
     applyUiScale(100)
     expect(getUiScale()).toBe(1)
     applyUiScale(115)
     // 800/696, not 1.15: the logical width was rounded
     expect(getUiScale()).toBeCloseTo(800 / 696, 10)
+  })
+})
+
+// bug38: the scale reads context-dependent — the achieved zoom while the player view
+// is mounted, 1 while it is not (the fixed-100% menus)
+describe('scale context (player visible vs menu visible)', () => {
+  it('reports 1 while the player view is unmounted', () => {
+    applyUiScale(115)
+    expect(getUiScale()).toBe(1)
+    expect(getUiScaleY()).toBe(1)
+  })
+
+  it('reports the achieved zoom while the player view is mounted', () => {
+    applyUiScale(115)
+    mountTarget()
+    expect(getUiScale()).toBeCloseTo(800 / 696, 10)
+    expect(getUiScaleY()).toBeCloseTo(800 / 696, 10)
+  })
+
+  it('drops back to 1 when the player view unmounts', () => {
+    mountTarget()
+    applyUiScale(115)
+    expect(getUiScale()).toBeCloseTo(800 / 696, 10)
+    registerUiScaleTarget(null)
+    expect(getUiScale()).toBe(1)
+  })
+
+  it('re-registering the same element is a no-op', () => {
+    const el = mountTarget()
+    applyUiScale(110)
+    expect(() => registerUiScaleTarget(el)).not.toThrow()
+    expect(getUiScale()).toBeCloseTo(800 / logicalSize(110).w, 10)
+  })
+
+  it('getUiScaleFor resolves the zoom per element', () => {
+    const el = mountTarget()
+    applyUiScale(110)
+    const inside = document.createElement('div')
+    el.appendChild(inside)
+    const outside = document.createElement('div')
+    document.body.appendChild(outside)
+    try {
+      expect(getUiScaleFor(inside)).toBeCloseTo(800 / logicalSize(110).w, 10)
+      // a sibling of the target (menu content, overlay sheets) never sees the zoom
+      expect(getUiScaleFor(outside)).toBe(1)
+      expect(getUiScaleFor(null)).toBe(1)
+    } finally {
+      outside.remove()
+    }
+  })
+
+  it('getUiScaleFor reports 1 for every element while the player view is unmounted', () => {
+    applyUiScale(115)
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    try {
+      expect(getUiScaleFor(el)).toBe(1)
+    } finally {
+      el.remove()
+    }
+  })
+})
+
+describe('useUiScale', () => {
+  it('follows both the stored scale and the player mount state', () => {
+    const { result, unmount } = renderHook(() => useUiScale())
+    expect(result.current).toBe(1)
+    act(() => applyUiScale(115))
+    // stored, but the player view is not mounted: the menus read 1
+    expect(result.current).toBe(1)
+    act(() => registerUiScaleTarget(document.createElement('div')))
+    expect(result.current).toBeCloseTo(800 / 696, 10)
+    act(() => registerUiScaleTarget(null))
+    expect(result.current).toBe(1)
+    unmount()
+  })
+})
+
+describe('usePlayerViewport', () => {
+  it('is the logical viewport + zoom the player wrapper renders', () => {
+    const { result } = renderHook(() => usePlayerViewport())
+    expect(result.current).toEqual({ w: 800, h: 480, zoom: 1 })
+    act(() => applyUiScale(115))
+    expect(result.current).toEqual({ w: 696, h: 418, zoom: 800 / 696 })
+    act(() => applyUiScale(85))
+    expect(result.current).toEqual({ w: 941, h: 565, zoom: 800 / 941 })
+  })
+
+  it('is referentially stable while the value is unchanged (no re-render on target churn)', () => {
+    const { result } = renderHook(() => usePlayerViewport())
+    const first = result.current
+    act(() => registerUiScaleTarget(document.createElement('div')))
+    expect(result.current).toBe(first)
+    act(() => registerUiScaleTarget(null))
+    expect(result.current).toBe(first)
   })
 })
 
@@ -165,29 +246,38 @@ describe('startUiScaleSync', () => {
     vi.useRealTimers()
   })
 
-  it('applies the stored scale immediately', () => {
+  it('seeds the scale from the stored setting without touching any element', () => {
     updateSettings({ uiScalePct: 110 })
-    const el = mountRoot()
-    stop = startUiScaleSync()
-    expect(el.style.width).toBe(`${logicalSize(110).w}px`)
+    const el = document.createElement('div')
+    el.id = 'root'
+    document.body.appendChild(el)
+    try {
+      stop = startUiScaleSync()
+      expect(el.style.width).toBe('')
+      expect(el.style.getPropertyValue('zoom')).toBe('')
+      // the player view will render it on mount
+      expect(getUiScale()).toBe(1)
+      mountTarget()
+      expect(getUiScale()).toBeCloseTo(800 / logicalSize(110).w, 10)
+    } finally {
+      el.remove()
+    }
   })
 
   it('reapplies when the scale changes', () => {
-    const el = mountRoot()
     stop = startUiScaleSync()
-    expect(el.style.width).toBe('800px')
+    mountTarget()
     updateSettings({ uiScalePct: 85 })
-    expect(el.style.width).toBe(`${logicalSize(85).w}px`)
+    expect(getUiScale()).toBeCloseTo(800 / logicalSize(85).w, 10)
   })
 
-  it('leaves the dom alone when an unrelated setting changes', () => {
-    const el = mountRoot()
+  it('leaves the viewport alone when an unrelated setting changes', () => {
+    const { result } = renderHook(() => usePlayerViewport())
     stop = startUiScaleSync()
-    // a sentinel the sync would overwrite if it ran
-    el.style.width = '123px'
+    const first = result.current
     updateSettings({ brightness: 9 })
     updateSettings({ lyricOffsetMs: 250 })
     updateSettings({ karaokeLyrics: false })
-    expect(el.style.width).toBe('123px')
+    expect(result.current).toBe(first)
   })
 })

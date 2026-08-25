@@ -7,15 +7,25 @@ import {
   UI_SCALE_MIN,
 } from '@/settings'
 
-// the panel is a fixed 800x480 and every dimension in the app is a compile-time px
-// constant, so "display size" works by sizing #root to a *logical* viewport and zooming
-// it back onto the physical panel. zoom reflows AND rasterizes at the final size, so
-// text stays crisp at every notch (transform:scale stretched the finished raster).
+// bug38: display size scales the now-playing screen only, not the whole app. #root stays
+// a constant 800x480 (styles/_global.scss); the player view (App.tsx) renders its wrapper
+// at a *logical* viewport size and zooms it back onto the physical panel. zoom reflows
+// AND rasterizes at the final size, so text stays crisp at every notch
+// (transform:scale stretched the finished raster). everything else - main menu, submenus,
+// settings lists, overlay sheets - is laid out at a fixed 100% and never receives the
+// counter-size or the zoom.
 //
 // scale > 1 => smaller logical viewport => bigger ui, less content on screen.
 //
+// the wrapper registers itself with registerUiScaleTarget (a ref callback in App.tsx),
+// which couples the scale's *context* to its *target*: while the player view is mounted,
+// getUiScale()/useUiScale() report the achieved zoom to the player-internal consumers
+// (lyrics drag, progress scrub, marquee). when the player view is gone, they report 1,
+// so the menus' drag math (NotchedSlider) can never see a zoom its own subtree doesn't
+// have - even when it renders on top of a mounted, zoomed player.
+//
 // chrome 69 under zoom: rects are unzoomed layout px, pointer coords and wheel deltas
-// device px divide the latter by getUiScale() before mixing with rects
+// device px divide the latter by the achieved scale before mixing with rects
 
 const BASE_W = 800
 const BASE_H = 480
@@ -58,8 +68,8 @@ export function heroArtSizeFor(pct: number): number {
   return Math.max(ART_MIN, Math.min(HERO_ART_MAX, Math.floor(stageHeight(pct) / HERO_GLOW_RATIO)))
 }
 
-let achievedX = 1
-let achievedY = 1
+let appliedPct = UI_SCALE_DEFAULT
+let target: HTMLElement | null = null
 const listeners = new Set<() => void>()
 
 // coerce() only runs when settings are loaded; updateSettings is a raw spread, so a bad
@@ -70,48 +80,86 @@ function safePct(pct: number): number {
   return Math.max(UI_SCALE_MIN, Math.min(UI_SCALE_MAX, pct))
 }
 
+// the zoom the stored scale produces. not identical to pct/100 because the logical
+// width above is rounded to whole pixels
+function achievedZoom(): number {
+  return BASE_W / logicalSize(appliedPct).w
+}
+
 export function applyUiScale(pct: number): void {
-  const { w, h } = logicalSize(safePct(pct))
-  const z = BASE_W / w
-
-  // absent under jsdom, where testing-library mounts into its own container
-  const el = document.getElementById('root')
-  if (el) {
-    achievedX = z
-    achievedY = z
-    el.style.width = `${w}px`
-    el.style.height = `${h}px`
-    // always assign, never skip: coming back down to 100 has to actively clear a
-    // previous zoom or the ui stays magnified with its width snapped back
-    el.style.setProperty('zoom', z === 1 ? '' : String(z))
-    el.style.transform = ''
-    el.style.transformOrigin = ''
-  }
-
+  appliedPct = safePct(pct)
   for (const l of listeners) l()
 }
 
-// the zoom actually applied to the dom divide device-space coords and deltas by it.
-// not identical to pct/100 because of the width rounding above
+// ref callback for the now-playing wrapper in App.tsx. React passes the element on mount
+// and null on unmount. the element renders its own width/height/zoom inline from
+// usePlayerViewport, so there is nothing to write here; registering only flips the read
+// context of getUiScale and friends
+export function registerUiScaleTarget(el: HTMLElement | null): void {
+  if (el === target) return
+  target = el
+  for (const l of listeners) l()
+}
+
+// the zoom actually applied to the player view. 1 while the player view is unmounted:
+// the zoom is not applied anywhere then, and the only remaining consumers live in the
+// fixed-100% menus
 export function getUiScale(): number {
-  return achievedX
+  return target ? achievedZoom() : 1
 }
 
 export function getUiScaleY(): number {
-  return achievedY
+  return getUiScale()
 }
 
-// applies the stored scale and keeps it in sync. call before the first render: settings
-// read localStorage synchronously at module init, so there's no flash of unscaled ui
+// the achieved zoom that applies to a specific element: an element inside the registered
+// target lives in the zoomed subtree, anything else (menus, overlay sheets) lives at
+// 100% even when a zoomed player is mounted behind it
+export function getUiScaleFor(el: Element | null): number {
+  if (!el || !target) return 1
+  let node: Element | null = el
+  while (node) {
+    if (node === target) return achievedZoom()
+    node = node.parentElement
+  }
+  return 1
+}
+
+// the logical viewport + zoom the now-playing wrapper renders. rendered inline by the
+// App, so the first painted frame of the player is already at the stored display size
+// (no flash of unscaled ui) and a settings change re-renders the wrapper declaratively
+export interface PlayerViewport {
+  w: number
+  h: number
+  zoom: number
+}
+let viewportCache: PlayerViewport = { w: BASE_W, h: BASE_H, zoom: 1 }
+function playerViewport(): PlayerViewport {
+  const { w, h } = logicalSize(appliedPct)
+  const zoom = BASE_W / w
+  // useSyncExternalStore compares snapshots by reference: keep the object stable while
+  // the value is unchanged so target mount/unmount doesn't re-render the wrapper
+  if (viewportCache.w !== w || viewportCache.h !== h || viewportCache.zoom !== zoom) {
+    viewportCache = { w, h, zoom }
+  }
+  return viewportCache
+}
+
+export function usePlayerViewport(): PlayerViewport {
+  return useSyncExternalStore(subscribeUiScale, playerViewport)
+}
+
+// seeds the scale store and keeps it in sync. call before the first render: settings
+// read localStorage synchronously at module init, so the store is seeded before anything
+// renders
 export function startUiScaleSync(): () => void {
-  let applied = getSettings().uiScalePct
-  applyUiScale(applied)
+  applyUiScale(getSettings().uiScalePct)
   return subscribeSettings(() => {
     const pct = getSettings().uiScalePct
-    // the store emits on every patch. rewriting #root's width invalidates layout for the
-    // whole tree, so don't do it on every brightness notch
-    if (pct === applied) return
-    applied = pct
+    // the store emits on every patch. re-applying re-renders the player wrapper, which
+    // invalidates layout for the whole player tree, so don't do it on every brightness
+    // notch
+    if (pct === appliedPct) return
     applyUiScale(pct)
   })
 }

@@ -31,7 +31,10 @@ window.addEventListener('unhandledrejection', (e) => {
   reportUiError('unhandled rejection: ' + String(e.reason))
 })
 
-// before render, so the ui never paints at the wrong size
+// before render, so the scale store is seeded (from localStorage) before the first
+// now-playing render — the player wrapper renders the stored display size inline, so
+// the ui never paints at the wrong size. bug38: the zoom itself lives on the player
+// wrapper, #root stays a constant 800x480
 startUiScaleSync()
 
 createRoot(document.getElementById('root')!).render(
