@@ -20,7 +20,11 @@
   align-items: center;
   gap: $s-4;
   flex-shrink: 0;
-  min-height: $touch-min;
+  // bug36: uniform row height for slider and plain rows alike — the slider
+  // rows' natural height (padding 12×2 + title line 16px/1.4 = 22.4 +
+  // rowMain gap 8 + NotchedSlider 40 = 94.4px, rounded to the 4px grid), so
+  // slider-less rows like 'Default Device' are no longer half as tall
+  min-height: 96px;
   padding: $s-3 $s-4;
   border-radius: $r-lg;
   background: rgba(255, 255, 255, 0.05);
