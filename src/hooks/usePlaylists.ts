@@ -17,6 +17,16 @@ export function clearCache() {
   cache.clear()
 }
 
+// approximate in-memory weight of one playlist item (audit §2.1) — feeds the
+// debug size estimate only
+const APPROX_PLAYLIST_BYTES = 350
+
+// test/debug introspection (bug45 option C: cache stats readout)
+export function __playlistsCacheStats() {
+  const items = cache.get('playlists')?.items.length ?? 0
+  return { entries: cache.size, items, approxBytes: items * APPROX_PLAYLIST_BYTES }
+}
+
 export function usePlaylists() {
   const [items, setItems] = useState<SpotifyPlaylist[]>(() => cache.get('playlists')?.items ?? [])
   const [loading, setLoading] = useState(() => !cache.has('playlists'))

@@ -27,6 +27,7 @@ import { ContentCarousel } from './ContentCarousel'
 import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard } from './mockData'
+import { warmArt } from './warmedArt'
 import styles from './MainMenuView.module.scss'
 
 // bug25: the lyric sync offset range mirrors the player SettingsSheet
@@ -476,15 +477,14 @@ export function MainMenuView({
 
   // bug8.2 (vertical dial): pre-decode every menu cover once so a sidebar
   // preview swap (full carousel remount) only pays layout/paint of already
-  // decoded bitmaps instead of fetch+decode per tick
-  const warmedArtRef = useRef<Set<string>>(new Set())
+  // decoded bitmaps instead of fetch+decode per tick. bug45 option C: the
+  // warmed-url set is FIFO-bounded (1000) — evicted urls are re-warmed on the
+  // next focus, the pre-decode behavior itself is unchanged
   useEffect(() => {
-    const warmed = warmedArtRef.current
     for (const category of categories) {
       for (const card of category.cards) {
         const art = card.art
-        if (!art || warmed.has(art)) continue
-        warmed.add(art)
+        if (!art || !warmArt(art)) continue
         const img = new Image()
         // match AlbumArt's fetch attributes so the browser reuses the same
         // cache entry (CORS images are cached separately)

@@ -12,6 +12,7 @@ import { HOME_LIGHTS } from '@/hooks/useHomeLight'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
+import { __resetWarmedArt } from '../warmedArt'
 
 const mockPlaylists = [
   {
@@ -156,6 +157,9 @@ describe('MainMenuView', () => {
     clearRecentCache()
     clearTracksCache()
     clearColorCache()
+    // bug45 option C: the warmed-art set is module-level — reset it per test
+    // so the bug8.2 pre-decode assertions start from a fresh session
+    __resetWarmedArt()
     // bug25: the settings store persists to localStorage — start every test
     // from the pristine defaults
     localStorage.clear()

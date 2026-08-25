@@ -21,6 +21,14 @@ function markSeen(uri: string) {
   seenUris.add(uri)
 }
 
+// test/debug introspection (bug45 option C: cache stats readout) — uri
+// strings only, so the approximate size is the summed string length
+export function __prefetchStats() {
+  let approxBytes = 0
+  for (const uri of seenUris) approxBytes += uri.length
+  return { entries: seenUris.size, maxEntries: SEEN_CEILING, approxBytes }
+}
+
 function prefetchImage(url: string) {
   const img = new window.Image()
   img.src = url

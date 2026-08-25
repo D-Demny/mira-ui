@@ -5,6 +5,19 @@ import type { SpotifyPlaylistTrack } from '@/api/types'
 const CACHE_TTL_MS = 5 * 60 * 1000
 const PAGE_SIZE = 50
 
+// bug45 option C: hard bounds for the track cache (the one unbounded store in
+// the menu, per the caching audit). The entry cap mirrors the daemon's
+// queue-expand context cap; the per-entry track cap keeps a fully paged
+// 500-track playlist from pinning ~250 KB — deeper pages are served from the
+// network on demand and not retained (a reopen re-fetches them, the same
+// cost class the 5-min TTL already imposes).
+export const MAX_CACHED_PLAYLISTS = 32
+export const MAX_TRACKS_PER_ENTRY = 300
+
+// approximate in-memory weight of one wire track (~0.5 KB including V8
+// string/object overhead, audit §2.1) — feeds the debug size estimate only
+const APPROX_TRACK_BYTES = 500
+
 // the Liked Songs pseudo-playlist (bug22): it has no playlist id, its pages
 // come from Web API me/tracks instead of playlists/<id>/tracks
 export const LIKED_SONGS_ID = 'spotify:collection:tracks'
@@ -15,11 +28,69 @@ interface CacheEntry {
   fetchedAt: number
 }
 
-// module-level cache keyed by playlist id (bug7: same pattern as usePlaylists)
+// module-level cache keyed by playlist id (bug7: same pattern as usePlaylists).
+// bug45 option C: bounded on both axes — at most MAX_CACHED_PLAYLISTS entries
+// (FIFO eviction in Map insertion order) and no entry older than the TTL
+// (stale entries are dropped on every read/write, not just revalidated in
+// place), so the map can no longer grow for the life of the session.
 const cache = new Map<string, CacheEntry>()
 
 export function clearTracksCache() {
   cache.clear()
+}
+
+// test/debug introspection: the bounds plus the current occupancy (bug45)
+export function __playlistTracksCacheStats() {
+  let tracks = 0
+  for (const entry of cache.values()) tracks += entry.tracks.length
+  return {
+    maxEntries: MAX_CACHED_PLAYLISTS,
+    maxTracksPerEntry: MAX_TRACKS_PER_ENTRY,
+    ttlMs: CACHE_TTL_MS,
+    entries: cache.size,
+    tracks,
+    approxBytes: tracks * APPROX_TRACK_BYTES,
+  }
+}
+
+// same freshness boundary the hook's read path uses
+function isStale(entry: CacheEntry, now: number): boolean {
+  return now - entry.fetchedAt >= CACHE_TTL_MS
+}
+
+// bug45 option C: drop every entry strictly older than the TTL on a
+// read/write. The entry being (re)validated right now is excepted — bug37's
+// stale revalidation refreshes its fetchedAt and it stays; a failed
+// revalidation keeps its stale list on screen, exactly as before.
+function evictStale(exceptId?: string): void {
+  const now = Date.now()
+  for (const [id, entry] of cache) {
+    if (id !== exceptId && isStale(entry, now)) cache.delete(id)
+  }
+}
+
+// bug45 option C: FIFO eviction in Map insertion order (same pattern as
+// useColorExtract.remember() and the daemon's oldest-first prune). Every write
+// re-inserts its key last (see storeInCache), so the newest entry — the one
+// the user just opened — sits at the back and can never be a victim.
+function evictOldest(): void {
+  while (cache.size > MAX_CACHED_PLAYLISTS) {
+    const oldest = cache.keys().next().value
+    if (oldest === undefined) break
+    cache.delete(oldest)
+  }
+}
+
+// the single write path into the cache (bug45 option C). Keeps at most
+// MAX_TRACKS_PER_ENTRY tracks per entry (total stays exact), bumps the key to
+// newest, then enforces the TTL and the count bound.
+function storeInCache(id: string, tracks: SpotifyPlaylistTrack[], total: number): void {
+  const kept =
+    tracks.length > MAX_TRACKS_PER_ENTRY ? tracks.slice(0, MAX_TRACKS_PER_ENTRY) : tracks
+  cache.delete(id)
+  cache.set(id, { tracks: kept, total, fetchedAt: Date.now() })
+  evictStale(id)
+  evictOldest()
 }
 
 export interface UsePlaylistTracksResult {
@@ -84,7 +155,7 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
         }
         listRef.current = next
         totalRef.current = Math.max(page.total, next.length)
-        cache.set(id, { tracks: next, total: totalRef.current, fetchedAt: Date.now() })
+        storeInCache(id, next, totalRef.current)
         setTracks(next)
         setTotal(totalRef.current)
       } catch (err: unknown) {
@@ -135,7 +206,7 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
         const next = [...freshTracks, ...tail]
         listRef.current = next
         totalRef.current = Math.max(page.total, next.length)
-        cache.set(id, { tracks: next, total: totalRef.current, fetchedAt: Date.now() })
+        storeInCache(id, next, totalRef.current)
         setTracks(next)
         setTotal(totalRef.current)
         setError(null)
@@ -174,6 +245,10 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
       return
     }
     const entry = cache.get(playlistId)
+    // bug45 option C: the read path bounds the cache too — every other entry
+    // older than the TTL is dropped now (the requested entry is excepted: it
+    // is either served or silently revalidated, which refreshes its fetchedAt)
+    evictStale(playlistId)
     const fresh = entry && Date.now() - entry.fetchedAt < CACHE_TTL_MS
     if (fresh) {
       listRef.current = entry.tracks
