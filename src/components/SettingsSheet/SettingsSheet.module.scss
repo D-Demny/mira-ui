@@ -25,7 +25,8 @@
   overflow-y: auto;
   @include hide-scrollbar;
   // four rows have to clear 448px at 100%: padding 40 + title 38.8 + 4 gaps 64
-  // + 4 rows 297.6 = 440.4. it scrolls at larger display sizes, hence hide-scrollbar
+  // + 4 rows 297.6 = 440.4. the sheet is fixed at 100% (bug38), so it never scrolls —
+  // hide-scrollbar stays as a guard
   padding: $s-5;
   background: $bg;
   border-radius: $r-2xl;

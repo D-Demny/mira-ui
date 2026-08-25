@@ -1,5 +1,5 @@
 import { memo, useRef } from 'react'
-import { getUiScale } from '@/uiScale'
+import { getUiScaleFor } from '@/uiScale'
 import styles from './NotchedSlider.module.scss'
 
 interface Props {
@@ -49,8 +49,11 @@ function NotchedSliderImpl({
     const el = barRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
-    // pointer coords are device px, rects are layout px under zoom
-    const r = clamp((clientX / getUiScale() - rect.left) / rect.width, 0, 1)
+    // pointer coords are device px, rects are layout px under zoom. the slider only
+    // lives in the fixed-100% menus, so resolve the scale against the bar itself: the
+    // player's zoom (bug38) must never leak into this drag math, even when a zoomed
+    // player sits behind the sheet
+    const r = clamp((clientX / getUiScaleFor(barRef.current) - rect.left) / rect.width, 0, 1)
     const snapped = clamp(Math.round((min + r * (max - min)) / step) * step, min, max)
     latest.current = snapped
     if (snapped !== value) onChange(snapped)
