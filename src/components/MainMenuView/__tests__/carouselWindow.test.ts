@@ -61,6 +61,34 @@ describe('windowRange (bug18)', () => {
   })
 })
 
+describe('bug39: guard vs. foreign (stale) scroll offsets', () => {
+  it('a stale offset from the previous category cannot push the window start right of index 0', () => {
+    // fresh category entry: focus 0, but the measured offset still describes
+    // the old category's deep scroll position
+    const range = windowRange(50, 0, { scrollLeft: 30 * STEP, width: 550 })
+    expect(range.start).toBe(0) // index 0 stays the leftmost rendered card
+    expect(leadingSpacerWidth(range.start)).toBe(0) // no offset padding at the left edge
+  })
+
+  it('an offset beyond the end of the new list is clamped and never inverts the window', () => {
+    const range = windowRange(50, 0, { scrollLeft: 60 * STEP, width: 550 })
+    expect(range).toEqual({ start: 0, end: 50 })
+  })
+
+  it('a freshly purged category (null metrics) renders the pure index-0 window', () => {
+    expect(windowRange(50, 0, null)).toEqual({ start: 0, end: 17 })
+    expect(windowRange(45, undefined, null)).toEqual({ start: 0, end: 17 })
+  })
+
+  it('within one category the guard only widens the window, never shrinks it', () => {
+    const base = windowRange(50, 25, null)
+    const widened = windowRange(50, 25, { scrollLeft: 40 * STEP, width: 550 })
+    expect(widened.start).toBeLessThanOrEqual(base.start)
+    expect(widened.end).toBeGreaterThanOrEqual(base.end)
+    expect(widened.end).toBeGreaterThan(base.end)
+  })
+})
+
 describe('spacer widths', () => {
   it('leading spacer matches the space of the missing cards', () => {
     expect(leadingSpacerWidth(0)).toBe(0)
