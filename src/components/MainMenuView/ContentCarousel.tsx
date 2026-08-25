@@ -59,6 +59,12 @@ interface ContentCarouselProps {
   // identity of the category the cards belong to; the scroll reset (bug8.1)
   // runs only when this changes, never on plain card-list re-renders
   categoryId: string
+  // bug41: identity of the currently playing track (the 'Läuft gerade' first
+  // card). When it changes WHILE the categoryId stays the same (a queue skip
+  // or a natural track advance), the card list re-orders in place — the
+  // categoryId-keyed purge (bug39) never sees that case, so the viewport is
+  // reset to the new first card here instead
+  activeTrackKey?: string
   onCardTap?: (card: MenuCard, index: number) => void
   // index of the dial-focused card (rendered with a focus outline + centered)
   focusedIndex?: number
@@ -67,12 +73,14 @@ interface ContentCarouselProps {
 export function ContentCarousel({
   cards,
   categoryId,
+  activeTrackKey,
   onCardTap,
   focusedIndex,
 }: ContentCarouselProps) {
   const focusedCardRef = useRef<HTMLElement | null>(null)
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const lastCategoryIdRef = useRef(categoryId)
+  const lastActiveTrackKeyRef = useRef(activeTrackKey)
   // bug18: measured physical scroll position, feeding the viewport safety guard
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics | null>(null)
 
@@ -99,6 +107,23 @@ export function ContentCarousel({
     // disabled until the fresh (zeroed) position is sampled below
     setScrollMetrics(null)
   }, [categoryId])
+
+  // bug41: an active-track change inside the same category (queue skip in
+  // 'Läuft gerade') re-orders the card list around the new current track
+  // without a categoryId change, so the purge above never fires. Reset the
+  // viewport to the new first card (the new current track) and drop the stale
+  // scroll metrics — the measured offset belongs to the OLD list and would
+  // seed the new window from a dead offset (the bug39 failure mode). Same
+  // shape as the purge: a layout effect, pre-paint and ahead of the passive
+  // metrics sampler below. Keyed on the track identity scalar, so observer
+  // re-projections that keep the same track (and a plain focus move, bug8.1)
+  // never re-trigger it.
+  useLayoutEffect(() => {
+    if (lastActiveTrackKeyRef.current === activeTrackKey) return
+    lastActiveTrackKeyRef.current = activeTrackKey
+    if (carouselRef.current) carouselRef.current.scrollLeft = 0
+    setScrollMetrics(null)
+  }, [activeTrackKey])
 
   // bug18: read the carousel's physical scroll position after each render that
   // can change the window (focus / list / view). A lagging smooth scroll then
