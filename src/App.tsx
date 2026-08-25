@@ -56,6 +56,11 @@ const LAST_ART_KEY = 'mira.lastArtUrl'
 const UTC_OFFSET_KEY = 'mira.utcOffsetMin'
 const UPDATE_REMIND_MS = 24 * 60 * 60 * 1000
 const SKIPPED_VERSION_KEY = 'mira.skippedVersion'
+// bug40: firmware updates are flashed manually, so the "update available"
+// overlay must never appear (also for mandatory releases). The daemon still
+// reports update_available in its status — the UI just ignores it. Flip this
+// back to true to re-enable the nag.
+const UPDATE_POPUP_ENABLED = false
 const TRANSFER_DISMISS_KEY = 'mira.transferDismissedAt'
 const TRANSFER_DISMISS_MS = 2 * 60 * 60 * 1000
 
@@ -524,8 +529,11 @@ export default function App() {
     setUpdateCardOpen(false)
   }, [latestVersion])
 
-  // update card
+  // update card — bug40: UPDATE_POPUP_ENABLED pins the overlay off; the state
+  // above keeps updating from the daemon status so re-enabling is a one-line
+  // change (the timer below simply never arms while the flag is false)
   const updateCardEligible =
+    UPDATE_POPUP_ENABLED &&
     updateAvailable &&
     (updateMandatory || latestVersion !== skippedVersion) &&
     !updateCardOpen &&
