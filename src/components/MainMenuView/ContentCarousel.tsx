@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
 import type { MenuCard } from './mockData'
 import { carouselCardAreEqual } from './carouselCardCompare'
@@ -80,9 +80,31 @@ export function ContentCarousel({
     focusedCardRef.current = el
   }, [])
 
+  // bug39: a category change fully purges the carousel's per-view state. The
+  // measured scroll offset is the bug18 guard's baseline and belongs to the
+  // PREVIOUS category's list — keeping it would seed the new list's window
+  // from a dead offset (stale cards and spacer widths lingering in the
+  // mounted buffer). Runs as a layout effect, so the purge lands before the
+  // browser paints the switch frame AND before the passive metrics sampler
+  // below: the new category is always painted from card 0 with a pure
+  // index-0 window, never from the old category's scroll position.
+  // (bug8.1: keyed on categoryId, not on the cards array identity — the
+  // parent rebuilds it on every re-render, which reset the scroll on each
+  // dial tick)
+  useLayoutEffect(() => {
+    if (lastCategoryIdRef.current === categoryId) return
+    lastCategoryIdRef.current = categoryId
+    if (carouselRef.current) carouselRef.current.scrollLeft = 0
+    // reset the window state to the pure index window; the guard stays
+    // disabled until the fresh (zeroed) position is sampled below
+    setScrollMetrics(null)
+  }, [categoryId])
+
   // bug18: read the carousel's physical scroll position after each render that
   // can change the window (focus / list / view). A lagging smooth scroll then
   // keeps the still-visible cards mounted instead of unmounting them early.
+  // Runs after the purge above, so a category switch always samples the fresh
+  // (zeroed) offset — never the previous category's (bug39).
   useEffect(() => {
     const carousel = carouselRef.current
     if (!carousel) return
@@ -91,15 +113,6 @@ export function ContentCarousel({
       prev && prev.scrollLeft === next.scrollLeft && prev.width === next.width ? prev : next,
     )
   }, [cards.length, focusedIndex, categoryId])
-
-  // a category change always starts at the first card (bug8.1: keyed on
-  // categoryId, not on the cards array identity — the parent rebuilds it on
-  // every re-render, which reset the scroll on each dial tick)
-  useEffect(() => {
-    if (lastCategoryIdRef.current === categoryId) return
-    lastCategoryIdRef.current = categoryId
-    if (carouselRef.current) carouselRef.current.scrollLeft = 0
-  }, [categoryId])
 
   // keep the focused card visible while the dial rotates through the carousel
   useEffect(() => {

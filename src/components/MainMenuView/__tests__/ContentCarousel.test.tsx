@@ -1,8 +1,35 @@
-import { beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
+import { render, screen, fireEvent, act } from '@testing-library/react'
+import type { ReactElement } from 'react'
+
+const DEFAULT_RECENT_ITEMS = [
+  {
+    track: {
+      id: 't-1',
+      name: 'Siamese Dream',
+      artists: [{ name: 'The Smashing Pumpkins' }],
+      album: { name: 'Mellon Collie', images: [{ url: 'http://img/s.jpg' }] },
+      uri: 'spotify:track:t-1',
+    },
+    played_at: '2026-08-20T10:00:00Z',
+  },
+]
 
 const hookState = vi.hoisted(() => ({
   toggle: vi.fn(),
+  // bug39: per-test overridable recents fixture (default: the single track)
+  recentItems: [
+    {
+      track: {
+        id: 't-1',
+        name: 'Siamese Dream',
+        artists: [{ name: 'The Smashing Pumpkins' }],
+        album: { name: 'Mellon Collie', images: [{ url: 'http://img/s.jpg' }] },
+        uri: 'spotify:track:t-1',
+      },
+      played_at: '2026-08-20T10:00:00Z',
+    },
+  ],
   // bug34: the main menu renders every configured light via useHomeLights()
   // (same entity list as the real hook's HOME_LIGHTS)
   lights: [
@@ -48,18 +75,8 @@ vi.mock('@/hooks/usePlaylists', () => ({
 
 vi.mock('@/hooks/useRecent', () => ({
   useRecent: () => ({
-    items: [
-      {
-        track: {
-          id: 't-1',
-          name: 'Siamese Dream',
-          artists: [{ name: 'The Smashing Pumpkins' }],
-          album: { name: 'Mellon Collie', images: [{ url: 'http://img/s.jpg' }] },
-          uri: 'spotify:track:t-1',
-        },
-        played_at: '2026-08-20T10:00:00Z',
-      },
-    ],
+    // bug39: read through the hoisted state so tests can swap in long fixtures
+    items: hookState.recentItems,
     loading: false,
     error: null,
     refetch: () => {},
@@ -128,6 +145,7 @@ vi.mock('@/settings', async (importOriginal) => {
   }
 })
 
+import { ListFocusContext } from '@/navigation/listFocusContext'
 import { MainMenuView } from '../MainMenuView'
 import { ContentCarousel } from '../ContentCarousel'
 import { carouselCardAreEqual } from '../carouselCardCompare'
@@ -444,5 +462,183 @@ describe('bug8.2: carousel card memo comparator', () => {
 
   it('re-renders when the interactivity changes', () => {
     expect(carouselCardAreEqual(base, { ...base, interactive: false })).toBe(false)
+  })
+})
+
+describe('bug39: category switch purges window state & scroll offset', () => {
+  const CARD_STEP = 194 // CARD_WIDTH + CARD_GAP
+  const LONG_A: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `q-${i}`,
+    title: `Queue ${i}`,
+    subtitle: '',
+  }))
+  const LONG_C: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `rc-${i}`,
+    title: `Recent ${i}`,
+    subtitle: '',
+  }))
+  const SHORT_B: MenuCard[] = Array.from({ length: 8 }, (_, i) => ({
+    id: `pl-${i}`,
+    title: i === 0 ? 'Liked Songs' : `Playlist ${i}`,
+    subtitle: '',
+  }))
+
+  function carouselEl(container: HTMLElement): HTMLElement {
+    return container.querySelector('.carousel') as HTMLElement
+  }
+
+  // simulate the device viewport: a 550px-wide carousel settled deep into the
+  // previous category's list (the smooth-scroll position at switch time)
+  function setDeviceScroll(el: HTMLElement, scrollLeft: number, width = 550): void {
+    el.scrollLeft = scrollLeft
+    Object.defineProperty(el, 'clientWidth', { value: width, configurable: true })
+  }
+
+  // dial one tick so the metrics effect samples the simulated scroll position
+  function sampleScroll(
+    rerender: (ui: ReactElement) => void,
+    cards: MenuCard[],
+    categoryId: string,
+    focus: number,
+  ): void {
+    rerender(<ContentCarousel cards={cards} categoryId={categoryId} focusedIndex={focus + 1} />)
+  }
+
+  it('switching from a long (windowed) list to a short one renders strictly the new cards from index 0', () => {
+    const { container, rerender } = render(
+      <ContentCarousel cards={LONG_A} categoryId="now-playing" focusedIndex={30} />,
+    )
+    // the previous category settled at a deep scroll position
+    setDeviceScroll(carouselEl(container), 30 * CARD_STEP - 24)
+    sampleScroll(rerender, LONG_A, 'now-playing', 30)
+
+    // switch to a short category (e.g. Playlists) at index 0
+    rerender(<ContentCarousel cards={SHORT_B} categoryId="playlists" focusedIndex={0} />)
+
+    // strictly the new cards — index 0 is the leftmost rendered card
+    const articles = container.querySelectorAll('article')
+    expect(articles).toHaveLength(8)
+    expect(articles[0].textContent).toContain('Liked Songs')
+    // no leftover card of the previous view, no residual width holder
+    expect(screen.queryByText('Queue 31')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.spacer')).toHaveLength(0)
+    // the viewport is reset to 0
+    expect(carouselEl(container).scrollLeft).toBe(0)
+  })
+
+  it('switching between two long lists resets the window to the pure index-0 window', () => {
+    const { container, rerender } = render(
+      <ContentCarousel cards={LONG_A} categoryId="now-playing" focusedIndex={30} />,
+    )
+    setDeviceScroll(carouselEl(container), 30 * CARD_STEP - 24)
+    sampleScroll(rerender, LONG_A, 'now-playing', 30)
+    // the bug18 guard has widened the window around the measured position
+    expect(container.querySelectorAll('article')).toHaveLength(33)
+
+    // switch to another long category at index 0
+    rerender(<ContentCarousel cards={LONG_C} categoryId="recent" focusedIndex={0} />)
+
+    // the fresh category starts at the pure index-0 window (17 cards + one
+    // trailing spacer) — the old category's scroll offset must not expand it,
+    // no stale cards or spacer widths may linger in the mounted buffer
+    const articles = container.querySelectorAll('article')
+    expect(articles).toHaveLength(17)
+    expect(articles[0].textContent).toContain('Recent 0')
+    const spacers = container.querySelectorAll('.spacer')
+    expect(spacers).toHaveLength(1)
+    // 33 missing after: 33*170+32*24
+    expect((spacers[0] as HTMLElement).style.width).toBe('6378px')
+    expect(carouselEl(container).scrollLeft).toBe(0)
+  })
+
+  it('within one category a measured scroll position never unmounts the visible cards', () => {
+    const { container, rerender } = render(
+      <ContentCarousel cards={LONG_A} categoryId="now-playing" focusedIndex={25} />,
+    )
+    // the viewport has scrolled ahead of the focus (fast dial)
+    setDeviceScroll(carouselEl(container), 40 * CARD_STEP - 24)
+    rerender(<ContentCarousel cards={LONG_A} categoryId="now-playing" focusedIndex={26} />)
+
+    // the guard widens the window so the cards at the physical position and
+    // the focused card both stay mounted
+    expect(screen.getByText('Queue 26')).toBeInTheDocument()
+    expect(screen.getByText('Queue 40')).toBeInTheDocument()
+    expect(screen.getByText('Queue 44')).toBeInTheDocument()
+    expect(container.querySelectorAll('article').length).toBeGreaterThan(33)
+  })
+})
+
+describe('bug39: strict category purge across the main menu (view level)', () => {
+  // 45 recently played tracks — long enough to trigger windowing (>= 40)
+  const LONG_RECENT = Array.from({ length: 45 }, (_, i) => ({
+    track: {
+      id: `rr-${i}`,
+      name: i === 7 ? 'Thinking About You' : `Recent Track ${i}`,
+      artists: [{ name: 'Someone' }],
+      album: { name: 'An Album', images: [] },
+      uri: `spotify:track:rr-${i}`,
+    },
+    played_at: '2026-08-20T10:00:00Z',
+  }))
+  // 45 upcoming queue tracks — the 'Läuft gerade' pane is windowed as well
+  const LONG_QUEUE: ObserverStatusActive = {
+    ...nowPlaying,
+    next_tracks: Array.from({ length: 45 }, (_, i) => ({
+      uri: `spotify:track:qq-${i}`,
+      track_id: `qq-${i}`,
+      name: `Queue Track ${i}`,
+      artist: 'Someone',
+      album: '',
+      image_url: '',
+    })),
+  }
+
+  beforeEach(() => {
+    hookState.recentItems = LONG_RECENT
+  })
+  afterEach(() => {
+    hookState.recentItems = DEFAULT_RECENT_ITEMS
+  })
+
+  function wheel(deltaX: number): void {
+    act(() => {
+      ListFocusContext.entry.onWheel({
+        deltaX,
+        preventDefault: vi.fn(),
+      } as unknown as WheelEvent)
+    })
+  }
+
+  it('switching to Playlists after navigating long recents/queue shows strictly playlist cards from index 0', () => {
+    const { container } = render(<MainMenuView nowPlaying={LONG_QUEUE} />)
+    // navigate: 'Zuletzt' → dial to a mid-list track ...
+    fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+    for (let i = 0; i < 20; i++) wheel(-2)
+    // ... the viewport has settled deep into the list ...
+    const carousel = container.querySelector('.carousel') as HTMLElement
+    carousel.scrollLeft = 20 * 194
+    Object.defineProperty(carousel, 'clientWidth', { value: 550, configurable: true })
+    // ... one more tick samples the position into the guard's baseline
+    wheel(-2)
+    // ... select songs in 'Läuft gerade' ...
+    fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
+    // the fresh category must start at the pure index-0 window, not at the
+    // old category's measured position
+    expect(container.querySelectorAll('article')).toHaveLength(17)
+    expect((container.querySelector('.spacer') as HTMLElement).style.width).toBe('5602px')
+    for (let i = 0; i < 5; i++) wheel(-2)
+    // ... then switch to 'Playlists'
+    fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+
+    // strictly the playlist cards — index 0 is the leftmost rendered card
+    const articles = container.querySelectorAll('article')
+    expect(articles).toHaveLength(2)
+    expect(articles[0].textContent).toContain('Road Trip')
+    // no leftover track cards of the previous views, no residual width holders
+    expect(screen.queryByText('Thinking About You')).not.toBeInTheDocument()
+    expect(screen.queryByText('Queue Track 4')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.spacer')).toHaveLength(0)
+    // the viewport was reset to index 0
+    expect(carousel.scrollLeft).toBe(0)
   })
 })
