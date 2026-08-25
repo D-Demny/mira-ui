@@ -306,6 +306,14 @@ export function MainMenuView({
     nowPlayingQueueKey,
   ])
 
+  // bug41: stable identity of the currently playing track (uri first, id as
+  // fallback) — feeds the carousel's in-category scroll reset. Both scalars
+  // come from the snapshot memo above, so the key only changes when the ACTIVE
+  // TRACK actually changes, never on the observer's 3s object churn
+  const nowPlayingTrackKey = nowPlayingSnapshot
+    ? nowPlayingSnapshot.uri || nowPlayingSnapshot.id
+    : undefined
+
   // bug25: the 'Einstellungen' vertical list rows (root + sub-level); the
   // confirmed level is what the focus hook counts and confirms
   const settingsRootRows = useMemo(
@@ -552,6 +560,12 @@ export function MainMenuView({
       } else {
         onPlay?.(card.uri)
       }
+      // bug41: the selected track becomes the new current track once the
+      // observer status arrives, so the carousel focus goes back to index 0
+      // (the new np-current card). The list itself is still the old one at
+      // this point — index 0 exists in every now-playing variant, and the
+      // async list update keeps the focus on the freshly active track.
+      focusRef.current?.focusContent(0)
       return
     }
     if (
@@ -856,6 +870,15 @@ export function MainMenuView({
             // when it opens/closes (bug8.1's reset is keyed on this value)
             categoryId={
               openTracklist ? `playlists:tracks:${openTracklist.playlistId}` : displayedCategory.id
+            }
+            // bug41: the playing track's identity, only for the 'Läuft gerade'
+            // pane — a change re-orders the queue cards in place (queue skip /
+            // natural advance) and the carousel must scroll back to the new
+            // first card. Keyed on the track uri/id scalars of the snapshot
+            // memo, so observer re-projections of the SAME track (3s poll)
+            // never re-trigger the reset
+            activeTrackKey={
+              displayedCategory.id === 'now-playing' ? nowPlayingTrackKey : undefined
             }
             // selectContent confirms the tapped card (runs the card action exactly once)
             onCardTap={handleCardTap}

@@ -1865,4 +1865,153 @@ describe('MainMenuView', () => {
       expect(row()?.className).not.toContain('rowAdjusting')
     })
   })
+
+  describe('bug41: queue selection resets focus & scroll to index 0', () => {
+    // 100 upcoming tracks — long enough that the carousel is windowed both
+    // before and after the skip (bug5/6/18, like the bug32/bug39 fixtures)
+    const hundredQueue = Array.from({ length: 100 }, (_, i) => ({
+      uri: `spotify:track:b41-${i}`,
+      track_id: `b41-${i}`,
+      name: `Queue ${i + 1}`,
+      artist: 'Someone',
+      album: '',
+      image_url: '',
+    }))
+    const hundredQueueNowPlaying: ObserverStatusActive = {
+      ...queueNowPlaying,
+      next_tracks: hundredQueue,
+    }
+
+    function enterNowPlaying(): void {
+      fireEvent.click(screen.getByRole('button', { name: 'Läuft gerade' }))
+    }
+
+    function carouselEl(container: HTMLElement): HTMLElement {
+      return container.querySelector('.carousel') as HTMLElement
+    }
+
+    // simulate the device viewport settled deep into the queue (like bug39)
+    function setDeviceScroll(container: HTMLElement, scrollLeft: number, width = 550): void {
+      const carousel = carouselEl(container)
+      carousel.scrollLeft = scrollLeft
+      Object.defineProperty(carousel, 'clientWidth', { value: width, configurable: true })
+    }
+
+    it('selecting an upcoming queue track keeps the bug26 context skip and resets the focus to index 0', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView nowPlaying={queueNowPlaying} onPlay={onPlay} />)
+
+      // land in the now-playing content pane via a recent track
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Siamese Dream'))
+
+      wheel(-10) // focus 'Next Song' (index 1)
+      confirmDial()
+
+      // bug26 unchanged: the live context plays starting at the selected track
+      expect(onPlay).toHaveBeenCalledTimes(2)
+      expect(onPlay).toHaveBeenLastCalledWith('spotify:playlist:queue-pl', {
+        position: 1,
+        uri: 'spotify:track:t-10',
+      })
+      // bug41: the focus went back to index 0 (the current track card) instead
+      // of staying stuck at the selected card
+      expect(screen.getByText('Heat Waves').closest('.card')).toHaveClass('cardFocused')
+      expect(screen.getByText('Next Song').closest('.card')).not.toHaveClass('cardFocused')
+    })
+
+    it('a deep queue skip (index N > 1) also resets the focus to index 0', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView nowPlaying={hundredQueueNowPlaying} onPlay={onPlay} />)
+
+      enterNowPlaying()
+      for (let i = 0; i < 5; i++) wheel(-10) // focus 'Queue 6' (index 5)
+      confirmDial()
+
+      expect(onPlay).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenCalledWith('spotify:playlist:queue-pl', {
+        position: 5,
+        uri: 'spotify:track:b41-4',
+      })
+      // the current track card is focused again, the selected one is not
+      expect(screen.getByText('Heat Waves').closest('.card')).toHaveClass('cardFocused')
+      expect(screen.getByText('Queue 6').closest('.card')).not.toHaveClass('cardFocused')
+    })
+
+    it('resets the carousel scroll to index 0 when the active track changes via queue selection', async () => {
+      const onPlay = vi.fn()
+      const { container, rerender } = render(
+        <MainMenuView nowPlaying={hundredQueueNowPlaying} onPlay={onPlay} />,
+      )
+
+      // settle deep into the queue: focus at 'Queue 41' (index 41) and the
+      // viewport measured at the matching deep offset
+      enterNowPlaying()
+      for (let i = 0; i < 40; i++) wheel(-10)
+      setDeviceScroll(container, 40 * 194 - 24)
+      wheel(-10) // one more tick samples the deep offset into the guard's baseline
+
+      // skip to 'Queue 41' (index 41 = queue position 41)
+      confirmDial()
+      expect(onPlay).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenCalledWith('spotify:playlist:queue-pl', {
+        position: 41,
+        uri: 'spotify:track:b41-40',
+      })
+      // the focus is already back at index 0, but the list — and the physical
+      // scroll position — are still the old ones until the observer arrives
+      expect(screen.getByText('Heat Waves').closest('.card')).toHaveClass('cardFocused')
+
+      // the observer poll lands: the selected track is the new current track
+      // and the queue re-orders WITHOUT a category change
+      const afterSkip: ObserverStatusActive = {
+        ...hundredQueueNowPlaying,
+        track_id: 'b41-40',
+        track_uri: 'spotify:track:b41-40',
+        track_name: 'Queue 41',
+        track_artist: 'Someone',
+        track_image: '',
+        next_tracks: hundredQueue.slice(41),
+      }
+      rerender(<MainMenuView nowPlaying={afterSkip} onPlay={onPlay} />)
+
+      // bug41: the viewport is back at 0 and the new current track ('Queue 41')
+      // sits at index 0 under the active focus — the pure index-0 window, no
+      // stale cards from the old deep position
+      expect(carouselEl(container).scrollLeft).toBe(0)
+      const articles = container.querySelectorAll('article')
+      expect(articles).toHaveLength(17)
+      expect(articles[0].textContent).toContain('Queue 41')
+      expect(screen.getByText('Queue 41').closest('.card')).toHaveClass('cardFocused')
+      // windowed at index 0: nothing past the 17-card window is mounted
+      expect(screen.queryByText('Queue 58')).not.toBeInTheDocument()
+    })
+
+    it('an observer re-projection without a track change does NOT reset the scroll', async () => {
+      const { container, rerender } = render(
+        <MainMenuView nowPlaying={hundredQueueNowPlaying} />,
+      )
+
+      enterNowPlaying()
+      for (let i = 0; i < 20; i++) wheel(-10)
+      const deep = 20 * 194 - 24
+      setDeviceScroll(container, deep)
+      wheel(-10) // sample the deep offset
+
+      // the 3s observer poll hands over a fresh object with the SAME scalars
+      // (new array identity, same active track and queue)
+      const repolled: ObserverStatusActive = {
+        ...hundredQueueNowPlaying,
+        next_tracks: hundredQueue.map((track) => ({ ...track })),
+      }
+      rerender(<MainMenuView nowPlaying={repolled} />)
+
+      // no track change → the deep position is preserved (bug8.1: a focus
+      // move never resets, and neither does a same-track re-projection)
+      expect(carouselEl(container).scrollLeft).toBe(deep)
+      // the window still covers the measured position, not the index-0 window
+      expect(screen.getByText('Queue 22')).toBeInTheDocument()
+    })
+  })
 })

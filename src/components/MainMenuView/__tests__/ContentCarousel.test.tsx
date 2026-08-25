@@ -642,3 +642,74 @@ describe('bug39: strict category purge across the main menu (view level)', () =>
     expect(carousel.scrollLeft).toBe(0)
   })
 })
+
+describe('bug41: active-track change resets the scroll within the same category', () => {
+  let setLeft: MockInstance
+
+  beforeEach(() => {
+    setLeft = vi.spyOn(Element.prototype, 'scrollLeft', 'set')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('resets the scroll to the first card when the active track key changes', () => {
+    const { rerender } = render(
+      <ContentCarousel
+        cards={CARDS_A}
+        categoryId="now-playing"
+        activeTrackKey="track-a"
+        focusedIndex={2}
+      />,
+    )
+    setLeft.mockClear()
+
+    // the queue skip lands: same category, a new current track, focus back at 0
+    rerender(
+      <ContentCarousel
+        cards={CARDS_B}
+        categoryId="now-playing"
+        activeTrackKey="track-b"
+        focusedIndex={0}
+      />,
+    )
+
+    expect(setLeft).toHaveBeenCalledWith(0)
+  })
+
+  it('does not reset when the active track key is unchanged (observer re-projection)', () => {
+    const { rerender } = render(
+      <ContentCarousel
+        cards={CARDS_A}
+        categoryId="now-playing"
+        activeTrackKey="track-a"
+        focusedIndex={1}
+      />,
+    )
+    setLeft.mockClear()
+
+    // same category, same track — only the cards array identity churns
+    rerender(
+      <ContentCarousel
+        cards={[...CARDS_A]}
+        categoryId="now-playing"
+        activeTrackKey="track-a"
+        focusedIndex={1}
+      />,
+    )
+
+    expect(setLeft).not.toHaveBeenCalled()
+  })
+
+  it('does not reset for categories without an active track key', () => {
+    const { rerender } = render(
+      <ContentCarousel cards={CARDS_A} categoryId="playlists" focusedIndex={1} />,
+    )
+    setLeft.mockClear()
+
+    rerender(<ContentCarousel cards={CARDS_B} categoryId="playlists" focusedIndex={1} />)
+
+    expect(setLeft).not.toHaveBeenCalled()
+  })
+})
