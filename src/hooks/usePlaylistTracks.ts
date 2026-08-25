@@ -104,6 +104,61 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
     [],
   )
 
+  // bug37: silent revalidation of a STALE cached list — fetches page 0 in the
+  // background WITHOUT touching the loading flags (the stale list stays
+  // rendered, no 'Lade…' flash on sub-menu entry) and merges the fresh head
+  // back on arrival, keeping the already-loaded tail tracks that the fresh
+  // page does not cover. A failure keeps the stale list on screen.
+  const refreshFirstPage = useCallback(
+    async (id: string) => {
+      if (inFlightRef.current) return
+      inFlightRef.current = true
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      let resumeTail = false
+      try {
+        const page =
+          id === LIKED_SONGS_ID
+            ? await fetchSavedTracks(0, PAGE_SIZE, controller.signal)
+            : await fetchPlaylistTracks(id, 0, PAGE_SIZE, controller.signal)
+        if (controller.signal.aborted) return
+        const freshTracks: SpotifyPlaylistTrack[] = []
+        const seen = new Set<string>()
+        for (const item of page.items) {
+          const track = item.track
+          if (!track || seen.has(track.id)) continue
+          seen.add(track.id)
+          freshTracks.push(track)
+        }
+        const tail = listRef.current.filter((track) => !seen.has(track.id))
+        const next = [...freshTracks, ...tail]
+        listRef.current = next
+        totalRef.current = Math.max(page.total, next.length)
+        cache.set(id, { tracks: next, total: totalRef.current, fetchedAt: Date.now() })
+        setTracks(next)
+        setTotal(totalRef.current)
+        setError(null)
+        resumeTail = totalRef.current > 0 && next.length < totalRef.current
+      } catch (err: unknown) {
+        if (!controller.signal.aborted) {
+          const message = err instanceof Error ? err.message : 'Failed to load playlist tracks'
+          console.warn('usePlaylistTracks error:', message)
+          // the stale list stays rendered — only surface the error when empty
+          if (listRef.current.length === 0) setError(message)
+        }
+      } finally {
+        inFlightRef.current = false
+      }
+      // resume lazy loading if the merged list is still incomplete (the
+      // in-flight guard is free again by now)
+      if (!controller.signal.aborted && resumeTail) {
+        void appendPage(id, listRef.current.length, false)
+      }
+    },
+    [appendPage],
+  )
+
   // (re)load when the requested playlist changes
   useEffect(() => {
     abortRef.current?.abort()
@@ -132,13 +187,24 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
       }
       return
     }
+    // bug37: cache-first on a STALE entry — the cached list renders instantly
+    // and page 0 is revalidated silently in the background
+    if (entry && entry.tracks.length > 0) {
+      listRef.current = entry.tracks
+      totalRef.current = entry.total
+      setTracks(entry.tracks)
+      setTotal(entry.total)
+      setError(null)
+      void refreshFirstPage(playlistId)
+      return
+    }
     cache.delete(playlistId)
     listRef.current = []
     totalRef.current = 0
     setTracks([])
     setTotal(0)
     void appendPage(playlistId, 0, true)
-  }, [playlistId, appendPage])
+  }, [playlistId, appendPage, refreshFirstPage])
 
   const loadMore = useCallback(() => {
     if (!playlistId || inFlightRef.current) return

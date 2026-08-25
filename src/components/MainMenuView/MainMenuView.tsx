@@ -212,6 +212,7 @@ export function MainMenuView({
     loading: recentLoading,
     error: recentError,
     refetch: refetchRecent,
+    refresh: refreshRecent,
   } = useRecent()
   // bug34: every configured light in one hook (the same hook the Home
   // sub-menu uses); the categories memo keys on the scalar snapshot below,
@@ -742,14 +743,19 @@ export function MainMenuView({
   // refetches on remount or after the TTL expires). Refresh the history on
   // every confirmed entry into the category — keyed on the CONFIRMED category,
   // never on the sidebar preview, so dial ticks alone don't spam fetches.
+  // bug37: the refresh is SILENT (cache-first) — the cached, possibly stale
+  // items render instantly on entry, the fresh page lands in the background
+  // and swaps in on arrival without a loading state (no 'Lade…' flash, and a
+  // failed revalidation keeps the stale history on screen instead of an
+  // error card). Freshness is unchanged: every confirmed entry still fetches.
   const prevCategoryIdRef = useRef(activeCategoryId)
   useEffect(() => {
     const prev = prevCategoryIdRef.current
     prevCategoryIdRef.current = activeCategoryId
     if (activeCategoryId === 'recent' && prev !== 'recent') {
-      refetchRecent()
+      void refreshRecent()
     }
-  }, [activeCategoryId, refetchRecent])
+  }, [activeCategoryId, refreshRecent])
 
   // stable across renders so the memoized carousel cards (bug8.2) never see a
   // changed onCardTap and re-render for nothing

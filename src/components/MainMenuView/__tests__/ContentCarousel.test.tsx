@@ -63,6 +63,8 @@ vi.mock('@/hooks/useRecent', () => ({
     loading: false,
     error: null,
     refetch: () => {},
+    // bug37: the silent category-switch revalidation
+    refresh: () => {},
   }),
 }))
 
