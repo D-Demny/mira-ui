@@ -1248,6 +1248,11 @@ describe('MainMenuView', () => {
       // confirming "Zuletzt" must bypass the fresh cache and fetch again
       // (call 2) even though nothing has expired
       fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      // bug37: cache-first — the cached history is still rendered on the very
+      // first render after the switch (no loading state, no 'Lade…' card)
+      // while the revalidation runs silently in the background
+      expect(screen.getByText('Stale Track')).toBeInTheDocument()
+      expect(screen.queryByText('Lade…')).not.toBeInTheDocument()
       expect(await screen.findByText('Fresh Track')).toBeInTheDocument()
       expect(screen.queryByText('Stale Track')).not.toBeInTheDocument()
       expect(calls).toBe(2)
@@ -1307,6 +1312,97 @@ describe('MainMenuView', () => {
       expect(await screen.findByText('Third Entry')).toBeInTheDocument()
       expect(screen.queryByText('Second Entry')).not.toBeInTheDocument()
       expect(calls).toBe(3)
+    })
+  })
+
+  describe('bug37: cache-first rendering & silent revalidation', () => {
+    function recentItem(id: string, name: string, artist: string, playedAt: string) {
+      return {
+        track: {
+          id,
+          name,
+          artists: [{ name: artist }],
+          album: { name: `${name} Album`, images: [] },
+          uri: `spotify:track:${id}`,
+        },
+        played_at: playedAt,
+      }
+    }
+
+    it('switching to "Zuletzt" renders the cached items instantly; the fresh page lands silently in the background', async () => {
+      const stale = recentItem('t-stale', 'Stale Track', 'Old Band', '2026-08-24T09:00:00Z')
+      const fresh = recentItem('t-fresh', 'Fresh Track', 'New Band', '2026-08-24T10:00:00Z')
+      let calls = 0
+      let releaseFresh: () => void = () => {}
+      const freshPending = new Promise<void>((resolve) => {
+        releaseFresh = resolve
+      })
+      server.use(
+        http.get('*/web-api/me/player/recently-played', async () => {
+          calls += 1
+          if (calls === 1) return HttpResponse.json({ items: [stale] })
+          await freshPending
+          return HttpResponse.json({ items: [fresh] })
+        }),
+      )
+      render(<MainMenuView />)
+
+      // the mount fetch (call 1) delivers the stale history into state/cache
+      await waitFor(() => expect(calls).toBe(1))
+
+      // confirming "Zuletzt" renders the cached history IMMEDIATELY on the
+      // very first render after the switch (cache-first — no loading state,
+      // no 'Lade…' card), and starts the background revalidation (call 2)
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      expect(screen.getByText('Stale Track')).toBeInTheDocument()
+      expect(screen.queryByText('Lade…')).not.toBeInTheDocument()
+      await waitFor(() => expect(calls).toBe(2))
+      // the stale items stay rendered while the revalidation is in flight
+      expect(screen.getByText('Stale Track')).toBeInTheDocument()
+      expect(screen.queryByText('Lade…')).not.toBeInTheDocument()
+
+      // the fresh page swaps in on arrival, still without any loading state
+      releaseFresh()
+      expect(await screen.findByText('Fresh Track')).toBeInTheDocument()
+      expect(screen.queryByText('Stale Track')).not.toBeInTheDocument()
+      expect(screen.queryByText('Lade…')).not.toBeInTheDocument()
+    })
+
+    it('keeps the stale history rendered when the background revalidation fails', async () => {
+      const stale = recentItem('t-stale', 'Stale Track', 'Old Band', '2026-08-24T09:00:00Z')
+      let calls = 0
+      let releaseFailure: () => void = () => {}
+      const failurePending = new Promise<void>((resolve) => {
+        releaseFailure = resolve
+      })
+      server.use(
+        http.get('*/web-api/me/player/recently-played', async () => {
+          calls += 1
+          if (calls === 1) return HttpResponse.json({ items: [stale] })
+          await failurePending
+          return new HttpResponse(null, { status: 500 })
+        }),
+      )
+      render(<MainMenuView />)
+
+      // the mount fetch (call 1) delivers the stale history into state/cache
+      await waitFor(() => expect(calls).toBe(1))
+
+      // confirming "Zuletzt" renders the cached history instantly (cache-first)
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      expect(screen.getByText('Stale Track')).toBeInTheDocument()
+      await waitFor(() => expect(calls).toBe(2))
+
+      releaseFailure()
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      // a failed revalidation keeps the stale history on screen — no error
+      // card, no loading flash
+      expect(screen.getByText('Stale Track')).toBeInTheDocument()
+      expect(screen.queryByText('Erneut versuchen')).not.toBeInTheDocument()
+      expect(screen.queryByText('Lade…')).not.toBeInTheDocument()
     })
   })
 

@@ -24,6 +24,12 @@ export function useRecent() {
   const [loading, setLoading] = useState(() => !cache.has('recent'))
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // bug37: render-time mirror of `items` so the silent-refresh decision below
+  // never reads a stale closure value
+  const itemsRef = useRef(items)
+  useEffect(() => {
+    itemsRef.current = items
+  }, [items])
 
   const fetchRecent = useCallback(async () => {
     // cancel in-flight request
@@ -58,6 +64,44 @@ export function useRecent() {
     }
   }, [])
 
+  // bug37: silent background revalidation (cache-first). The currently
+  // rendered items stay on screen — no loading-state flip, no 'Lade…' flash,
+  // no cache invalidation — while the fresh page is fetched in the background;
+  // it replaces them on arrival. With nothing rendered (empty or failed
+  // initial load) it degrades to the regular loading fetch so the
+  // 'Lade…' → error card flow of the first load / error retry is preserved.
+  const refresh = useCallback(async () => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    const hasItems =
+      (cache.get('recent')?.items.length ?? 0) > 0 || itemsRef.current.length > 0
+    if (!hasItems) {
+      setLoading(true)
+      setError(null)
+    }
+    try {
+      const result = await fetchRecentlyPlayed(RECENT_LIMIT, controller.signal)
+      if (!controller.signal.aborted) {
+        cache.set('recent', { items: result, fetchedAt: Date.now() })
+        setItems(result)
+        setError(null)
+        setLoading(false)
+      }
+    } catch (err: unknown) {
+      if (!controller.signal.aborted) {
+        const message = err instanceof Error ? err.message : 'Failed to load recently played'
+        console.warn('useRecent error:', message)
+        if (!hasItems) {
+          setError(message)
+          setLoading(false)
+        }
+        // stale items on screen: keep them, the pane stays usable
+      }
+    }
+  }, [])
+
   useEffect(() => {
     void fetchRecent()
     return () => {
@@ -70,5 +114,5 @@ export function useRecent() {
     void fetchRecent()
   }, [fetchRecent])
 
-  return { items, loading, error, refetch }
+  return { items, loading, error, refetch, refresh }
 }
