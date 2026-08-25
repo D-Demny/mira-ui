@@ -2,6 +2,7 @@ import { memo, useEffect, useState } from 'react'
 import styles from './DebugScreen.module.scss'
 import { fetchDebugStatus, sendDebugReport } from '@/api/client'
 import type { DebugStatus } from '@/api/types'
+import { __cacheStats } from '@/hooks/cacheStats'
 
 interface Props {
   open: boolean
@@ -51,6 +52,50 @@ function ramTone(free: number): Tone {
   if (free < 30) return 'bad'
   if (free < 60) return 'warn'
   return 'ok'
+}
+
+function fmtBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  return `${(bytes / 1024).toFixed(1)} KB`
+}
+
+// bug45 option C: live occupancy of the module-level UI caches, so a device
+// session can read the actual bounds (the daemon status above covers the
+// daemon side). Recomputed on every render — the 1.5s status poll keeps it
+// fresh, and it stays visible even when the daemon does not respond.
+function CacheSection() {
+  const stats = __cacheStats()
+  return (
+    <>
+      <Section title="UI cache (bug45)" />
+      <Row
+        label="usePlaylists"
+        value={`${stats.usePlaylists.entries} entry / ${stats.usePlaylists.items} items · ${fmtBytes(stats.usePlaylists.approxBytes)}`}
+      />
+      <Row
+        label="useRecent"
+        value={`${stats.useRecent.entries} entry / ${stats.useRecent.items} items · ${fmtBytes(stats.useRecent.approxBytes)}`}
+      />
+      <Row
+        label="usePlaylistTracks"
+        value={`${stats.usePlaylistTracks.entries}/${stats.usePlaylistTracks.maxEntries} · ${stats.usePlaylistTracks.tracks} tracks · ${fmtBytes(stats.usePlaylistTracks.approxBytes)}`}
+      />
+      <Row
+        label="useColorExtract"
+        value={`${stats.useColorExtract.entries}/${stats.useColorExtract.maxEntries} · ${fmtBytes(stats.useColorExtract.approxBytes)}`}
+      />
+      <Row label="useHomeLights" value={`${stats.useHomeLights.entities} entities`} />
+      <Row label="useLyrics" value={`${stats.useLyrics.entries}/${stats.useLyrics.maxEntries} LRU`} />
+      <Row
+        label="usePrefetch"
+        value={`${stats.usePrefetch.entries}/${stats.usePrefetch.maxEntries} uris · ${fmtBytes(stats.usePrefetch.approxBytes)}`}
+      />
+      <Row
+        label="warmedArt"
+        value={`${stats.warmedArt.entries}/${stats.warmedArt.maxEntries} · ${fmtBytes(stats.warmedArt.approxBytes)}`}
+      />
+    </>
+  )
 }
 
 function StatusView({ status }: { status: DebugStatus }) {
@@ -273,6 +318,7 @@ function DebugScreenImpl({ open, onClose, onReport }: Props) {
       <div className={styles.body}>
         {err && !status && <div className={styles.err}>daemon not responding on :3678</div>}
         {status && <StatusView status={status} />}
+        <CacheSection />
       </div>
 
       <div className={styles.hint}>Press back to exit</div>

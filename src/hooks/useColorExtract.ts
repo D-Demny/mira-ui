@@ -35,6 +35,17 @@ export function seedColorCache(url: string, rgb: RGB) {
   cache.set(url, rgb)
 }
 
+// per-entry overhead beyond the url string: one RGB tuple (audit §2.1 keeps
+// the store at ~10 KB for a few dozen covers) — debug size estimate only
+const APPROX_COLOR_ENTRY_BYTES = 24
+
+// test/debug introspection (bug45 option C: cache stats readout)
+export function __colorCacheStats() {
+  let approxBytes = 0
+  for (const url of cache.keys()) approxBytes += url.length + APPROX_COLOR_ENTRY_BYTES
+  return { entries: cache.size, maxEntries: CACHE_MAX, approxBytes }
+}
+
 function remember(url: string, rgb: RGB) {
   if (!cache.has(url) && cache.size >= CACHE_MAX) {
     const oldest = cache.keys().next().value

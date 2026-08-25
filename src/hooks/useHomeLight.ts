@@ -161,6 +161,12 @@ export function __resetHomeLightStore() {
   stores.clear()
 }
 
+// test/debug introspection (bug45 option C: cache stats readout) — the store
+// is bounded by HOME_LIGHTS, so the count alone documents the occupancy
+export function __homeLightStoreStats() {
+  return { entities: stores.size }
+}
+
 export function useHomeLight(entityId: string = HOME_LIGHT_ENTITY_ID) {
   const [, setVersion] = useState(0)
 

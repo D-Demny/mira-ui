@@ -17,6 +17,16 @@ export function clearRecentCache() {
   cache.clear()
 }
 
+// approximate in-memory weight of one recently-played item (audit §2.1) —
+// feeds the debug size estimate only
+const APPROX_RECENT_BYTES = 550
+
+// test/debug introspection (bug45 option C: cache stats readout)
+export function __recentCacheStats() {
+  const items = cache.get('recent')?.items.length ?? 0
+  return { entries: cache.size, items, approxBytes: items * APPROX_RECENT_BYTES }
+}
+
 export function useRecent() {
   const [items, setItems] = useState<SpotifyRecentlyPlayedItem[]>(
     () => cache.get('recent')?.items ?? [],

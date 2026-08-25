@@ -41,6 +41,13 @@ export function __resetLyricsCache(): void {
   richsyncTried.clear()
 }
 
+// test/debug introspection (bug45 option C: cache stats readout). The per-entry
+// payload is not derivable (plain lyrics vs. karaoke word timing differ a lot),
+// so only the count is reported
+export function __lyricsCacheStats() {
+  return { entries: cache.size, maxEntries: CACHE_LIMIT, richsyncTried: richsyncTried.size }
+}
+
 function cacheGet(id: string): LyricsResult | undefined {
   const v = cache.get(id)
   if (v !== undefined) {
