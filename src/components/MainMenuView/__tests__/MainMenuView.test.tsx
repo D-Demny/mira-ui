@@ -12,7 +12,7 @@ import { HOME_LIGHTS, __resetHomeLightStore } from '@/hooks/useHomeLight'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
-import { __resetWarmedArt } from '../warmedArt'
+import { __resetWarmedArt, hasWarmedArt } from '../warmedArt'
 
 const mockPlaylists = [
   {
@@ -642,6 +642,107 @@ describe('MainMenuView', () => {
       expect(screen.getByText('Road Trip').closest('.card')).toHaveClass('cardFocused')
       expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
       scrollSpy.mockRestore()
+    })
+  })
+
+  describe('bug48: pre-decode limited to the focus band (PREDECODE_RADIUS 20)', () => {
+    // 100 tracks for pl-1 — long enough that the ±20 band is a strict subset
+    // of the list (the device's 501-track Liked Songs list, scaled down)
+    const LONG_TRACKS = Array.from({ length: 100 }, (_, i) => ({
+      is_local: false,
+      track: {
+        id: `lt-${i}`,
+        name: `Band Track ${i}`,
+        uri: `spotify:track:lt-${i}`,
+        artists: [{ name: 'Someone' }],
+        album: { name: 'An Album', images: [{ url: `http://img/band-${i}.jpg` }] },
+        position: i,
+      },
+    }))
+
+    it('warms only focus ± 20 of the displayed track list, not the whole list', async () => {
+      server.use(
+        http.get('*/web-api/playlists/pl-1/tracks', () =>
+          HttpResponse.json({
+            items: LONG_TRACKS,
+            total: 100,
+            limit: 50,
+            offset: 0,
+            next: null,
+          }),
+        ),
+      )
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      fireEvent.click(screen.getByText('Road Trip'))
+      await screen.findByText('Band Track 0')
+
+      // focus is on track 0: the warmed band is [0, 21) — the pre-decode no
+      // longer front-loads all 100 covers into Chromium's image cache
+      await waitFor(() => expect(hasWarmedArt('http://img/band-20.jpg')).toBe(true))
+      expect(hasWarmedArt('http://img/band-21.jpg')).toBe(false)
+      expect(hasWarmedArt('http://img/band-99.jpg')).toBe(false)
+    })
+
+    it('the band follows the dial focus (new edge covers get warmed on the move)', async () => {
+      server.use(
+        http.get('*/web-api/playlists/pl-1/tracks', () =>
+          HttpResponse.json({
+            items: LONG_TRACKS,
+            total: 100,
+            limit: 50,
+            offset: 0,
+            next: null,
+          }),
+        ),
+      )
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      fireEvent.click(screen.getByText('Road Trip'))
+      await screen.findByText('Band Track 0')
+
+      // dial to track 50: the band slides to [30, 71) — the mounted window
+      // (16/16 around 50) sits inside the warmed band, so dialing still never
+      // meets an undecoded cover (bug8.2 behavior preserved)
+      for (let i = 0; i < 50; i++) wheel(-10)
+      await waitFor(() => expect(hasWarmedArt('http://img/band-70.jpg')).toBe(true))
+      expect(hasWarmedArt('http://img/band-71.jpg')).toBe(false)
+      // the focused card is mounted and in view
+      expect(screen.getByText('Band Track 50').closest('.card')).toHaveClass('cardFocused')
+    })
+
+    it('warms the entire list for categories below the band span (bug8.2 behavior unchanged)', async () => {
+      // 10 tracks: 2*20+1 = 41 > 10 → the focus band covers the whole list
+      server.use(
+        http.get('*/web-api/playlists/pl-2/tracks', () =>
+          HttpResponse.json({
+            items: Array.from({ length: 10 }, (_, i) => ({
+              is_local: false,
+              track: {
+                id: `st-${i}`,
+                name: `Short Track ${i}`,
+                uri: `spotify:track:st-${i}`,
+                artists: [{ name: 'Someone' }],
+                album: { name: 'An Album', images: [{ url: `http://img/short-${i}.jpg` }] },
+                position: i,
+              },
+            })),
+            total: 10,
+            limit: 50,
+            offset: 0,
+            next: null,
+          }),
+        ),
+      )
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      fireEvent.click(screen.getByText('Workout'))
+      await screen.findByText('Short Track 0')
+
+      await waitFor(() => expect(hasWarmedArt('http://img/short-9.jpg')).toBe(true))
     })
   })
 

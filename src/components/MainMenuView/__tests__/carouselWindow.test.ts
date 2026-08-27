@@ -3,6 +3,7 @@ import {
   CARD_GAP,
   CARD_WIDTH,
   NO_WINDOW_THRESHOLD,
+  WINDOW_MAX_CARDS,
   leadingSpacerWidth,
   trailingSpacerWidth,
   windowRange,
@@ -38,12 +39,16 @@ describe('windowRange (bug18)', () => {
     expect(windowRange(50, 25, { scrollLeft: 0, width: 0 })).toEqual({ start: 9, end: 42 })
   })
 
-  it('keeps still-visible cards mounted when the scroll lags behind the focus', () => {
+  it('keeps still-visible cards mounted when the scroll lags behind the focus (capped, bug48)', () => {
     // focus is at 30 but the physical scroll is still near the start of the
-    // list: the look-behind must not unmount the cards that are still on screen
+    // list: the look-behind must not unmount the cards that are still on
+    // screen — bug48 bounds the widening at WINDOW_MAX_CARDS, so the window
+    // no longer stretches over the whole list (452 of 501 cards observed on
+    // device before the cap)
     const range = windowRange(50, 30, { scrollLeft: 0, width: 800 })
-    expect(range.start).toBe(0) // pulled back to the visible left edge
-    expect(range.end).toBe(47) // index look-ahead unchanged
+    expect(range.end).toBe(47) // focus side (look-ahead) kept
+    expect(range.start).toBe(7) // capped: end - WINDOW_MAX_CARDS
+    expect(range.end - range.start).toBeLessThanOrEqual(WINDOW_MAX_CARDS)
   })
 
   it('does not shrink the index window once the scroll has caught up', () => {
@@ -70,9 +75,11 @@ describe('bug39: guard vs. foreign (stale) scroll offsets', () => {
     expect(leadingSpacerWidth(range.start)).toBe(0) // no offset padding at the left edge
   })
 
-  it('an offset beyond the end of the new list is clamped and never inverts the window', () => {
+  it('an offset beyond the end of the new list is clamped, capped (bug48), and never inverts the window', () => {
+    // the guard would widen to the whole list; the bug48 cap keeps 40 cards
+    // (the focus side — index 0 — is kept)
     const range = windowRange(50, 0, { scrollLeft: 60 * STEP, width: 550 })
-    expect(range).toEqual({ start: 0, end: 50 })
+    expect(range).toEqual({ start: 0, end: WINDOW_MAX_CARDS })
   })
 
   it('a freshly purged category (null metrics) renders the pure index-0 window', () => {
@@ -86,6 +93,59 @@ describe('bug39: guard vs. foreign (stale) scroll offsets', () => {
     expect(widened.start).toBeLessThanOrEqual(base.start)
     expect(widened.end).toBeGreaterThanOrEqual(base.end)
     expect(widened.end).toBeGreaterThan(base.end)
+  })
+})
+
+describe('bug48: window hard cap (WINDOW_MAX_CARDS)', () => {
+  it('bounds the window at WINDOW_MAX_CARDS even for an extreme scroll lag', () => {
+    // focus deep in the list, viewport still at the very start (the worst
+    // case of a lagging smooth scroll): the unbounded guard would have
+    // mounted nearly the whole list (452 of 501 cards on device)
+    const range = windowRange(501, 400, { scrollLeft: 0, width: 550 })
+    expect(range.end - range.start).toBe(WINDOW_MAX_CARDS)
+    // the focus stays mounted
+    expect(range.start).toBeLessThanOrEqual(400)
+    expect(range.end).toBeGreaterThan(400)
+  })
+
+  it('keeps the focus side when cutting: lag behind the focus (dial right)', () => {
+    const range = windowRange(501, 400, { scrollLeft: 0, width: 550 })
+    // the lag is to the LEFT of the focus — the right (focus) edge is kept:
+    // base look-ahead 400 + 1 + 16 = 417
+    expect(range.end).toBe(417)
+    expect(range.start).toBe(417 - WINDOW_MAX_CARDS)
+  })
+
+  it('keeps the focus side when cutting: lag ahead of the focus (dial left)', () => {
+    const range = windowRange(501, 100, { scrollLeft: 400 * STEP, width: 550 })
+    // the lag is to the RIGHT of the focus — the left (focus) edge is kept:
+    // base look-behind 100 - 16 = 84
+    expect(range.start).toBe(84)
+    expect(range.end).toBe(84 + WINDOW_MAX_CARDS)
+    expect(range.start).toBeLessThanOrEqual(100)
+    expect(range.end).toBeGreaterThan(100)
+  })
+
+  it('the cap only engages beyond the base window size (33 cards)', () => {
+    // no scroll: the pure base window is untouched
+    expect(windowRange(50, 25, null)).toEqual({ start: 9, end: 42 })
+    // guard widening that stays within the cap is untouched
+    expect(windowRange(50, 25, { scrollLeft: 40 * STEP, width: 550 })).toEqual({
+      start: 9,
+      end: 45,
+    })
+  })
+
+  it('the guard still only widens the window within the cap (never shrinks vs. base)', () => {
+    const base = windowRange(50, 25, null)
+    const widened = windowRange(50, 25, { scrollLeft: 40 * STEP, width: 550 })
+    expect(widened.start).toBeLessThanOrEqual(base.start)
+    expect(widened.end).toBeGreaterThanOrEqual(base.end)
+    expect(widened.end - widened.start).toBeLessThanOrEqual(WINDOW_MAX_CARDS)
+  })
+
+  it('short lists (< threshold) stay fully mounted regardless of the cap', () => {
+    expect(windowRange(39, 10, { scrollLeft: 0, width: 550 })).toEqual({ start: 0, end: 39 })
   })
 })
 
