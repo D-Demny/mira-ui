@@ -16,6 +16,12 @@ export interface UseOverlayListFocusOptions {
   onBack: () => void
   // row index focused when the overlay opens (default 0)
   initialIndex?: number
+  // bug46: optional custom wheel handling for the currently focused item
+  // (the HA light modal adjusts the slider value instead of moving the
+  // focus). dir is the focus direction (1 = down, -1 = up, same convention
+  // as the default movement). Returning true consumes the tick; returning
+  // false falls back to the default focus movement.
+  onWheel?: (dir: 1 | -1, focusedIndex: number) => boolean
 }
 
 export interface UseOverlayListFocusResult {
@@ -31,6 +37,7 @@ export function useOverlayListFocus({
   onConfirm,
   onBack,
   initialIndex = 0,
+  onWheel,
 }: UseOverlayListFocusOptions): UseOverlayListFocusResult {
   const [focusedIndex, setFocusedIndexState] = useState(() =>
     Math.max(0, Math.min(itemCount - 1, initialIndex)),
@@ -42,10 +49,12 @@ export function useOverlayListFocus({
   // entry on every render (same pattern as useMainMenuFocus)
   const onConfirmRef = useRef(onConfirm)
   const onBackRef = useRef(onBack)
+  const onWheelRef = useRef(onWheel)
   const itemCountRef = useRef(itemCount)
   useLayoutEffect(() => {
     onConfirmRef.current = onConfirm
     onBackRef.current = onBack
+    onWheelRef.current = onWheel
     itemCountRef.current = itemCount
   })
 
@@ -75,7 +84,11 @@ export function useOverlayListFocus({
       e.preventDefault()
       // hardware: clockwise turn = negative deltaX, focus moves down (same
       // convention as useListFocus / useMainMenuFocus)
-      moveFocus(e.deltaX > 0 ? -1 : 1)
+      const dir: 1 | -1 = e.deltaX > 0 ? -1 : 1
+      // bug46: the custom handler may consume the tick (e.g. slider adjust);
+      // otherwise the focus moves on
+      if (onWheelRef.current && onWheelRef.current(dir, focusedIndexRef.current)) return
+      moveFocus(dir)
     },
     [moveFocus],
   )
