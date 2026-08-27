@@ -68,6 +68,12 @@ interface ContentCarouselProps {
   onCardTap?: (card: MenuCard, index: number) => void
   // index of the dial-focused card (rendered with a focus outline + centered)
   focusedIndex?: number
+  // bug47: how the last focus change arrived — 'dial' (wheel tick) scrolls
+  // the focus in instantly (a smooth animation would restart on every 35 ms
+  // tick and keep the scroll 50+ cards behind the focus), 'jump' (tap,
+  // confirm, category switch) keeps the smooth scroll. Defaults to 'smooth'
+  // so standalone usage (tests, other views) is unchanged.
+  focusScrollBehavior?: 'auto' | 'smooth'
 }
 
 export function ContentCarousel({
@@ -76,6 +82,7 @@ export function ContentCarousel({
   activeTrackKey,
   onCardTap,
   focusedIndex,
+  focusScrollBehavior = 'smooth',
 }: ContentCarouselProps) {
   const focusedCardRef = useRef<HTMLElement | null>(null)
   const carouselRef = useRef<HTMLDivElement | null>(null)
@@ -140,10 +147,15 @@ export function ContentCarousel({
   }, [cards.length, focusedIndex, categoryId])
 
   // keep the focused card visible while the dial rotates through the carousel
+  // bug47: wheel ticks scroll instantly (behavior 'auto') — restarting a
+  // smooth animation on every tick both janks the UI (Bug47) and keeps the
+  // measured scroll far behind the focus so the bug18 guard widens the
+  // window toward the full list (Bug48). Taps, confirms and category switches
+  // keep the smooth scroll (visual convention)
   useEffect(() => {
     if (focusedIndex == null) return
-    focusedCardRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center' })
-  }, [focusedIndex, categoryId])
+    focusedCardRef.current?.scrollIntoView({ behavior: focusScrollBehavior, inline: 'center' })
+  }, [focusedIndex, categoryId, focusScrollBehavior])
 
   // bug5/bug6/bug18: mount only [start, end) plus invisible width spacers for
   // the off-screen cards so scroll metrics and index math stay correct

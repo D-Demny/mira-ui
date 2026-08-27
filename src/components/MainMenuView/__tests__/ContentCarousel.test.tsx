@@ -440,6 +440,84 @@ describe('bug5/bug6/bug18: windowed rendering', () => {
   })
 })
 
+describe('bug47: focusScrollBehavior per input type', () => {
+  const FEW: MenuCard[] = [
+    { id: 'f-1', title: 'First', subtitle: '' },
+    { id: 'f-2', title: 'Second', subtitle: '' },
+    { id: 'f-3', title: 'Third', subtitle: '' },
+  ]
+
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, 'scrollIntoView')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('dial ticks (behavior auto) scroll the focus into view instantly', () => {
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    const { rerender } = render(
+      <ContentCarousel
+        cards={FEW}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+      />,
+    )
+    scrollIntoView.mockClear()
+
+    // the wheel tick moves the focus — the scroll must be instant
+    rerender(
+      <ContentCarousel
+        cards={FEW}
+        categoryId="playlists"
+        focusedIndex={1}
+        focusScrollBehavior="auto"
+      />,
+    )
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'auto', inline: 'center' })
+  })
+
+  it('jumps (tap/confirm, behavior smooth) keep the smooth scroll', () => {
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    const { rerender } = render(
+      <ContentCarousel
+        cards={FEW}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="smooth"
+      />,
+    )
+    scrollIntoView.mockClear()
+
+    rerender(
+      <ContentCarousel
+        cards={FEW}
+        categoryId="playlists"
+        focusedIndex={1}
+        focusScrollBehavior="smooth"
+      />,
+    )
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
+  })
+
+  it('defaults to the smooth scroll when no behavior prop is given (standalone usage)', () => {
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    const { rerender } = render(<ContentCarousel cards={FEW} categoryId="playlists" focusedIndex={0} />)
+    scrollIntoView.mockClear()
+
+    rerender(<ContentCarousel cards={FEW} categoryId="playlists" focusedIndex={1} />)
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
+  })
+})
+
 describe('bug8.2: carousel card memo comparator', () => {
   const base = {
     card: CARDS_A[0],

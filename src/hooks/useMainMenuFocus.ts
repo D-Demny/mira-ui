@@ -3,6 +3,12 @@ import { ListFocusContext } from '@/navigation/listFocusContext'
 
 export type MainMenuPane = 'sidebar' | 'content'
 
+// bug47: how the LAST content-focus change arrived. 'dial' marks wheel ticks
+// (the carousel then scrolls instantly — behavior 'auto'); every other path
+// (card tap, dial-confirm, sub-menu open/close, list-shrink clamp) is a
+// 'jump' and keeps the smooth scroll animation (visual convention)
+export type ContentMoveKind = 'dial' | 'jump'
+
 export interface UseMainMenuFocusOptions {
   sidebarCount: number
   contentCount: number
@@ -26,6 +32,10 @@ export interface UseMainMenuFocusResult {
   activePane: MainMenuPane
   sidebarIndex: number
   contentIndex: number
+  // bug47: the nature of the last content-focus change ('dial' = wheel tick,
+  // 'jump' = tap/confirm/programmatic) — the carousel picks the scroll
+  // behavior from it
+  contentMoveKind: ContentMoveKind
   // select a sidebar item: focus it and enter the content pane,
   // the exit item closes the menu instead
   selectSidebar: (index: number) => void
@@ -53,6 +63,9 @@ export function useMainMenuFocus({
   const [activePane, setActivePaneState] = useState<MainMenuPane>('sidebar')
   const [sidebarIndex, setSidebarIndexState] = useState(0)
   const [contentIndex, setContentIndexState] = useState(0)
+  // bug47: initial value 'jump' — the mount/entry state is a jump (category
+  // entry / first card), never a dial tick
+  const [contentMoveKind, setContentMoveKind] = useState<ContentMoveKind>('jump')
 
   const activePaneRef = useRef<MainMenuPane>('sidebar')
   const sidebarIndexRef = useRef(0)
@@ -93,6 +106,8 @@ export function useMainMenuFocus({
     if (contentIndexRef.current !== 0) {
       contentIndexRef.current = 0
       setContentIndexState(0)
+      // bug47: the preview reset is a jump, not a dial tick
+      setContentMoveKind('jump')
     }
   }, [])
 
@@ -103,6 +118,8 @@ export function useMainMenuFocus({
     if (next === contentIndexRef.current) return
     contentIndexRef.current = next
     setContentIndexState(next)
+    // bug47: a wheel tick — the carousel scrolls the focus into view instantly
+    setContentMoveKind('dial')
   }, [])
 
   // bug20: every sidebar item (including 'Läuft gerade') transfers focus to
@@ -116,6 +133,8 @@ export function useMainMenuFocus({
       // move focus to the first card of the carousel
       contentIndexRef.current = 0
       setContentIndexState(0)
+      // bug47: category entry keeps the smooth scroll
+      setContentMoveKind('jump')
       setActivePane('content')
       onSelectSidebarRef.current?.(index)
     },
@@ -125,6 +144,8 @@ export function useMainMenuFocus({
   const selectContent = useCallback((index: number) => {
     contentIndexRef.current = index
     setContentIndexState(index)
+    // bug47: a tap/confirm keeps the smooth scroll
+    setContentMoveKind('jump')
     onConfirmContentRef.current(index)
   }, [])
 
@@ -132,6 +153,8 @@ export function useMainMenuFocus({
     const count = countsRef.current.contentCount
     contentIndexRef.current = Math.max(0, Math.min(count - 1, index))
     setContentIndexState(contentIndexRef.current)
+    // bug47: a programmatic focus move keeps the smooth scroll
+    setContentMoveKind('jump')
   }, [])
 
   const confirm = useCallback(() => {
@@ -177,6 +200,8 @@ export function useMainMenuFocus({
       const next = Math.max(0, contentCount - 1)
       contentIndexRef.current = next
       setContentIndexState(next)
+      // bug47: a clamp is a programmatic move — smooth scroll
+      setContentMoveKind('jump')
     }
   }, [contentCount])
 
@@ -196,6 +221,7 @@ export function useMainMenuFocus({
     activePane,
     sidebarIndex,
     contentIndex,
+    contentMoveKind,
     selectSidebar,
     selectContent,
     focusContent,
