@@ -900,6 +900,9 @@ export function MainMenuView({
             // selectContent confirms the tapped card (runs the card action exactly once)
             onCardTap={handleCardTap}
             focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+            // bug47: dial ticks scroll instantly, taps/confirms/switches keep
+            // the smooth scroll (the hook tags the last focus change)
+            focusScrollBehavior={focus.contentMoveKind === 'dial' ? 'auto' : 'smooth'}
           />
         )}
       </main>

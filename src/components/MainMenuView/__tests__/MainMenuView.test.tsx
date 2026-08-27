@@ -583,9 +583,64 @@ describe('MainMenuView', () => {
 
       wheel(-10)
       expect(screen.getByText('Workout').closest('.card')).toHaveClass('cardFocused')
-      expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
+      // bug47: wheel ticks scroll the focus into view INSTANTLY — restarting
+      // a smooth animation on every 35 ms tick was the sustained-jank root
+      // cause (and kept the scroll far behind the focus, bug48)
+      expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'auto', inline: 'center' })
       const lastEl = scrollSpy.mock.instances.at(-1)
       expect(lastEl).toBe(screen.getByText('Workout').closest('.card'))
+      scrollSpy.mockRestore()
+    })
+  })
+
+  describe('bug47: dial scrolls instantly, tap & confirm keep the smooth scroll', () => {
+    it('a wheel tick in the content pane scrolls the focus in with behavior auto', async () => {
+      const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      scrollSpy.mockClear()
+
+      wheel(-10)
+      expect(screen.getByText('Workout').closest('.card')).toHaveClass('cardFocused')
+      expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'auto', inline: 'center' })
+
+      // consecutive ticks stay instant
+      scrollSpy.mockClear()
+      wheel(-10)
+      expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'auto', inline: 'center' })
+      scrollSpy.mockRestore()
+    })
+
+    it('a card tap keeps the smooth scroll', async () => {
+      const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+      render(<MainMenuView />)
+      // enter the Home content pane (action cards: a tap toggles, no navigation)
+      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      await waitFor(() =>
+        expect(screen.getByText('Esstisch Hängelampe')).toBeInTheDocument(),
+      )
+      scrollSpy.mockClear()
+
+      // tap the (non-focused) second light card
+      fireEvent.click(screen.getByText('Esstisch Hängelampe'))
+      expect(screen.getByText('Esstisch Hängelampe').closest('.card')).toHaveClass('cardFocused')
+      expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
+      scrollSpy.mockRestore()
+    })
+
+    it('a category switch (sidebar confirm) keeps the smooth scroll', async () => {
+      const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
+      // back to the sidebar ...
+      pressBack()
+      scrollSpy.mockClear()
+      // ... and re-confirm the sidebar selection: the category entry is a jump
+      confirmDial()
+      expect(screen.getByText('Road Trip').closest('.card')).toHaveClass('cardFocused')
+      expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
       scrollSpy.mockRestore()
     })
   })
