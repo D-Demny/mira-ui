@@ -163,4 +163,30 @@ describe('useOverlayListFocus (bug31)', () => {
     })
     expect(result.current.focusedIndex).toBe(0)
   })
+
+  it('lets a custom onWheel consume the tick (bug46 slider adjust)', () => {
+    const onWheel = vi.fn(() => true)
+    const { result } = renderFocus({ onWheel })
+
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+
+    expect(onWheel).toHaveBeenCalledTimes(1)
+    // dir follows the focus direction convention (clockwise = down = 1)
+    expect(onWheel).toHaveBeenCalledWith(1, 0)
+    expect(result.current.focusedIndex).toBe(0)
+  })
+
+  it('falls back to focus movement when the custom onWheel returns false', () => {
+    const onWheel = vi.fn(() => false)
+    const { result } = renderFocus({ onWheel })
+
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+
+    expect(onWheel).toHaveBeenCalledWith(1, 0)
+    expect(result.current.focusedIndex).toBe(1)
+  })
 })

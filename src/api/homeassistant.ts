@@ -72,3 +72,64 @@ export async function toggleHaEntity(
   if (!Array.isArray(body)) return null
   return body.find((s) => s.entity_id === entityId) ?? null
 }
+
+// bug46: res.json() throws a TypeError on non-JSON error bodies (HTML 500s
+// from the proxy) — guard the parse (same pattern as client.ts)
+async function safeJson(res: Response): Promise<unknown> {
+  const ct = res.headers.get('content-type') ?? ''
+  if (!ct.includes('application/json')) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Expected JSON but got ${ct || 'unknown'}: ${text.slice(0, 200)}`)
+  }
+  try {
+    return (await res.json()) as unknown
+  } catch {
+    throw new Error('Failed to parse JSON')
+  }
+}
+
+// bug46: light.turn_on via the daemon's GENERIC /ha-api/ service proxy
+// (POST /ha-api/services/light/turn_on) — the proxy forwards the body
+// verbatim, so the new service parameters need no daemon change.
+//
+// Parameter note (ticket correction): HA's color-temperature parameter for
+// light.turn_on is `color_temp_kelvin` — NOT `kelvin` as the ticket wrote.
+// Brightness is `brightness_pct` (0–100).
+export interface HaLightServiceData {
+  brightness_pct?: number
+  color_temp_kelvin?: number
+}
+
+export async function callHaLightService(
+  entityId: string,
+  data: HaLightServiceData,
+  signal?: AbortSignal,
+): Promise<HaEntityState[]> {
+  const res = await haFetch(
+    '/services/light/turn_on',
+    { method: 'POST', body: JSON.stringify({ entity_id: entityId, ...data }) },
+    signal,
+  )
+  if (!res.ok) throw new Error(`home assistant ${res.status}`)
+  const body = (await safeJson(res)) as HaEntityState[]
+  return Array.isArray(body) ? body : []
+}
+
+export function setHaLightBrightness(
+  entityId: string,
+  pct: number,
+  signal?: AbortSignal,
+): Promise<HaEntityState[]> {
+  // turn_on cannot express "off": brightness_pct is 1–100, so the modal's
+  // 0 % slider position maps to the minimum 1 %
+  const value = Math.max(1, Math.min(100, Math.round(pct)))
+  return callHaLightService(entityId, { brightness_pct: value }, signal)
+}
+
+export function setHaLightColorTemp(
+  entityId: string,
+  kelvin: number,
+  signal?: AbortSignal,
+): Promise<HaEntityState[]> {
+  return callHaLightService(entityId, { color_temp_kelvin: Math.round(kelvin) }, signal)
+}

@@ -8,7 +8,7 @@ import { server } from '@/__tests__/msw-server'
 import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
-import { HOME_LIGHTS } from '@/hooks/useHomeLight'
+import { HOME_LIGHTS, __resetHomeLightStore } from '@/hooks/useHomeLight'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
@@ -157,6 +157,11 @@ describe('MainMenuView', () => {
     clearRecentCache()
     clearTracksCache()
     clearColorCache()
+    // bug46: the per-entity home-light store (incl. its in-flight dedup) is
+    // module-level — a fast-unmounted previous test can leave a fetch in
+    // flight that resolves against the PREVIOUS test's MSW handlers and
+    // re-seeds the store (stale dimmable capability)
+    __resetHomeLightStore()
     // bug45 option C: the warmed-art set is module-level — reset it per test
     // so the bug8.2 pre-decode assertions start from a fresh session
     __resetWarmedArt()
@@ -2016,6 +2021,110 @@ describe('MainMenuView', () => {
       expect(carouselEl(container).scrollLeft).toBe(deep)
       // the window still covers the measured position, not the index-0 window
       expect(screen.getByText('Queue 22')).toBeInTheDocument()
+    })
+  })
+
+  describe('bug46: dimmable HA light cards open the control popup', () => {
+    it('a dimmable light card opens the popup instead of toggling', async () => {
+      const onOpenLightControl = vi.fn()
+      const toggled: string[] = []
+      server.use(
+        // the live HA facts: all 9 lights report these color modes
+        http.get('*/ha-api/states/light.3er_stehlampe_gold_esszimmer', () =>
+          HttpResponse.json({
+            entity_id: 'light.3er_stehlampe_gold_esszimmer',
+            state: 'off',
+            attributes: {
+              supported_color_modes: ['color_temp', 'xy'],
+              min_color_temp_kelvin: 2202,
+              max_color_temp_kelvin: 6535,
+            },
+          }),
+        ),
+        http.post('*/ha-api/services/light/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          toggled.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+        }),
+      )
+      render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      fireEvent.click(screen.getByText('3er Stehlampe Gold'))
+
+      await waitFor(() =>
+        expect(onOpenLightControl).toHaveBeenCalledWith(
+          'light.3er_stehlampe_gold_esszimmer',
+          '3er Stehlampe Gold',
+        ),
+      )
+      // the dimmable card must NOT toggle directly
+      expect(toggled).toEqual([])
+    })
+
+    it('a light without brightness/color_temp support keeps the direct toggle', async () => {
+      const onOpenLightControl = vi.fn()
+      const toggled: string[] = []
+      server.use(
+        http.get('*/ha-api/states/light.esstisch_hangelampe_3er', () =>
+          HttpResponse.json({
+            entity_id: 'light.esstisch_hangelampe_3er',
+            state: 'off',
+            attributes: { supported_color_modes: [] },
+          }),
+        ),
+        http.post('*/ha-api/services/light/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          toggled.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+        }),
+      )
+      render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      fireEvent.click(screen.getByText('Esstisch Hängelampe'))
+
+      await waitFor(() => expect(toggled).toEqual(['light.esstisch_hangelampe_3er']))
+      expect(onOpenLightControl).not.toHaveBeenCalled()
+    })
+
+    it('a light advertising only the legacy SUPPORT_BRIGHTNESS bit (bit 0 of supported_features, no color modes) opens the popup', async () => {
+      const onOpenLightControl = vi.fn()
+      const toggled: string[] = []
+      server.use(
+        http.get('*/ha-api/states/light.3er_deko_esszimmer', () =>
+          HttpResponse.json({
+            entity_id: 'light.3er_deko_esszimmer',
+            state: 'off',
+            // no supported_color_modes at all, but the legacy feature bit
+            // SUPPORT_BRIGHTNESS = 1 (bit 0) is set
+            attributes: { supported_features: 1 },
+          }),
+        ),
+        http.post('*/ha-api/services/light/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          toggled.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+        }),
+      )
+      render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      fireEvent.click(screen.getByText('3er Deko'))
+
+      await waitFor(() =>
+        expect(onOpenLightControl).toHaveBeenCalledWith(
+          'light.3er_deko_esszimmer',
+          '3er Deko',
+        ),
+      )
+      expect(toggled).toEqual([])
     })
   })
 })

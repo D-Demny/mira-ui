@@ -37,4 +37,17 @@ export const server = setupServer(
       },
     ])
   }),
+  // bug46: light.turn_on (brightness_pct / color_temp_kelvin) — like the
+  // toggle handler, echo the requested entity back so the mock behaves like
+  // the generic /ha-api/ service proxy
+  http.post('*/ha-api/services/light/turn_on', async ({ request }) => {
+    const body = (await request.json()) as { entity_id?: string }
+    return HttpResponse.json([
+      {
+        entity_id: body.entity_id ?? 'light.3er_stehlampe_gold_esszimmer',
+        state: 'on',
+        attributes: {},
+      },
+    ])
+  }),
 )

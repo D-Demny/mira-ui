@@ -10,6 +10,7 @@ import { HomeMenuView } from '@/components/HomeMenuView'
 import { IdleScreen } from '@/components/IdleScreen'
 import { LibraryView } from '@/components/LibraryView'
 import { MainMenuView } from '@/components/MainMenuView'
+import { HALightControlModal } from '@/components/MainMenuView/HALightControlModal'
 import { Lyrics } from '@/components/Lyrics'
 import { Menu } from '@/components/Menu'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
@@ -130,6 +131,8 @@ export default function App() {
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [settingsOpenReal, setSettingsOpen] = useState(false)
   const [defaultDeviceModalOpen, setDefaultDeviceModalOpen] = useState(false)
+  // bug46: the dimmable HA light control popup (entity + label while open)
+  const [lightControl, setLightControl] = useState<{ entityId: string; label: string } | null>(null)
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [transferPromptActive, setTransferPromptActive] = useState(false)
@@ -806,6 +809,13 @@ export default function App() {
           onClose={() => setDeviceMenuOpen(false)}
         />
       ) : null}
+      {lightControl ? (
+        <HALightControlModal
+          entityId={lightControl.entityId}
+          label={lightControl.label}
+          onClose={() => setLightControl(null)}
+        />
+      ) : null}
       {btMenuOpen ? <BluetoothMenu online={online} onClose={() => setBtMenuOpen(false)} /> : null}
       <DebugScreen open={debugOpen} onClose={() => setDebugOpen(false)} onReport={setReportId} />
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
@@ -1004,7 +1014,10 @@ export default function App() {
   if (forced === 'mainmenu') {
     return (
       <div className={styles.app}>
-        <MainMenuView />
+        <MainMenuView
+          // bug46: the dev screen also gets the light control popup
+          onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
+        />
         {globalOverlays}
       </div>
     )
@@ -1139,6 +1152,8 @@ export default function App() {
             onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
             onOpenDevices={() => setDeviceMenuOpen(true)}
             onOpenBluetooth={() => setBtMenuOpen(true)}
+            // bug46: dimmable HA light cards open the control popup
+            onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
           />
           {globalOverlays}
         </div>

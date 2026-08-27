@@ -182,6 +182,9 @@ export interface MainMenuViewProps {
   onOpenDefaultDevice?: () => void
   onOpenDevices?: () => void
   onOpenBluetooth?: () => void
+  // bug46: a dimmable HA light card opens the brightness / color-temperature
+  // popup (rendered by the App's globalOverlays) instead of toggling directly
+  onOpenLightControl?: (entityId: string, label: string) => void
 }
 
 // Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4b, 8.4c).
@@ -194,6 +197,7 @@ export function MainMenuView({
   onOpenDefaultDevice,
   onOpenDevices,
   onOpenBluetooth,
+  onOpenLightControl,
 }: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
   // bug4: non-null while a playlist's track list is open as a sub-menu
@@ -247,9 +251,14 @@ export function MainMenuView({
   // bug34: useHomeLights() returns fresh view objects on every render — collapse
   // the per-light state into a scalar key (like nowPlayingQueueKey) so the
   // categories memo only rebuilds when a light's on/off/loading/error state
-  // actually changes, never on the object churn alone (bug8.1)
+  // actually changes, never on the object churn alone (bug8.1). bug46: the
+  // dimmable capability is part of the snapshot (the card action depends on
+  // it once the capability fetch lands)
   const lightSnapshotKey = lightViews
-    .map((view) => `${view.state ?? ''}|${view.loading ? 1 : 0}|${view.error ?? ''}`)
+    .map(
+      (view) =>
+        `${view.state ?? ''}|${view.loading ? 1 : 0}|${view.error ?? ''}|${view.dimmable ? 1 : 0}`,
+    )
     .join('\u0000')
 
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
@@ -596,12 +605,20 @@ export function MainMenuView({
       setActiveCategoryId('now-playing')
       onPlay?.(card.uri)
     } else if (card.kind === 'action' && card.actionId?.startsWith('toggle-light:')) {
-      // bug34: per-light toggle — the action id carries the entity id, so each
-      // home card toggles its own light (card 0 = the former primary card).
-      // Keep focus inside the carousel — no view transition
+      // bug34: per-light action — the action id carries the entity id (card 0
+      // = the former primary card). Keep focus inside the carousel — no view
+      // transition.
+      // bug46: dimmable lights (capability from supported_color_modes) open
+      // the brightness / color-temperature control popup instead of toggling;
+      // non-dimmable lights — and lights whose capability is still unknown
+      // (first fetch pending, offline) — keep the direct toggle
       const entityId = card.actionId.slice('toggle-light:'.length)
       const view = lightViews.find((light) => light.entityId === entityId)
-      view?.toggle()
+      if (view?.dimmable) {
+        onOpenLightControl?.(view.entityId, view.label)
+      } else {
+        view?.toggle()
+      }
     } else if (card.id === 'tr-error') {
       // error placeholder: dial press retries the track list fetch
       refetchTracks()
