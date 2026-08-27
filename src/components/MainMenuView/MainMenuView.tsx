@@ -164,6 +164,15 @@ interface OpenTracklist {
 // next page is fetched in the background
 const LOAD_MORE_THRESHOLD = 9
 
+// bug48: how far around the focus the bug8.2 pre-decode reaches (cards on
+// each side). The band always covers the mounted carousel window (base
+// 16/16, capped at 40 cards → 19/20 max), so dialing never meets an
+// undecoded cover — but the whole 501-track list is no longer front-loaded
+// into Chromium's image cache (the OOM incident's ~116 MB fill). For
+// categories with fewer than 2*PREDECODE_RADIUS+1 cards the band covers the
+// entire list, so short categories keep the exact bug8.2 behavior.
+const PREDECODE_RADIUS = 20
+
 export interface MainMenuViewProps {
   // starts playback for a media card uri; an optional offset starts a context
   // at a specific track (playlist track sub-menu); the view stays open and
@@ -484,26 +493,6 @@ export function MainMenuView({
     tracksError,
   ])
 
-  // bug8.2 (vertical dial): pre-decode every menu cover once so a sidebar
-  // preview swap (full carousel remount) only pays layout/paint of already
-  // decoded bitmaps instead of fetch+decode per tick. bug45 option C: the
-  // warmed-url set is FIFO-bounded (1000) — evicted urls are re-warmed on the
-  // next focus, the pre-decode behavior itself is unchanged
-  useEffect(() => {
-    for (const category of categories) {
-      for (const card of category.cards) {
-        const art = card.art
-        if (!art || !warmArt(art)) continue
-        const img = new Image()
-        // match AlbumArt's fetch attributes so the browser reuses the same
-        // cache entry (CORS images are cached separately)
-        img.crossOrigin = 'anonymous'
-        img.referrerPolicy = 'no-referrer'
-        img.src = art
-      }
-    }
-  }, [categories])
-
   // the confirmed selection (dial press / tap); in the sidebar pane the
   // carousel live-previews the *focused* item instead (bug1)
   const confirmedCategory =
@@ -816,6 +805,36 @@ export function MainMenuView({
   const focusedArt = focusedCard?.art
   useColorExtract(focusedArt)
   const ambientAccent = focusedArt ? colorCacheGet(focusedArt) : null
+
+  // bug8.2: pre-decode menu covers once so a sidebar preview swap (full
+  // carousel remount) only pays layout/paint of already decoded bitmaps
+  // instead of fetch+decode per tick. bug45 option C: the warmed-url set is
+  // FIFO-bounded (1000) — evicted urls are re-warmed on the next focus.
+  // bug48: only the PREDECODE_RADIUS band around the displayed category's
+  // focus is warmed — every other category around its entry point (card 0,
+  // where the sidebar preview and a fresh entry both start). Warming an
+  // entire 501-track list front-loaded ~180 MB of decoded bitmaps into
+  // Chromium's image cache during the OOM incident; the band covers the
+  // mounted carousel window (≤40 cards), so dialing still never meets an
+  // undecoded cover. Declared after displayedCategory/focus exist.
+  useEffect(() => {
+    for (const category of categories) {
+      const isDisplayed = category === displayedCategory
+      const focusIndex = isDisplayed && focus.activePane === 'content' ? focus.contentIndex : 0
+      const bandStart = Math.max(0, focusIndex - PREDECODE_RADIUS)
+      const bandEnd = Math.min(category.cards.length, focusIndex + 1 + PREDECODE_RADIUS)
+      for (let i = bandStart; i < bandEnd; i++) {
+        const art = category.cards[i].art
+        if (!art || !warmArt(art)) continue
+        const img = new Image()
+        // match AlbumArt's fetch attributes so the browser reuses the same
+        // cache entry (CORS images are cached separately)
+        img.crossOrigin = 'anonymous'
+        img.referrerPolicy = 'no-referrer'
+        img.src = art
+      }
+    }
+  }, [categories, displayedCategory, focus.activePane, focus.contentIndex])
 
   const viewStyle = {
     ...(ambientAccent

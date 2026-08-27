@@ -12,6 +12,19 @@ export const NO_WINDOW_THRESHOLD = 40
 // keep this many extra cards mounted beyond the physical scroll viewport while
 // a scroll transition is in flight (bug18 viewport safety guard)
 export const SCROLL_SAFE_MARGIN = 2
+// bug48: hard cap on how many cards the viewport safety guard may mount.
+// Without the cap, a scroll position far behind the focus (fast dialing with
+// a lagging smooth scroll) widens the window over nearly the ENTIRE list
+// (observed on device: 452 of 501 cards mounted). Mounted cards hold their
+// decoded covers non-evictable in Chromium's image cache — together with the
+// pre-decode cache that pushed the renderer into the OOM crash after ~13 h
+// dwell. The cap must still cover the base window (16 + 1 + 16 = 33 cards)
+// plus the worst-case physical view beyond it: the ~550px viewport holds ~3
+// cards and the guard adds SCROLL_SAFE_MARGIN on each side — 40 keeps ≥7
+// cards of slack on one side. When the cap cuts, the side AWAY from the
+// focus is cut (the lag is on that side; bug47's instant dial scroll removes
+// the lag in the first place).
+export const WINDOW_MAX_CARDS = 40
 // keep in sync with $card-art-size / $s-6 in ContentCarousel.module.scss
 export const CARD_WIDTH = 170
 export const CARD_GAP = 24
@@ -27,7 +40,7 @@ export interface ScrollMetrics {
 // which slice of the card list is mounted. Short lists (< NO_WINDOW_THRESHOLD)
 // render in full. Longer lists mount a symmetrical WINDOW_BEFORE/WINDOW_AFTER
 // buffer around the focus, widened so the currently visible cards are never
-// unmounted mid-scroll (bug18).
+// unmounted mid-scroll (bug18) — but never beyond WINDOW_MAX_CARDS (bug48).
 export function windowRange(
   count: number,
   focusedIndex: number | undefined,
@@ -44,6 +57,24 @@ export function windowRange(
     // only ever widens the window (keeps visible/near cards mounted)
     start = Math.min(start, Math.max(0, visibleLeft - SCROLL_SAFE_MARGIN))
     end = Math.max(end, Math.min(count, visibleRight + SCROLL_SAFE_MARGIN))
+  }
+  // bug48: bound the guard's widening. The lag (and thus the widening) is on
+  // the side away from the focus — cut that side, keep the focus and its
+  // buffer mounted. The cap only triggers beyond the 33-card base window, so
+  // the cut never inverts the window (end - start > WINDOW_MAX_CARDS with
+  // start ≥ 0 implies end > WINDOW_MAX_CARDS).
+  if (end - start > WINDOW_MAX_CARDS) {
+    if (center - start <= end - 1 - center) {
+      end = start + WINDOW_MAX_CARDS
+    } else {
+      start = end - WINDOW_MAX_CARDS
+    }
+    // degenerate guard (a measured viewport wider than ~40 cards cannot
+    // happen on the device): the focus must stay inside the window
+    if (center < start || center >= end) {
+      start = Math.max(0, center - WINDOW_BEFORE)
+      end = Math.min(count, start + WINDOW_MAX_CARDS)
+    }
   }
   return { start, end }
 }
