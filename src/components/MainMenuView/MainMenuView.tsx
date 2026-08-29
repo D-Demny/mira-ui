@@ -26,7 +26,7 @@ import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
 import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
-import type { MenuCard } from './mockData'
+import type { MenuCard, MenuCategory } from './mockData'
 import { warmArt } from './warmedArt'
 import styles from './MainMenuView.module.scss'
 
@@ -806,6 +806,14 @@ export function MainMenuView({
   useColorExtract(focusedArt)
   const ambientAccent = focusedArt ? colorCacheGet(focusedArt) : null
 
+  // bug47 R2 (F3): the last warmed band per category — the index range plus
+  // the category object that was warmed, so a rebuilt card list (page load,
+  // queue reorder, track-list/library swap) is detected and re-warmed in
+  // full. Lives in a ref: the diff is state without rendering consequences.
+  const lastWarmBandRef = useRef<
+    Map<string, { start: number; end: number; category: MenuCategory }>
+  >(new Map())
+
   // bug8.2: pre-decode menu covers once so a sidebar preview swap (full
   // carousel remount) only pays layout/paint of already decoded bitmaps
   // instead of fetch+decode per tick. bug45 option C: the warmed-url set is
@@ -817,13 +825,18 @@ export function MainMenuView({
   // Chromium's image cache during the OOM incident; the band covers the
   // mounted carousel window (≤40 cards), so dialing still never meets an
   // undecoded cover. Declared after displayedCategory/focus exist.
+  // bug47 R2 (F3): INCREMENTAL — the effect used to re-walk all five category
+  // bands on every focus change (~235 warmArt set lookups per dial tick, in
+  // the same task as the carousel's passive effects). Now only the band
+  // DIFF since the last run is warmed: a dial tick slides the displayed
+  // category's band by one card → 1-2 new edge covers (warmArt is idempotent,
+  // so the diff is computed on index ranges; a rebuilt category or a band
+  // reset warms the full new band). The covers of the stable band interior
+  // were warmed earlier and warmArt skips them — same warm timing (band
+  // entry) as before, ~2 lookups instead of ~235 per tick.
   useEffect(() => {
-    for (const category of categories) {
-      const isDisplayed = category === displayedCategory
-      const focusIndex = isDisplayed && focus.activePane === 'content' ? focus.contentIndex : 0
-      const bandStart = Math.max(0, focusIndex - PREDECODE_RADIUS)
-      const bandEnd = Math.min(category.cards.length, focusIndex + 1 + PREDECODE_RADIUS)
-      for (let i = bandStart; i < bandEnd; i++) {
+    const warmRange = (category: MenuCategory, from: number, to: number) => {
+      for (let i = from; i < to; i++) {
         const art = category.cards[i].art
         if (!art || !warmArt(art)) continue
         const img = new Image()
@@ -833,6 +846,26 @@ export function MainMenuView({
         img.referrerPolicy = 'no-referrer'
         img.src = art
       }
+    }
+    const lastBand = lastWarmBandRef.current
+    for (const category of categories) {
+      const isDisplayed = category === displayedCategory
+      const focusIndex = isDisplayed && focus.activePane === 'content' ? focus.contentIndex : 0
+      const bandStart = Math.max(0, focusIndex - PREDECODE_RADIUS)
+      const bandEnd = Math.min(category.cards.length, focusIndex + 1 + PREDECODE_RADIUS)
+      const prev = lastBand.get(category.id)
+      if (prev && prev.category === category) {
+        // same card list: warm only what the band gained since the last run
+        // (a dial tick gained one edge card; a back-and-forth slide gains
+        // nothing, because the dropped edge was already warmed)
+        if (bandStart < prev.start) warmRange(category, bandStart, Math.min(bandEnd, prev.start))
+        if (bandEnd > prev.end) warmRange(category, Math.max(bandStart, prev.end), bandEnd)
+      } else {
+        // first sighting or rebuilt card list: warm the full band — warmArt
+        // de-dupes the urls already in the set
+        warmRange(category, bandStart, bandEnd)
+      }
+      lastBand.set(category.id, { start: bandStart, end: bandEnd, category })
     }
   }, [categories, displayedCategory, focus.activePane, focus.contentIndex])
 

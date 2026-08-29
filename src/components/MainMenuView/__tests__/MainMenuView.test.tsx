@@ -13,6 +13,7 @@ import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorE
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import { __resetWarmedArt, hasWarmedArt } from '../warmedArt'
+import { dialScrollLeft } from '../carouselWindow'
 
 const mockPlaylists = [
   {
@@ -743,6 +744,137 @@ describe('MainMenuView', () => {
       await screen.findByText('Short Track 0')
 
       await waitFor(() => expect(hasWarmedArt('http://img/short-9.jpg')).toBe(true))
+    })
+  })
+
+  describe('bug47 R2 (F3): pre-decode is incremental (band diff per tick)', () => {
+    // 100 tracks for pl-1 — the same fixture shape as the bug48 band describe
+    const LONG_TRACKS = Array.from({ length: 100 }, (_, i) => ({
+      is_local: false,
+      track: {
+        id: `lt-${i}`,
+        name: `Band Track ${i}`,
+        uri: `spotify:track:lt-${i}`,
+        artists: [{ name: 'Someone' }],
+        album: { name: 'An Album', images: [{ url: `http://img/band-${i}.jpg` }] },
+        position: i,
+      },
+    }))
+
+    function trackListFixture(): void {
+      server.use(
+        http.get('*/web-api/playlists/pl-1/tracks', () =>
+          HttpResponse.json({
+            items: LONG_TRACKS,
+            total: 100,
+            limit: 50,
+            offset: 0,
+            next: null,
+          }),
+        ),
+      )
+    }
+
+    // the pre-decode creates the only `new Image()` calls in these tests —
+    // seed the color cache so useColorExtract never creates its own Image
+    // for the focused cover (it would pollute the pre-decode count)
+    function seedColors(): void {
+      for (const item of LONG_TRACKS) {
+        seedColorCache(item.track.album.images[0].url, [10, 20, 30])
+      }
+      seedColorCache('http://img/s.jpg', [10, 20, 30])
+      seedColorCache('http://img/r.jpg', [10, 20, 30])
+      seedColorCache('http://img/liked.jpg', [10, 20, 30])
+    }
+
+    async function enterTrackList(): Promise<void> {
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      fireEvent.click(screen.getByText('Road Trip'))
+      await screen.findByText('Band Track 0')
+      // focus 0: the entry band [0,21) is fully warmed
+      await waitFor(() => expect(hasWarmedArt('http://img/band-20.jpg')).toBe(true))
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('a dial tick warms only the new band edge, not the whole category bands', async () => {
+      const created: HTMLImageElement[] = []
+      const RealImage = window.Image
+      vi.stubGlobal('Image', function () {
+        const img = new RealImage()
+        created.push(img)
+        return img
+      })
+      trackListFixture()
+      seedColors()
+
+      render(<MainMenuView />)
+      await enterTrackList()
+      const preTick = created.length
+
+      // simulate a warmed-set eviction (bug45 option C FIFO bound): the
+      // warmer must NOT re-walk the stable band interior — only the new edge
+      // of the sliding band gets warmed
+      __resetWarmedArt()
+      wheel(-10) // focus 1: the band slides to [0,22)
+      await waitFor(() => expect(hasWarmedArt('http://img/band-21.jpg')).toBe(true))
+
+      // exactly ONE new cover — the band edge — instead of the ~235 warmArt
+      // lookups (and their new Images for the evicted urls) the old loop did
+      // on every focus change
+      const fresh = created.slice(preTick)
+      expect(fresh).toHaveLength(1)
+      expect(fresh[0].src).toBe('http://img/band-21.jpg')
+      // the stable band interior is NOT re-warmed
+      expect(created.filter((img) => img.src === 'http://img/band-5.jpg')).toHaveLength(1)
+    })
+
+    it('a category switch warms the full entry band of the rebuilt category', async () => {
+      const created: HTMLImageElement[] = []
+      const RealImage = window.Image
+      vi.stubGlobal('Image', function () {
+        const img = new RealImage()
+        created.push(img)
+        return img
+      })
+      trackListFixture()
+      seedColors()
+
+      render(<MainMenuView />)
+      await enterTrackList()
+      // dial 50 ticks: the band slides to [30,71) (one edge cover per tick)
+      for (let i = 0; i < 50; i++) wheel(-10)
+      await waitFor(() => expect(hasWarmedArt('http://img/band-70.jpg')).toBe(true))
+      const beforeSwitch = created.length
+
+      // simulate an eviction, then leave the track sub-menu: the 'playlists'
+      // category reverts to the playlist cards (rebuilt card list) — the full
+      // band of the rebuilt categories is re-warmed
+      __resetWarmedArt()
+      pressBack()
+      const afterLeave = created.slice(beforeSwitch)
+      // Road Trip + Liked Songs (Workout has no image) + the recent track
+      expect(new Set(afterLeave.map((img) => img.src))).toEqual(
+        new Set(['http://img/r.jpg', 'http://img/liked.jpg', 'http://img/s.jpg']),
+      )
+      // the deep band the dial had warmed (band-30..70) is NOT re-warmed —
+      // it is outside the entry band of every rebuilt category
+      expect(afterLeave.some((img) => img.src.startsWith('http://img/band-'))).toBe(false)
+
+      // re-enter the track list: the rebuilt track cards' full entry band is
+      // re-warmed again (the focus is back at track 0)
+      const beforeReopen = created.length
+      fireEvent.click(screen.getByText('Road Trip'))
+      await screen.findByText('Band Track 0')
+      await waitFor(() => expect(hasWarmedArt('http://img/band-20.jpg')).toBe(true))
+      const afterReopen = created.slice(beforeReopen)
+      expect(afterReopen).toHaveLength(21)
+      expect(new Set(afterReopen.map((img) => img.src))).toEqual(
+        new Set(Array.from({ length: 21 }, (_, i) => `http://img/band-${i}.jpg`)),
+      )
     })
   })
 
@@ -2160,9 +2292,10 @@ describe('MainMenuView', () => {
 
       enterNowPlaying()
       for (let i = 0; i < 20; i++) wheel(-10)
-      const deep = 20 * 194 - 24
-      setDeviceScroll(container, deep)
-      wheel(-10) // sample the deep offset
+      // a measured device viewport so the dial ticks scroll for real:
+      // bug47 R2 (F2) centers the focus arithmetically on every tick
+      setDeviceScroll(container, 20 * 194 - 24)
+      wheel(-10) // focus 21 — the tick wrote the exact centering offset
 
       // the 3s observer poll hands over a fresh object with the SAME scalars
       // (new array identity, same active track and queue)
@@ -2172,10 +2305,11 @@ describe('MainMenuView', () => {
       }
       rerender(<MainMenuView nowPlaying={repolled} />)
 
-      // no track change → the deep position is preserved (bug8.1: a focus
-      // move never resets, and neither does a same-track re-projection)
-      expect(carouselEl(container).scrollLeft).toBe(deep)
-      // the window still covers the measured position, not the index-0 window
+      // no track change → the dial-centered deep position is preserved
+      // (bug8.1: a focus move never resets, and neither does a same-track
+      // re-projection) — 101 cards (1 current + 100 queue), focus 21, 550px
+      expect(carouselEl(container).scrollLeft).toBe(dialScrollLeft(101, 21, 550))
+      // the window still covers the deep position, not the index-0 window
       expect(screen.getByText('Queue 22')).toBeInTheDocument()
     })
   })

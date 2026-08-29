@@ -28,6 +28,24 @@ export const WINDOW_MAX_CARDS = 40
 // keep in sync with $card-art-size / $s-6 in ContentCarousel.module.scss
 export const CARD_WIDTH = 170
 export const CARD_GAP = 24
+// keep in sync with $s-4 (the carousel's horizontal edge padding) in
+// ContentCarousel.module.scss
+export const CAROUSEL_EDGE_PADDING = 16
+
+// bug47 R2 (F2): the scrollLeft that centers card `focusedIndex` in a
+// `viewportW`-wide carousel, computed from constants alone — no layout read,
+// so the dial tick path stays read-free. Mirrors
+// scrollIntoView({ inline: 'center' }): the card's center in scroll
+// coordinates (edge padding + i * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2)
+// minus half the viewport, clamped to [0, maxScroll] exactly like the native
+// call. The spacers keep the windowed scroll width identical to the full
+// list's, so the clamp uses the unwindowed total width.
+export function dialScrollLeft(count: number, focusedIndex: number, viewportW: number): number {
+  const center = CAROUSEL_EDGE_PADDING + focusedIndex * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2
+  const contentWidth = count > 0 ? count * CARD_WIDTH + (count - 1) * CARD_GAP : 0
+  const maxScroll = Math.max(0, contentWidth + CAROUSEL_EDGE_PADDING * 2 - viewportW)
+  return Math.max(0, Math.min(center - viewportW / 2, maxScroll))
+}
 
 // the physical scroll position of the carousel (measured after render); used
 // by the viewport safety guard (bug18). width === 0 (e.g. in jsdom) disables

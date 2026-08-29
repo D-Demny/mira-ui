@@ -4,6 +4,7 @@ import type { MenuCard } from './mockData'
 import { carouselCardAreEqual } from './carouselCardCompare'
 import type { CarouselCardProps } from './carouselCardCompare'
 import {
+  dialScrollLeft,
   leadingSpacerWidth,
   trailingSpacerWidth,
   windowRange,
@@ -88,8 +89,19 @@ export function ContentCarousel({
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const lastCategoryIdRef = useRef(categoryId)
   const lastActiveTrackKeyRef = useRef(activeTrackKey)
-  // bug18: measured physical scroll position, feeding the viewport safety guard
+  // bug18: measured physical scroll position, feeding the viewport safety
+  // guard (smooth path only — the dial path bypasses the guard, see below)
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics | null>(null)
+  // bug47 R2 (F2): the carousel's viewport width, measured ONCE. The device
+  // viewport is fixed (800x480, constant content-pane width), so the dial
+  // centering target is pure arithmetic and the tick path never reads layout
+  // again. The mount-time read rides on the first (unavoidable) layout pass;
+  // the lazy re-measure in the dial branch below only covers a zero width at
+  // mount (jsdom).
+  const viewportWidthRef = useRef(0)
+  useLayoutEffect(() => {
+    viewportWidthRef.current = carouselRef.current?.clientWidth ?? 0
+  }, [])
 
   const registerFocusedRef = useCallback((el: HTMLElement | null) => {
     focusedCardRef.current = el
@@ -137,29 +149,76 @@ export function ContentCarousel({
   // keeps the still-visible cards mounted instead of unmounting them early.
   // Runs after the purge above, so a category switch always samples the fresh
   // (zeroed) offset — never the previous category's (bug39).
+  // bug47 R2 (F1): SKIPPED in the dial path (behavior 'auto'). Dial ticks
+  // scroll instantly, so the lag the bug18 guard compensates is at most one
+  // card (194 px) — far inside the 16-card window buffer. Sampling on every
+  // tick was pure overhead: the read (scrollLeft + clientWidth) lands right
+  // after the commit's spacer-width/card mutations and forces the tick's
+  // reflow (3137 ms of UpdateLayoutTree inside the task in the W4 trace),
+  // and the state update triggers a third render pass on every tick (the
+  // dial scroll moves 194 px/tick, so the identity check never hits). While
+  // dialing, the guard is bypassed at window computation below instead (the
+  // dial target centers the focus, so no widening is possible); sampling
+  // resumes on the next smooth move (a mode change re-runs this effect and
+  // re-measures).
   useEffect(() => {
     const carousel = carouselRef.current
     if (!carousel) return
+    if (focusScrollBehavior === 'auto') return
     const next: ScrollMetrics = { scrollLeft: carousel.scrollLeft, width: carousel.clientWidth }
     setScrollMetrics((prev) =>
       prev && prev.scrollLeft === next.scrollLeft && prev.width === next.width ? prev : next,
     )
-  }, [cards.length, focusedIndex, categoryId])
+  }, [cards.length, focusedIndex, categoryId, focusScrollBehavior])
 
   // keep the focused card visible while the dial rotates through the carousel
   // bug47: wheel ticks scroll instantly (behavior 'auto') — restarting a
-  // smooth animation on every tick both janks the UI (Bug47) and keeps the
-  // measured scroll far behind the focus so the bug18 guard widens the
+  // smooth animation on every 35 ms tick both janks the UI (Bug47) and keeps
+  // the measured scroll far behind the focus so the bug18 guard widens the
   // window toward the full list (Bug48). Taps, confirms and category switches
   // keep the smooth scroll (visual convention)
+  // bug47 R2 (F2): the dial branch writes scrollLeft arithmetically instead of
+  // calling scrollIntoView — the native call measures the focus card's
+  // geometry internally, which (once F1 removed the sampler's read) would be
+  // the tick's new forced reflow. The target is dialScrollLeft(): card index
+  // + the fixed card/gap/padding constants + the once-measured viewport
+  // width, clamped to the ends exactly like inline:'center' (same centering,
+  // no drift — Bug15/18/41 windowing stays intact). Without a measurable
+  // viewport (jsdom) it falls back to the native call.
   useEffect(() => {
     if (focusedIndex == null) return
-    focusedCardRef.current?.scrollIntoView({ behavior: focusScrollBehavior, inline: 'center' })
-  }, [focusedIndex, categoryId, focusScrollBehavior])
+    const card = focusedCardRef.current
+    if (!card) return
+    if (focusScrollBehavior === 'auto') {
+      const carousel = carouselRef.current
+      if (!carousel) return
+      if (viewportWidthRef.current <= 0) {
+        // zero at mount (jsdom / first paint pending): measure once now — a
+        // single layout read, never again (the width is constant afterwards)
+        viewportWidthRef.current = carousel.clientWidth
+      }
+      if (viewportWidthRef.current <= 0) {
+        card.scrollIntoView({ behavior: 'auto', inline: 'center' })
+        return
+      }
+      carousel.scrollLeft = dialScrollLeft(cards.length, focusedIndex, viewportWidthRef.current)
+      return
+    }
+    card.scrollIntoView({ behavior: 'smooth', inline: 'center' })
+  }, [focusedIndex, categoryId, focusScrollBehavior, cards.length])
 
   // bug5/bug6/bug18: mount only [start, end) plus invisible width spacers for
   // the off-screen cards so scroll metrics and index math stay correct
-  const { start, end } = windowRange(cards.length, focusedIndex, scrollMetrics)
+  // bug47 R2 (F1): the dial path bypasses the measured guard. The dial target
+  // (F2) centers the focused card by construction, so the guard could never
+  // widen the window — the pure index window is exact. The measured
+  // scrollMetrics would be stale smooth-path state here anyway (the sampler
+  // skips dialing, above), and re-measuring is the forced reflow bug47 removes.
+  const { start, end } = windowRange(
+    cards.length,
+    focusedIndex,
+    focusScrollBehavior === 'auto' ? null : scrollMetrics,
+  )
   const leadingWidth = leadingSpacerWidth(start)
   const trailingWidth = trailingSpacerWidth(cards.length - end)
 

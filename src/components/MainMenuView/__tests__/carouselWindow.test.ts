@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   CARD_GAP,
   CARD_WIDTH,
+  CAROUSEL_EDGE_PADDING,
   NO_WINDOW_THRESHOLD,
   WINDOW_MAX_CARDS,
+  dialScrollLeft,
   leadingSpacerWidth,
   trailingSpacerWidth,
   windowRange,
@@ -158,5 +160,59 @@ describe('spacer widths', () => {
   it('trailing spacer matches the space of the missing cards', () => {
     expect(trailingSpacerWidth(0)).toBe(0)
     expect(trailingSpacerWidth(8)).toBe(8 * CARD_WIDTH + 7 * CARD_GAP)
+  })
+})
+
+describe('dialScrollLeft (bug47 R2, F2)', () => {
+  // the carousel is a flex row (STEP between children) with
+  // CAROUSEL_EDGE_PADDING on both ends; the spacers keep the windowed scroll
+  // width identical to the full list's, so the clamp uses the unwindowed total
+  const maxScroll = (count: number, viewportW: number) =>
+    Math.max(0, count * CARD_WIDTH + (count - 1) * CARD_GAP + CAROUSEL_EDGE_PADDING * 2 - viewportW)
+  const cardCenter = (index: number) =>
+    CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2
+
+  it('centers an interior card exactly like scrollIntoView(inline: center)', () => {
+    // the focused card's center lands on the viewport's center
+    const viewportW = 550
+    for (const index of [5, 25, 45]) {
+      const scrollLeft = dialScrollLeft(50, index, viewportW)
+      expect(scrollLeft + viewportW / 2).toBe(cardCenter(index))
+    }
+  })
+
+  it('clamps to 0 at the start of the list (card 0 cannot be centered)', () => {
+    // card 0's center (101 px) is left of the viewport center (275 px) — the
+    // native call would stop at the start of the list
+    expect(dialScrollLeft(50, 0, 550)).toBe(0)
+    expect(dialScrollLeft(1001, 0, 550)).toBe(0)
+  })
+
+  it('clamps to the maximum scroll offset at the end of the list', () => {
+    const viewportW = 550
+    // the last card's center lies beyond the end of the scroll range — the
+    // native call would stop at scrollWidth - clientWidth
+    expect(dialScrollLeft(50, 49, viewportW)).toBe(maxScroll(50, viewportW))
+    expect(dialScrollLeft(1001, 1000, viewportW)).toBe(maxScroll(1001, viewportW))
+    // and the clamp is real (the unclamped target would overshoot)
+    expect(cardCenter(49) - viewportW / 2).toBeGreaterThan(maxScroll(50, viewportW))
+  })
+
+  it('stays at 0 when the viewport is wider than the whole list', () => {
+    // 2 cards = 364 px content + 32 px padding = 396 px < 1000 px viewport
+    expect(dialScrollLeft(2, 0, 1000)).toBe(0)
+    expect(dialScrollLeft(2, 1, 1000)).toBe(0)
+  })
+
+  it('matches the windowed spacer width (the clamp is independent of windowing)', () => {
+    // a windowed list has the same total scroll width as the full list, so
+    // the clamp target is the same: windowing must not shift the centering
+    const viewportW = 550
+    const full = dialScrollLeft(50, 49, viewportW)
+    // trailing spacer for the 8 missing cards after a [0,42) window:
+    // 8*CARD_WIDTH + 7*CARD_GAP — the scroll width is unchanged
+    expect(trailingSpacerWidth(8)).toBe(8 * CARD_WIDTH + 7 * CARD_GAP)
+    expect(dialScrollLeft(50, 25, viewportW) + viewportW / 2).toBe(cardCenter(25))
+    expect(full).toBe(maxScroll(50, viewportW))
   })
 })
