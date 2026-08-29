@@ -149,6 +149,12 @@ import { ListFocusContext } from '@/navigation/listFocusContext'
 import { MainMenuView } from '../MainMenuView'
 import { ContentCarousel } from '../ContentCarousel'
 import { carouselCardAreEqual } from '../carouselCardCompare'
+import {
+  CARD_GAP,
+  CARD_WIDTH,
+  CAROUSEL_EDGE_PADDING,
+  dialScrollLeft,
+} from '../carouselWindow'
 import type { MenuCard } from '../mockData'
 import type { ObserverStatusActive } from '@/api/types'
 import type * as SettingsModule from '@/settings'
@@ -789,5 +795,177 @@ describe('bug41: active-track change resets the scroll within the same category'
     rerender(<ContentCarousel cards={CARDS_B} categoryId="playlists" focusedIndex={1} />)
 
     expect(setLeft).not.toHaveBeenCalled()
+  })
+})
+
+// bug47 R2: the dial path must be layout-read-free — the bug39 metrics
+// sampler (F1) is skipped in 'auto' mode and the focus centering (F2) is a
+// pure arithmetic scrollLeft write instead of scrollIntoView's geometry read.
+describe('bug47 R2 (F1/F2): dial mode is read-free and centers arithmetically', () => {
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, 'scrollIntoView')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // 50 cards: long enough for windowing, short enough to assert the pure
+  // 16/16 index window (33 cards)
+  const MANY: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `d-${i}`,
+    title: `Dial ${i}`,
+    subtitle: '',
+  }))
+  const VIEWPORT_W = 550 // the device's content-pane carousel width
+
+  function carouselEl(container: HTMLElement): HTMLElement {
+    return container.querySelector('.carousel') as HTMLElement
+  }
+
+  // instrument the carousel: count layout reads, capture scrollLeft writes
+  function instrument(el: HTMLElement): {
+    reads: { width: number; left: number }
+    left: { value: number }
+  } {
+    const reads = { width: 0, left: 0 }
+    const left = { value: -1 }
+    Object.defineProperty(el, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        reads.width++
+        return VIEWPORT_W
+      },
+    })
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      get: () => {
+        reads.left++
+        return left.value
+      },
+      set: (v: number) => {
+        left.value = v
+      },
+    })
+    return { reads, left }
+  }
+
+  it('F1+F2: a dial tick measures the viewport exactly once, never reads scrollLeft, and writes the centering offset', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    // the mount-time measure saw 0 (jsdom, before instrumentation) → the
+    // first tick must measure once and then stay read-free
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+
+    // tick 1: one-time viewport measure (F2 lazy), then the arithmetic write
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={26}
+        focusScrollBehavior="auto"
+      />,
+    )
+    expect(reads.width).toBe(1) // the one-shot measure — the sampler (F1) adds nothing
+    expect(reads.left).toBe(0) // the sampler no longer reads scrollLeft in dial mode
+    expect(left.value).toBe(dialScrollLeft(50, 26, VIEWPORT_W))
+    expect(scrollIntoView).not.toHaveBeenCalled() // F2 replaced the native call
+
+    // tick 2: fully read-free, next centering offset
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={27}
+        focusScrollBehavior="auto"
+      />,
+    )
+    expect(reads.width).toBe(1) // never re-measured
+    expect(reads.left).toBe(0)
+    expect(left.value).toBe(dialScrollLeft(50, 27, VIEWPORT_W))
+
+    // the guard is bypassed in dial mode — the focus is centered by
+    // construction, so no physical widening: the window stays the pure 16/16
+    // index window
+    expect(container.querySelectorAll('article')).toHaveLength(33)
+  })
+
+  it('F2: the dial centering clamps at the list ends like scrollIntoView(inline: center)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    vi.mocked(Element.prototype.scrollIntoView).mockClear()
+
+    // card 1: the first card whose center is not clamped (card 0's is)
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={1}
+        focusScrollBehavior="auto"
+      />,
+    )
+    expect(left.value).toBe(dialScrollLeft(50, 1, VIEWPORT_W))
+    expect(left.value).toBeGreaterThan(0)
+
+    // the last card: clamped to the maximum scroll offset (the native call
+    // stops there too — the list is too short to reach the viewport center)
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={49}
+        focusScrollBehavior="auto"
+      />,
+    )
+    const maxScroll =
+      2 * CAROUSEL_EDGE_PADDING + 50 * CARD_WIDTH + 49 * CARD_GAP - VIEWPORT_W
+    expect(left.value).toBe(maxScroll)
+    expect(left.value).toBeLessThan(
+      CAROUSEL_EDGE_PADDING + 49 * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2 - VIEWPORT_W / 2,
+    )
+
+    // dialing back to the first card clamps to 0
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+      />,
+    )
+    expect(left.value).toBe(0)
+    expect(reads.width).toBe(1) // still the single one-shot measure
+    expect(reads.left).toBe(0)
+  })
+
+  it('F1: the smooth mode keeps sampling the physical position (bug18 guard alive for taps/jumps)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={25} />,
+    )
+    const { reads } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+
+    // a jump (default behavior 'smooth'): the sampler reads the position
+    rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={26} />)
+    expect(reads.width).toBe(1) // the bug18 sampler read
+    expect(reads.left).toBe(1)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
   })
 })
