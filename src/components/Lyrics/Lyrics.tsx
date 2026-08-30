@@ -3,7 +3,7 @@ import { darkBg, useColorExtract, type RGB } from '@/hooks/useColorExtract'
 import { useActiveLine } from '@/hooks/useActiveLine'
 import { useLyricStarts, useLyrics } from '@/hooks/useLyrics'
 import { useSettings } from '@/settings'
-import { getUiScaleY, useUiScale } from '@/uiScale'
+import { effectiveLyricsScale, getUiScaleY, useUiScale } from '@/uiScale'
 import type { LyricsWord, ObserverStatusActive } from '@/api/types'
 import styles from './Lyrics.module.scss'
 
@@ -171,8 +171,12 @@ function LyricsImpl({ status, onSeek, active = true }: Props) {
     return {
       '--lyrics-tint': bg,
       '--lyrics-bg-solid': bg,
+      // bug44_v2: lines scale 1:1 with the display size up to 100% and stay capped at
+      // 100% above it. the text lives in the zoomed player view, so the CSS font sizes
+      // counter-scale the achieved zoom's part above 1
+      '--lyrics-text-scale': effectiveLyricsScale(uiScale) / uiScale,
     } as React.CSSProperties
-  }, [color])
+  }, [color, uiScale])
 
   const applyOffset = (instant = false) => {
     const list = listRef.current
