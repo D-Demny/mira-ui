@@ -20,12 +20,15 @@
   align-items: center;
   gap: $s-4;
   flex-shrink: 0;
-  // bug36: uniform row height for slider and plain rows alike — the slider
-  // rows' natural height (padding 12×2 + title line 16px/1.4 = 22.4 +
-  // rowMain gap 8 + NotchedSlider 40 = 94.4px, rounded to the 4px grid), so
-  // slider-less rows like 'Default Device' are no longer half as tall
-  min-height: 96px;
-  padding: $s-3 $s-4;
+  // bug36: min-height driven by the slider rows' natural height so plain and
+  // slider rows alike are uniform; bug43: scaled down by exactly 25% for
+  // compact density (min-height 96px to 72px, vertical padding 12px to 9px).
+  // Slider rows now grow to their natural height (9px x2 + title line
+  // 16px/1.4 = 22.4 + rowMain gap 8 + NotchedSlider 40 = 88.4px) — the
+  // shared NotchedSlider keeps its 40px (SettingsSheet/HALightControlModal),
+  // and align-items: center keeps labels, chips and sliders centered
+  min-height: 72px;
+  padding: 9px $s-4;
   border-radius: $r-lg;
   background: rgba(255, 255, 255, 0.05);
   box-sizing: border-box;
