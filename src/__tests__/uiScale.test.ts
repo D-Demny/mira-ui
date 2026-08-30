@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react'
 import {
   applyUiScale,
   artSizeFor,
+  effectiveLyricsScale,
   getUiScale,
   getUiScaleFor,
   getUiScaleY,
@@ -94,6 +95,27 @@ describe('heroArtSizeFor', () => {
 
   it('shrinks once the stage row can no longer hold the glow', () => {
     expect(heroArtSizeFor(115)).toBe(170)
+  })
+})
+
+describe('effectiveLyricsScale', () => {
+  // bug44_v2: lyrics text scales 1:1 with the display size up to 100%, then is hard-capped
+  // at a factor of 1.0 (the display-size slider spans 85%-115%)
+  it.each([
+    [0.85, 0.85],
+    [0.9, 0.9],
+    [0.95, 0.95],
+    [1.0, 1.0],
+    [1.05, 1.0],
+    [1.1, 1.0],
+    [1.15, 1.0],
+  ])('maps a %p display-size scale to the %p lyrics scale', (input, expected) => {
+    expect(effectiveLyricsScale(input)).toBe(expected)
+  })
+
+  it('stays capped at 1.0 for scales far beyond the slider range', () => {
+    expect(effectiveLyricsScale(1.3)).toBe(1.0)
+    expect(effectiveLyricsScale(2)).toBe(1.0)
   })
 })
 

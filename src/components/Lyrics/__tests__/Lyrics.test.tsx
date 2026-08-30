@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Lyrics } from '../Lyrics'
 import { __resetLyricsCache } from '../../../hooks/useLyrics'
 import { server } from '../../../__tests__/msw-server'
 import { activeStatus } from '../../../__tests__/fixtures/observer'
+import { applyUiScale, registerUiScaleTarget } from '../../../uiScale'
 
 beforeEach(() => {
   __resetLyricsCache()
@@ -179,5 +180,56 @@ describe('lyrics rendered DOM', () => {
     render(<Lyrics status={TRACK_STATUS} />)
 
     expect(await screen.findByText(/no lyrics available/i)).toBeInTheDocument()
+  })
+})
+
+// bug44_v2: the lyrics text counter-scales the player zoom so that it grows 1:1 with the
+// display size up to 100% and stays capped at 100% above it
+describe('lyrics text scaling with display size', () => {
+  let target: HTMLDivElement
+
+  beforeEach(() => {
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    registerUiScaleTarget(target)
+  })
+
+  afterEach(() => {
+    registerUiScaleTarget(null)
+    target.remove()
+    applyUiScale(100)
+  })
+
+  // the --lyrics-text-scale var is set on the .lyrics container; walk up from a line to
+  // find it (the intermediate .list carries an inline transform but no custom properties)
+  function lyricsContainer(el: HTMLElement): HTMLElement {
+    let node: HTMLElement | null = el
+    while (node && !node.style.getPropertyValue('--lyrics-text-scale')) {
+      node = node.parentElement
+    }
+    return node as HTMLElement
+  }
+
+  it.each([
+    [100, 1],
+    [115, 0.87],
+  ] as [number, number][])('counter-scales the text font at %i display size', (pct, expected) => {
+    server.use(
+      http.get('*/lyrics/abc', () =>
+        HttpResponse.json({
+          syncType: 'LINE_SYNCED',
+          lines: [{ startTimeMs: '0', words: 'Only line' }],
+        }),
+      ),
+    )
+
+    applyUiScale(pct)
+    render(<Lyrics status={TRACK_STATUS} />)
+
+    const line = screen.findByText('Only line')
+    return line.then((el) => {
+      const raw = lyricsContainer(el).style.getPropertyValue('--lyrics-text-scale')
+      expect(Number(raw)).toBeCloseTo(expected, 12)
+    })
   })
 })

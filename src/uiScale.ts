@@ -68,6 +68,14 @@ export function heroArtSizeFor(pct: number): number {
   return Math.max(ART_MIN, Math.min(HERO_ART_MAX, Math.floor(stageHeight(pct) / HERO_GLOW_RATIO)))
 }
 
+// bug44_v2: lyrics text scales 1:1 with the display size up to 100% and stays hard-capped
+// at 100% above it (the slider range is 85-115%). returns the scale the text is rendered
+// at; consumers live inside the zoomed player view, so their CSS font sizes are
+// counter-scaled by dividing by max(scale, 1) (the --lyrics-text-scale var in Lyrics.tsx)
+export function effectiveLyricsScale(displaySizeScale: number): number {
+  return Math.min(displaySizeScale, 1)
+}
+
 let appliedPct = UI_SCALE_DEFAULT
 let target: HTMLElement | null = null
 const listeners = new Set<() => void>()

@@ -51,7 +51,8 @@
 
 .stateText {
   color: $text-tertiary;
-  font-size: $fs-xl;
+  // bug44_v2: --lyrics-text-scale counter-scales the player zoom above 100% (1 below)
+  font-size: calc(#{$fs-xl} * var(--lyrics-text-scale, 1));
   font-weight: $fw-medium;
 }
 
@@ -78,7 +79,8 @@
 }
 
 .line {
-  font-size: 28px;
+  // bug44_v2: --lyrics-text-scale counter-scales the player zoom above 100% (1 below)
+  font-size: calc(28px * var(--lyrics-text-scale, 1));
   font-weight: $fw-bold;
   line-height: 1.3;
   letter-spacing: -0.01em;
