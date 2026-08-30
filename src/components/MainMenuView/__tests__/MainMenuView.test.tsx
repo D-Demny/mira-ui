@@ -1101,6 +1101,51 @@ describe('MainMenuView', () => {
     })
   })
 
+  describe('bug42: upcoming queue artwork — real covers for every queue card', () => {
+    it('queue cards with image urls render their own cover, not the placeholder', () => {
+      // the daemon maps item album artwork into next_tracks[].image_url (bug42);
+      // the view must hand every url through to the card, not just card 1
+      const artQueueNowPlaying: ObserverStatusActive = {
+        ...queueNowPlaying,
+        next_tracks: [
+          {
+            uri: 'spotify:track:t-10',
+            track_id: 't-10',
+            name: 'Next Song',
+            artist: 'Someone',
+            album: '',
+            image_url: 'http://img/q10.jpg',
+          },
+          {
+            uri: 'spotify:track:t-11',
+            track_id: 't-11',
+            name: 'Song After',
+            artist: 'Another',
+            album: '',
+            image_url: 'http://img/q11.jpg',
+          },
+        ],
+      }
+      render(<MainMenuView nowPlaying={artQueueNowPlaying} />)
+
+      wheel(-10) // focus 'Läuft gerade' in the sidebar (live preview)
+
+      expect(screen.getByText('Heat Waves')).toBeInTheDocument()
+      expect(screen.getByText('Next Song')).toBeInTheDocument()
+      expect(screen.getByText('Song After')).toBeInTheDocument()
+
+      const content = document.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+      // card 1 (current) + both upcoming queue cards carry a real <img> with
+      // their own src — no card falls back to the placeholder
+      const images = Array.from(content.querySelectorAll('img'))
+      expect(images.map((img) => img.getAttribute('src'))).toEqual([
+        'http://img/h.jpg',
+        'http://img/q10.jpg',
+        'http://img/q11.jpg',
+      ])
+    })
+  })
+
   describe('bug28: single-track queue — no ghost cards', () => {
     // the reported ghost payload: a single isolated track (context = the track
     // itself) whose Connect next_tracks ship a metadata-less ghost slot (uri
