@@ -92,7 +92,7 @@ describe('bug36: settings row height & structure', () => {
     expect(brightnessRow.querySelector('[role="slider"]')).not.toBeNull()
   })
 
-  it('pins the shared row min-height in the stylesheet', () => {
+  it('pins the compact row height in the stylesheet (bug43)', () => {
     // read from disk: vitest's CSS pipeline (css.modules in vitest.config.ts)
     // intercepts .scss files before ?raw, so a raw import yields no source
     const scss = readFileSync(
@@ -101,8 +101,12 @@ describe('bug36: settings row height & structure', () => {
     )
     const rowRule = scss.match(/\.row \{([^}]*)\}/)
     expect(rowRule).not.toBeNull()
-    // measured slider row: padding 12×2 + title line (16px × 1.4) + rowMain
-    // gap 8 + NotchedSlider 40 = 94.4px, rounded to the 4px grid
-    expect(rowRule![1]).toContain('min-height: 96px;')
+    // bug43: row height scaled down by exactly 25% — min-height 96px to
+    // 72px, vertical padding 12px to 9px. Slider rows grow to their natural
+    // height (9px x2 + title line 16px/1.4 = 22.4 + rowMain gap 8 +
+    // NotchedSlider 40 = 88.4px); the shared slider keeps its 40px and
+    // align-items: center keeps everything vertically centered
+    expect(rowRule![1]).toContain('min-height: 72px;')
+    expect(rowRule![1]).toContain('padding: 9px $s-4;')
   })
 })
