@@ -21,6 +21,7 @@ import {
   type Settings,
 } from '@/settings'
 import { pickArtUrl } from '@/api/client'
+import { remoteArtUrl } from '@/api/miraImg'
 import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorExtract'
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
@@ -235,10 +236,11 @@ export function MainMenuView({
   const lightViews = useHomeLights()
   const settings = useSettings()
   // epic10: Pi helper-server feature detection — starts the capabilities
-  // poll while the main menu is mounted. The global state is consumed by the
-  // later epic10 tasks (artwork loader, color engine, settings UI); this
-  // view itself renders nothing from it yet
-  useMiraServer()
+  // poll while the main menu is mounted. The artwork pre-decode below uses
+  // remoteBlur to warm the url the cards actually load (Pi pre-processed
+  // artwork vs. direct CDN url); the color engine and the settings UI
+  // consume the same global state
+  const miraServer = useMiraServer()
 
   // bug4/bug5/bug7: track list of the open playlist (lazy pages + 5 min cache)
   const {
@@ -815,10 +817,18 @@ export function MainMenuView({
   // bug47 R2 (F3): the last warmed band per category — the index range plus
   // the category object that was warmed, so a rebuilt card list (page load,
   // queue reorder, track-list/library swap) is detected and re-warmed in
-  // full. Lives in a ref: the diff is state without rendering consequences.
+  // full. epic10 task 2: the remoteBlur flag is part of the band identity —
+  // a mode flip (Pi connected / gone) re-warms the band with the other url
+  // flavor (Pi pre-processed artwork vs. direct CDN url). Lives in a ref:
+  // the diff is state without rendering consequences.
   const lastWarmBandRef = useRef<
-    Map<string, { start: number; end: number; category: MenuCategory }>
+    Map<string, { start: number; end: number; category: MenuCategory; remote: boolean }>
   >(new Map())
+
+  // epic10 task 2: the artwork loader adapter — cards load the Pi's
+  // pre-processed 160x160 artwork when remoteBlur is on, the direct
+  // (Spotify CDN) url otherwise (standalone, unchanged)
+  const remoteBlur = miraServer.features.remoteBlur
 
   // bug8.2: pre-decode menu covers once so a sidebar preview swap (full
   // carousel remount) only pays layout/paint of already decoded bitmaps
@@ -844,13 +854,16 @@ export function MainMenuView({
     const warmRange = (category: MenuCategory, from: number, to: number) => {
       for (let i = from; i < to; i++) {
         const art = category.cards[i].art
-        if (!art || !warmArt(art)) continue
+        if (!art) continue
+        // epic10 task 2: warm the url the cards actually load (ArtImage)
+        const url = remoteBlur ? remoteArtUrl(art) : art
+        if (!warmArt(url)) continue
         const img = new Image()
         // match AlbumArt's fetch attributes so the browser reuses the same
         // cache entry (CORS images are cached separately)
         img.crossOrigin = 'anonymous'
         img.referrerPolicy = 'no-referrer'
-        img.src = art
+        img.src = url
       }
     }
     const lastBand = lastWarmBandRef.current
@@ -860,20 +873,21 @@ export function MainMenuView({
       const bandStart = Math.max(0, focusIndex - PREDECODE_RADIUS)
       const bandEnd = Math.min(category.cards.length, focusIndex + 1 + PREDECODE_RADIUS)
       const prev = lastBand.get(category.id)
-      if (prev && prev.category === category) {
-        // same card list: warm only what the band gained since the last run
-        // (a dial tick gained one edge card; a back-and-forth slide gains
-        // nothing, because the dropped edge was already warmed)
+      if (prev && prev.category === category && prev.remote === remoteBlur) {
+        // same card list and same url flavor: warm only what the band gained
+        // since the last run (a dial tick gained one edge card; a
+        // back-and-forth slide gains nothing, because the dropped edge was
+        // already warmed)
         if (bandStart < prev.start) warmRange(category, bandStart, Math.min(bandEnd, prev.start))
         if (bandEnd > prev.end) warmRange(category, Math.max(bandStart, prev.end), bandEnd)
       } else {
-        // first sighting or rebuilt card list: warm the full band — warmArt
-        // de-dupes the urls already in the set
+        // first sighting, rebuilt card list, or a remoteBlur flip: warm the
+        // full band — warmArt de-dupes the urls already in the set
         warmRange(category, bandStart, bandEnd)
       }
-      lastBand.set(category.id, { start: bandStart, end: bandEnd, category })
+      lastBand.set(category.id, { start: bandStart, end: bandEnd, category, remote: remoteBlur })
     }
-  }, [categories, displayedCategory, focus.activePane, focus.contentIndex])
+  }, [categories, displayedCategory, focus.activePane, focus.contentIndex, remoteBlur])
 
   const viewStyle = {
     ...(ambientAccent
