@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { fetchRemoteColors } from '@/api/miraImg'
+import { useMiraServer } from '@/hooks/useMiraServer'
 
 export type RGB = [number, number, number]
 
@@ -144,6 +146,16 @@ export function useColorExtract(url: string | undefined): RGB {
     url ? (cache.get(url) ?? DEFAULT_COLOR) : DEFAULT_COLOR,
   )
   const lastUrlRef = useRef<string | undefined>(undefined)
+  // epic10 task 2: remoteColors — the Pi extracts the dominant color; the
+  // local canvas path below stays the fallback (and the only path when the
+  // feature is off, i.e. in standalone mode)
+  const { features } = useMiraServer()
+  // the remote flag is part of the effect identity: a feature flip (Pi
+  // connected / gone) with the same url must re-run the extraction path
+  // (remote fetch vs. local canvas), not be short-circuited by the
+  // url-equality guard (which would cancel the in-flight work and leave the
+  // color stuck)
+  const lastRemoteRef = useRef(false)
 
   useEffect(() => {
     if (!url) {
@@ -151,8 +163,9 @@ export function useColorExtract(url: string | undefined): RGB {
       lastUrlRef.current = undefined
       return
     }
-    if (lastUrlRef.current === url) return
+    if (lastUrlRef.current === url && lastRemoteRef.current === features.remoteColors) return
     lastUrlRef.current = url
+    lastRemoteRef.current = features.remoteColors
 
     const cached = cache.get(url)
     if (cached) {
@@ -161,35 +174,63 @@ export function useColorExtract(url: string | undefined): RGB {
     }
 
     let cancelled = false
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.decoding = 'async'
-    img.referrerPolicy = 'no-referrer'
+    let localCleanup: (() => void) | null = null
 
     const apply = (rgb: RGB) =>
       setColor((prev) =>
         prev[0] === rgb[0] && prev[1] === rgb[1] && prev[2] === rgb[2] ? prev : rgb,
       )
 
-    img.onload = () => {
-      if (cancelled) return
-      const rgb = extract(img) ?? DEFAULT_COLOR
-      remember(url, rgb)
-      apply(rgb)
+    // the existing local extraction (canvas) — unchanged
+    const startLocal = () => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.decoding = 'async'
+      img.referrerPolicy = 'no-referrer'
+
+      img.onload = () => {
+        if (cancelled) return
+        const rgb = extract(img) ?? DEFAULT_COLOR
+        remember(url, rgb)
+        apply(rgb)
+      }
+      img.onerror = () => {
+        if (cancelled) return
+        apply(DEFAULT_COLOR)
+      }
+      img.src = url
+
+      return () => {
+        img.onload = null
+        img.onerror = null
+        img.src = ''
+      }
     }
-    img.onerror = () => {
-      if (cancelled) return
-      apply(DEFAULT_COLOR)
+
+    if (features.remoteColors) {
+      // remote first: the Pi-extracted color goes into the same per-url
+      // cache as local results; any failure (offline / slow / broken
+      // payload) transparently falls back to the local extraction, so the
+      // user sees exactly the previous behavior
+      void fetchRemoteColors(url)
+        .then((remote) => {
+          if (cancelled) return
+          remember(url, remote)
+          apply(remote)
+        })
+        .catch(() => {
+          if (cancelled) return
+          localCleanup = startLocal()
+        })
+    } else {
+      localCleanup = startLocal()
     }
-    img.src = url
 
     return () => {
       cancelled = true
-      img.onload = null
-      img.onerror = null
-      img.src = ''
+      if (localCleanup) localCleanup()
     }
-  }, [url])
+  }, [url, features.remoteColors])
 
   return color
 }

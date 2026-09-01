@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { fetchLyrics } from '@/api/client'
+import { remoteArtUrl } from '@/api/miraImg'
 import { primeLyricsCache } from '@/hooks/useLyrics'
+import { useMiraServer } from '@/hooks/useMiraServer'
 import type { ObserverStatus, QueueTrack } from '@/api/types'
 
 const PREFETCH_NEXT = 5
@@ -47,14 +49,14 @@ function prefetchLyrics(t: QueueTrack) {
     .catch(() => {})
 }
 
-function runPrefetch(status: ObserverStatus) {
+function runPrefetch(status: ObserverStatus, remoteBlur: boolean) {
   if (!status.active) return
   const next = (status.next_tracks ?? []).slice(0, PREFETCH_NEXT)
   const prev = (status.prev_tracks ?? []).slice(0, PREFETCH_PREV)
   for (const t of [...next, ...prev]) {
     if (!t.uri || seenUris.has(t.uri)) continue
     markSeen(t.uri)
-    if (t.image_url) prefetchImage(t.image_url)
+    if (t.image_url) prefetchImage(remoteBlur ? remoteArtUrl(t.image_url) : t.image_url)
     prefetchLyrics(t)
   }
 }
@@ -64,6 +66,10 @@ export function usePrefetch(status: ObserverStatus | null) {
   useEffect(() => {
     statusRef.current = status
   })
+  // epic10 task 2: prefetch the url the menu cards actually load — the Pi's
+  // pre-processed artwork when remoteBlur is on, the direct CDN url
+  // otherwise (standalone, unchanged)
+  const remoteBlur = useMiraServer().features.remoteBlur
 
   const lastFiredUriRef = useRef<string | null>(null)
   const currentUri = status?.active ? status.track_uri : null
@@ -76,9 +82,9 @@ export function usePrefetch(status: ObserverStatus | null) {
       const s = statusRef.current
       if (!s?.active || s.track_uri !== currentUri) return
       lastFiredUriRef.current = currentUri
-      runPrefetch(s)
+      runPrefetch(s, remoteBlur)
     }, PREFETCH_DELAY_MS)
 
     return () => window.clearTimeout(timer)
-  }, [currentUri])
+  }, [currentUri, remoteBlur])
 }
