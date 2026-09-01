@@ -50,4 +50,7 @@ export const server = setupServer(
       },
     ])
   }),
+  // Epic 10: Pi helper-server capabilities (192.168.7.1:8080) — default is
+  // unreachable, so the app runs in standalone mode unless a test opts in
+  http.get('*/api/v1/capabilities', () => HttpResponse.error()),
 )
