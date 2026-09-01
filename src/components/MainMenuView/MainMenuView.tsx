@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useHomeLights, type HomeLightView } from '@/hooks/useHomeLight'
+import { useMiraServer } from '@/hooks/useMiraServer'
 import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { usePlaylistTracks, LIKED_SONGS_ID } from '@/hooks/usePlaylistTracks'
@@ -233,6 +234,11 @@ export function MainMenuView({
   // never on the fresh per-render view objects (bug8.1)
   const lightViews = useHomeLights()
   const settings = useSettings()
+  // epic10: Pi helper-server feature detection — starts the capabilities
+  // poll while the main menu is mounted. The global state is consumed by the
+  // later epic10 tasks (artwork loader, color engine, settings UI); this
+  // view itself renders nothing from it yet
+  useMiraServer()
 
   // bug4/bug5/bug7: track list of the open playlist (lazy pages + 5 min cache)
   const {
