@@ -4,7 +4,15 @@ import {
   getMiraServerState,
   useMiraServer,
 } from '@/hooks/useMiraServer'
-import { getSettings, updateSettings, useSettings } from '@/settings'
+import {
+  activePiProfile,
+  defaultPiProfile,
+  getSettings,
+  updateActivePiProfileField,
+  updateSettings,
+  useSettings,
+  type PiProfile,
+} from '@/settings'
 import {
   getPiSetupStatus,
   SETUP_PI_POLL_MS,
@@ -20,12 +28,22 @@ import styles from './PiServerModal.module.scss'
 // ip / ssh credentials (persisted with the settings store), the capabilities
 // test against the entered ip, and the daemon-side provisioning wizard with
 // its status log.
+// ticket10-5A: the view operates on the ACTIVE Pi profile (the single
+// profile that the legacy config migrated into). The profile LIST (add /
+// switch / delete) arrives with the follow-up worker 10-5C — until then
+// there is exactly one profile in play, and on a fresh install the fields
+// show the ticket defaults until the first write lazily creates profile 1.
 interface Props {
   onClose: () => void
   // ticket10-2: tapping/focusing a credential field opens the on-screen
   // keyboard overlay (rendered by the App above this modal) for that field
   onOpenKeyboard: (field: PiKeyboardField) => void
 }
+
+// the values shown while no profile exists yet (display defaults — they are
+// NOT persisted; the first write creates profile 1, see
+// updateActivePiProfileField)
+const EMPTY_PROFILE: PiProfile = defaultPiProfile()
 
 // the status line of the ticket (model only known after a provisioning run
 // reported it via /api/setup-pi/status)
@@ -106,9 +124,12 @@ const SETUP_IDLE: SetupState = { phase: 'idle', logTail: [] }
 
 function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // the settings store is the single source of truth — every keystroke is
-  // persisted (localStorage + the daemon's settings blob) via updateSettings
+  // persisted (localStorage + the daemon's settings blob) via
+  // updateActivePiProfileField (ticket10-5A: writes go to the ACTIVE
+  // profile)
   const settings = useSettings()
-  const { piServer } = settings
+  const activeProfile = activePiProfile(settings)
+  const profile = activeProfile ?? EMPTY_PROFILE
   const miraServer = useMiraServer()
 
   // model / tier the last provisioning run detected (null until known) —
@@ -129,6 +150,20 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // (own cache, NOT piInfo: the mode line keeps its setup-status data
   // source, so the two lines do not mirror each other)
   const [piModel, setPiModel] = useState<{ model?: string; tier?: string } | null>(null)
+  // ticket10-5A: persist the key result into the ACTIVE profile — the
+  // daemon only holds the last run in memory, the per-profile keyInstalled
+  // flag in the settings store is what the follow-up worker's profile list
+  // shows per profile. No-op while no profile exists yet.
+  const persistKeyInstalled = useCallback((installed: boolean) => {
+    const cur = getSettings()
+    const active = activePiProfile(cur)
+    if (!active || active.keyInstalled === installed) return
+    updateSettings({
+      piProfiles: cur.piProfiles.map((p) =>
+        p.id === active.id ? { ...p, keyInstalled: installed } : p,
+      ),
+    })
+  }, [])
   // best-effort probe on open: a run that finished in a previous session
   // still has its model AND key state in the daemon's in-memory status —
   // this is what makes the key line visible in the idle state after a run
@@ -141,6 +176,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
         if (cancelled) return
         if (s.model || s.tier) setPiInfo({ model: s.model, tier: s.tier })
         setKeyInfo({ installed: s.keyInstalled, error: s.keyError })
+        persistKeyInstalled(s.keyInstalled)
       })
       .catch(() => {
         // old daemon without the endpoints (503) or offline — no info
@@ -148,7 +184,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [persistKeyInstalled])
 
   const [test, setTest] = useState<TestState>({ phase: 'idle' })
   const [setup, setSetup] = useState<SetupState>(SETUP_IDLE)
@@ -167,20 +203,21 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // modal)
   useEffect(() => stopPolling, [stopPolling])
 
+  // ticket10-5A: every keystroke writes the ACTIVE profile (the first write
+  // lazily creates profile 1 — see updateActivePiProfileField)
   const setField = (field: 'ip' | 'user' | 'password', value: string) => {
-    const current = getSettings().piServer
-    updateSettings({ piServer: { ...current, [field]: value } })
+    updateActivePiProfileField(field, value)
   }
 
-  // "Verbindung testen": pings the capabilities endpoint of the ENTERED ip
-  // (the background poll keeps using the default address — documented in
-  // fetchMiraServerCapabilities). checkMiraServer never throws (it degrades
-  // to standalone internally), so the result is read from the shared state.
+  // "Verbindung testen": pings the capabilities endpoint of the shown ip
+  // (the active profile, or the ticket defaults while none exists yet).
+  // checkMiraServer never throws (it degrades to standalone internally), so
+  // the result is read from the shared state.
   const handleTest = async () => {
     if (test.phase === 'checking') return
     setTest({ phase: 'checking' })
     try {
-      await checkMiraServer(piServer.ip)
+      await checkMiraServer(profile.ip)
     } catch {
       // unreachable in theory — treat as a failed test
     }
@@ -245,6 +282,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       }
       // the run just finished — the key outcome is part of this status
       setKeyInfo({ installed: status.keyInstalled, error: status.keyError })
+      persistKeyInstalled(status.keyInstalled)
       return
     }
     if (status.state === 'failed') {
@@ -256,8 +294,9 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       })
       // a failed run never installed a key — surface the key error if any
       setKeyInfo({ installed: status.keyInstalled, error: status.keyError })
+      persistKeyInstalled(status.keyInstalled)
     }
-  }, [])
+  }, [persistKeyInstalled])
 
   // ticket10-4: immediate first read of the live session status + the
   // shared 2 s rhythm for the lifetime of the view (it also serves the
@@ -275,15 +314,25 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
 
   // "Pi automatisch einrichten": POST the credentials to the local daemon;
   // the shared 2 s interval (already running since mount) then serves the
-  // job status (capped at 5 min of wall time)
+  // job status (capped at 5 min of wall time).
+  // ticket10-5A: the wizard operates on the ACTIVE profile. On a fresh
+  // install none exists yet — the setup run materializes profile 1 from the
+  // shown (default) values, so the wizard keeps working before the profile
+  // list UI arrives (design decision, follow-up worker 10-5C builds the
+  // explicit add flow on top).
   const handleSetup = async () => {
     if (setup.phase === 'starting' || setup.phase === 'running') return
     setSetup({ phase: 'starting', logTail: [] })
+    let stored = activePiProfile(getSettings())
+    if (!stored) {
+      stored = defaultPiProfile()
+      updateSettings({ piProfiles: [stored], activePiId: stored.id })
+    }
     try {
       await startPiSetup({
-        ip: piServer.ip,
-        user: piServer.user,
-        password: piServer.password,
+        ip: stored.ip,
+        user: stored.user,
+        password: stored.password,
       })
     } catch (err) {
       setSetup({
@@ -366,7 +415,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
             className={styles.input}
             type="text"
             inputMode="decimal"
-            value={piServer.ip}
+            value={profile.ip}
             onChange={(e) => setField('ip', e.target.value)}
             onFocus={() => onOpenKeyboard('ip')}
           />
@@ -377,7 +426,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           <input
             className={styles.input}
             type="text"
-            value={piServer.user}
+            value={profile.user}
             onChange={(e) => setField('user', e.target.value)}
             onFocus={() => onOpenKeyboard('user')}
           />
@@ -390,7 +439,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           <input
             className={styles.input}
             type="password"
-            value={piServer.password}
+            value={profile.password}
             onChange={(e) => setField('password', e.target.value)}
             onFocus={() => onOpenKeyboard('password')}
           />

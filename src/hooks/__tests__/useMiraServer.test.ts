@@ -15,8 +15,23 @@ import {
   toMiraServerState,
   type MiraServerCapabilities,
 } from '@/api/miraServer'
+import { __resetSettings, updateSettings } from '@/settings'
 
 const STANDBY = standaloneMiraServerState()
+
+// ticket10-5A: the poll only runs for the ip of an ACTIVE profile — the
+// mount tests seed one (fresh installs have none and stay standalone
+// WITHOUT polling, which is asserted in its own test below)
+const DEFAULT_PROFILE_IP = '192.168.7.1'
+
+function setActiveProfile(ip: string = DEFAULT_PROFILE_IP): void {
+  updateSettings({
+    piProfiles: [
+      { id: 'pi-1', label: 'Pi 1', ip, user: 'root', password: '', keyInstalled: false },
+    ],
+    activePiId: 'pi-1',
+  })
+}
 
 const COMPUTE: MiraServerCapabilities = {
   tier: 'compute',
@@ -90,10 +105,23 @@ describe('toMiraServerState (capabilities mapping)', () => {
 
 describe('useMiraServer', () => {
   beforeEach(() => {
+    localStorage.clear()
+    __resetSettings()
     __resetMiraServerState()
   })
 
+  it('stays standalone WITHOUT polling while no profile is configured (fresh install)', () => {
+    // ticket10-5A: no active profile → no capabilities target, no request
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
+    const { result } = renderHook(() => useMiraServer())
+    expect(result.current.mode).toBe('standalone')
+    expect(result.current.checking).toBe(false)
+    expect(setIntervalSpy).not.toHaveBeenCalledWith(expect.any(Function), MIRA_SERVER_POLL_MS)
+    setIntervalSpy.mockRestore()
+  })
+
   it('loads the capabilities on mount and maps mode + features', async () => {
+    setActiveProfile()
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     const { result } = renderHook(() => useMiraServer())
     await waitFor(() => expect(result.current.checking).toBe(false))
@@ -106,6 +134,7 @@ describe('useMiraServer', () => {
   })
 
   it('maps a cache-tier response to lightweight mode', async () => {
+    setActiveProfile()
     server.use(
       http.get('*/api/v1/capabilities', () =>
         HttpResponse.json({
@@ -128,6 +157,7 @@ describe('useMiraServer', () => {
 
   it('falls back to standalone when the Pi is offline', async () => {
     // the default MSW handler makes the capabilities request fail
+    setActiveProfile()
     const { result } = renderHook(() => useMiraServer())
     await waitFor(() => expect(result.current.checking).toBe(false))
     expect(result.current.mode).toBe('standalone')
@@ -135,6 +165,7 @@ describe('useMiraServer', () => {
   })
 
   it('falls back to standalone on a non-JSON response (parse error)', async () => {
+    setActiveProfile()
     server.use(
       http.get(
         '*/api/v1/capabilities',
@@ -152,6 +183,7 @@ describe('useMiraServer', () => {
   })
 
   it('falls back to standalone on a non-OK status', async () => {
+    setActiveProfile()
     server.use(
       http.get('*/api/v1/capabilities', () =>
         HttpResponse.json({ error: 'boom' }, { status: 500 }),
@@ -169,6 +201,7 @@ describe('useMiraServer', () => {
     // resolves the request through microtasks, which advanceTimersByTimeAsync
     // only flushes reliably when the clock is fully faked
     vi.useFakeTimers()
+    setActiveProfile()
     // a handler that never answers — only our 2.5s abort can end the request
     server.use(http.get('*/api/v1/capabilities', () => new Promise<Response>(() => {})))
     const { result, unmount } = renderHook(() => useMiraServer())
@@ -185,6 +218,7 @@ describe('useMiraServer', () => {
   it('re-polls and picks up a Pi that comes online later', async () => {
     vi.useFakeTimers(FAKE_CLOCK)
     // offline at startup (default handler)
+    setActiveProfile()
     const { result, unmount } = renderHook(() => useMiraServer())
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
@@ -207,6 +241,7 @@ describe('useMiraServer', () => {
 
   it('degrades to standalone when the Pi goes away (re-poll failure)', async () => {
     vi.useFakeTimers(FAKE_CLOCK)
+    setActiveProfile()
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     const { result, unmount } = renderHook(() => useMiraServer())
     await act(async () => {
@@ -225,13 +260,14 @@ describe('useMiraServer', () => {
   })
 
   it('re-checks on demand via checkMiraServer without waiting for the poll', async () => {
+    setActiveProfile()
     // offline first (default handler)
     const { result } = renderHook(() => useMiraServer())
     await waitFor(() => expect(result.current.checking).toBe(false))
     expect(result.current.mode).toBe('standalone')
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     await act(async () => {
-      await checkMiraServer()
+      await checkMiraServer(DEFAULT_PROFILE_IP)
     })
     expect(result.current.mode).toBe('compute')
     expect(result.current.features).toEqual({
@@ -241,10 +277,11 @@ describe('useMiraServer', () => {
     })
   })
 
-  it('checkMiraServer(ip) pings the custom ip instead of the default address', async () => {
-    // only the custom address answers — the default stays offline. Fake
-    // timers before the render so the poll interval is a fake timer too.
+  it('checkMiraServer(ip) pings the custom ip instead of the active profile', async () => {
+    // only the custom address answers — the active profile stays offline.
+    // Fake timers before the render so the poll interval is a fake timer too.
     vi.useFakeTimers(FAKE_CLOCK)
+    setActiveProfile()
     server.use(
       http.get('*/api/v1/capabilities', ({ request }) => {
         const host = new URL(request.url).hostname
@@ -260,7 +297,7 @@ describe('useMiraServer', () => {
       await checkMiraServer('10.9.8.7')
     })
     expect(result.current.mode).toBe('compute')
-    // the poll (default address) is unaffected: a tick later it is offline
+    // the poll (active profile) is unaffected: a tick later it is offline
     // again (the extra 0-drain settles the poll request's resolution)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
@@ -273,11 +310,12 @@ describe('useMiraServer', () => {
     vi.useRealTimers()
   })
 
-  it('a manual re-check for a custom ip does not join the in-flight default poll', async () => {
-    // the mount-time check targets the default address (offline here); the
-    // custom address answers. The re-check is issued synchronously while
-    // that check is still in flight — joining it would report the default
-    // address' (offline) result instead of the custom ip's
+  it('a manual re-check for a custom ip does not join the in-flight poll', async () => {
+    // the mount-time check targets the active profile's address (offline
+    // here); the custom address answers. The re-check is issued
+    // synchronously while that check is still in flight — joining it would
+    // report the profile's (offline) result instead of the custom ip's
+    setActiveProfile()
     server.use(
       http.get('*/api/v1/capabilities', ({ request }) => {
         const host = new URL(request.url).hostname
@@ -292,20 +330,6 @@ describe('useMiraServer', () => {
     expect(result.current.mode).toBe('compute')
   })
 
-  it('a blank ip falls back to the default address (fetchMiraServerCapabilities)', async () => {
-    // only the default address answers — a blank override must target it
-    server.use(
-      http.get('*/api/v1/capabilities', ({ request }) => {
-        const host = new URL(request.url).hostname
-        return host === '192.168.7.1' ? HttpResponse.json(COMPUTE) : HttpResponse.error()
-      }),
-    )
-    const state = await fetchMiraServerCapabilities('   ')
-    expect(state.mode).toBe('compute')
-    const stateNoArg = await fetchMiraServerCapabilities()
-    expect(stateNoArg.mode).toBe('compute')
-  })
-
   it('fetchMiraServerCapabilities targets http://<ip>:8080 for a custom ip', async () => {
     server.use(
       http.get('*/api/v1/capabilities', ({ request }) => {
@@ -318,6 +342,7 @@ describe('useMiraServer', () => {
   })
 
   it('keeps multiple hook instances in sync (shared store)', async () => {
+    setActiveProfile()
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     const first = renderHook(() => useMiraServer())
     const second = renderHook(() => useMiraServer())
@@ -331,6 +356,7 @@ describe('useMiraServer', () => {
   })
 
   it('polls while mounted and stops polling after unmount', async () => {
+    setActiveProfile()
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
     const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
     const { result, unmount } = renderHook(() => useMiraServer())
@@ -340,5 +366,122 @@ describe('useMiraServer', () => {
     expect(clearIntervalSpy).toHaveBeenCalled()
     setIntervalSpy.mockRestore()
     clearIntervalSpy.mockRestore()
+  })
+})
+
+describe('useMiraServer: active profile targeting (ticket10-5A)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    __resetSettings()
+    __resetMiraServerState()
+  })
+
+  it('starts the poll when a profile appears while mounted', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('standalone')
+    // the user saves the first profile (wizard / settings) — the poll
+    // must start for its ip immediately, without a poll-tick wait
+    setActiveProfile()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('compute')
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('re-targets the poll when the active profile switches', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    // A answers with compute, B with cache — after the switch the mode can
+    // only be 'lightweight' if the request really went to B
+    server.use(
+      http.get('*/api/v1/capabilities', ({ request }) => {
+        const host = new URL(request.url).hostname
+        if (host === '10.0.0.1') return HttpResponse.json(COMPUTE)
+        if (host === '10.0.0.2') return HttpResponse.json(CACHE)
+        return HttpResponse.error()
+      }),
+    )
+    setActiveProfile('10.0.0.1')
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('compute')
+    // switch the active profile — the new ip must be pinged (not A)
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: '', keyInstalled: false },
+        { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.2', user: 'root', password: '', keyInstalled: false },
+      ],
+      activePiId: 'pi-2',
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('lightweight')
+    // the poll now targets B: a tick later it still reports B's tier
+    // (hitting A again would keep the mode 'compute')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('lightweight')
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('degrades to standalone and stops polling when all profiles are removed', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    let hits = 0
+    server.use(
+      http.get('*/api/v1/capabilities', () => {
+        hits += 1
+        return HttpResponse.json(COMPUTE)
+      }),
+    )
+    setActiveProfile()
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('compute')
+    const hitsAfterMount = hits
+    expect(hitsAfterMount).toBeGreaterThan(0)
+    // the last profile is removed (deletion UI arrives with 10-5C)
+    updateSettings({ piProfiles: [], activePiId: null })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('standalone')
+    // the poll is stopped: a full tick later there is no new request
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(hits).toBe(hitsAfterMount)
+    unmount()
+    vi.useRealTimers()
   })
 })

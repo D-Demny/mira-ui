@@ -22,12 +22,20 @@
 // implements exactly these routes and must answer cross-origin (the UI page
 // is served from localhost:80) with Access-Control-Allow-Origin.
 //
+// Base URL (ticket10-5A): both routes derive from the ACTIVE Pi profile via
+// piServerBase() in ./miraServer.ts (single source of truth — the
+// capabilities poll and these /img/ routes target the same address). While
+// no profile is configured there is no Pi base: remoteArtUrl() degrades to
+// the direct CDN url and fetchRemoteColors() throws, so every call site
+// keeps the standalone behavior (and in practice the feature flags stay off
+// in standalone mode, so the Pi routes are never requested).
+//
 // Any failure (offline, timeout, non-OK, non-JSON, malformed) must degrade
 // to today's standalone behavior: the direct CDN artwork (AlbumArt swaps to
 // it after a failed Pi load) and the local canvas extraction (useColorExtract
 // falls back to it; static category gradients remain the no-artwork case).
 
-import { MIRA_SERVER_TIMEOUT_MS, MIRA_SERVER_URL } from './miraServer'
+import { MIRA_SERVER_TIMEOUT_MS, activePiServerBase } from './miraServer'
 
 // How long the client waits for the Pi's pre-processed artwork before the
 // AlbumArt img swaps to the direct (Spotify CDN) url. A plain setTimeout in
@@ -40,14 +48,21 @@ export interface RemoteColors {
   dominant: [number, number, number]
 }
 
-// The Pi's pre-processed 160x160 artwork route for the given CDN url
+// The Pi's pre-processed 160x160 artwork route for the given CDN url.
+// ticket10-5A: the base comes from the ACTIVE profile — while none is
+// configured the function degrades to the direct CDN url (standalone
+// behavior), so a call site can never point at a non-existent Pi.
 export function remoteArtUrl(cdnUrl: string): string {
-  return `${MIRA_SERVER_URL}/img/${encodeURIComponent(cdnUrl)}/160.jpg`
+  const base = activePiServerBase()
+  return base ? `${base}/img/${encodeURIComponent(cdnUrl)}/160.jpg` : cdnUrl
 }
 
-// The Pi's color-extraction route for the given CDN url
+// The Pi's color-extraction route for the given CDN url. Returns '' while no
+// profile is configured (fetchRemoteColors refuses to fetch that — its
+// caller then falls back to the local extraction).
 export function remoteColorsUrl(cdnUrl: string): string {
-  return `${MIRA_SERVER_URL}/img/${encodeURIComponent(cdnUrl)}/colors`
+  const base = activePiServerBase()
+  return base ? `${base}/img/${encodeURIComponent(cdnUrl)}/colors` : ''
 }
 
 // Artwork loader adapter (epic10 task 2): the Pi url when remoteBlur is
@@ -95,12 +110,17 @@ function isRemoteColors(raw: unknown): raw is RemoteColors {
 }
 
 // Fetches the Pi-extracted dominant color for the given CDN url. Throws on
-// network failure, timeout, non-OK status, non-JSON body, or a malformed
-// payload — the caller (useColorExtract) then falls back to the local
-// extraction, so a failing Pi never changes the result the user sees.
+// network failure, timeout, non-OK status, non-JSON body, a malformed
+// payload, or a missing active profile (ticket10-5A) — the caller
+// (useColorExtract) then falls back to the local extraction, so a failing
+// Pi never changes the result the user sees.
 export async function fetchRemoteColors(
   cdnUrl: string,
 ): Promise<[number, number, number]> {
+  // no active profile → no Pi to fetch from (standalone)
+  if (activePiServerBase() === null) {
+    throw new Error('mira server colors: no active pi profile')
+  }
   // Chrome 69 target: AbortSignal.timeout() does not exist — plain
   // AbortController + setTimeout (same pattern as miraServer.ts)
   const controller = new AbortController()

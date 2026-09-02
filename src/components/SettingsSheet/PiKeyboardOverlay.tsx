@@ -1,6 +1,13 @@
 import { useCallback, useState } from 'react'
 import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
-import { getSettings, updateSettings, useSettings } from '@/settings'
+import {
+  activePiProfile,
+  defaultPiProfile,
+  getSettings,
+  updateActivePiProfileField,
+  useSettings,
+  type PiProfile,
+} from '@/settings'
 import styles from './PiKeyboardOverlay.module.scss'
 
 // ticket10-2: on-screen keyboard for the PiServerModal credential fields
@@ -87,18 +94,25 @@ export interface PiKeyboardOverlayProps {
   onClose: () => void
 }
 
+// the value shown while no profile exists yet (display defaults — the first
+// write lazily creates profile 1, ticket10-5A)
+const EMPTY_PROFILE: PiProfile = defaultPiProfile()
+
 export function PiKeyboardOverlay({ field, onClose }: PiKeyboardOverlayProps) {
   const settings = useSettings()
-  const value = settings.piServer[field]
+  // ticket10-5A: the keyboard edits the ACTIVE profile (the single profile
+  // the legacy config migrated into); the profile list UI is follow-up work
+  const value = (activePiProfile(settings) ?? EMPTY_PROFILE)[field]
   // session case toggle (lowercase default) — resets with every open (fresh mount)
   const [upper, setUpper] = useState(false)
 
-  // always read the latest value from the store — the modal's own inputs keep
-  // writing the same store, so a local copy would go stale on every keystroke
+  // always write the latest value into the store — the modal's own inputs
+  // keep reading the same store, so a local copy would go stale on every
+  // keystroke. ticket10-5A: writes go to the active profile (the first one
+  // lazily creates profile 1)
   const setFieldValue = useCallback(
     (next: string) => {
-      const current = getSettings().piServer
-      updateSettings({ piServer: { ...current, [field]: next } })
+      updateActivePiProfileField(field, next)
     },
     [field],
   )
@@ -110,7 +124,7 @@ export function PiKeyboardOverlay({ field, onClose }: PiKeyboardOverlayProps) {
         setUpper((v) => !v)
         return
       }
-      const cur = getSettings().piServer
+      const cur = activePiProfile(getSettings()) ?? EMPTY_PROFILE
       if (key.kind === 'backspace') {
         setFieldValue(cur[field].slice(0, -1))
         return

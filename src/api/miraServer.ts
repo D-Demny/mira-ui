@@ -1,17 +1,27 @@
 // Epic 10 — hybrid compute server.
 //
 // The Mira-Thing can optionally be paired with a Raspberry Pi helper server
-// on the LAN (default 192.168.7.1:8080) that offloads artwork preprocessing
-// (remote blur), color extraction, and disk caching. The UI pings the
-// capabilities endpoint below on startup (and re-polls while the main menu is
-// mounted) and degrades seamlessly to standalone mode when the server is
-// unreachable — see src/hooks/useMiraServer.ts for the global state + hook.
+// on the LAN that offloads artwork preprocessing (remote blur), color
+// extraction, and disk caching. The UI pings the capabilities endpoint below
+// (and re-polls while a consumer of src/hooks/useMiraServer.ts is mounted)
+// and degrades seamlessly to standalone mode when the server is unreachable.
+//
+// Base URL (ticket10-5A): there is no hard-coded default address anymore.
+// piServerBase(ip) is the SINGLE source of truth for the Pi address
+// (http://<ip>:8080) and is used by the capabilities poll (this module),
+// the /img/ artwork + color routes (./miraImg.ts), and everything else that
+// talks to a Pi. Which ip is "the" ip is decided by the ACTIVE Pi profile
+// in the settings store (src/settings.ts) — activePiServerBase() resolves
+// it, or null while no profile is configured (then the app runs standalone
+// and no Pi route is used).
 //
 // CORS note: the UI page is served from localhost:80 by the Thing's static
 // web server, so this request is cross-origin. The Pi service must answer
 // with Access-Control-Allow-Origin (same as the daemon API).
 
-export const MIRA_SERVER_URL = 'http://192.168.7.1:8080'
+import { activePiProfile, getSettings } from '@/settings'
+
+export const MIRA_SERVER_PORT = 8080
 
 export const MIRA_SERVER_TIMEOUT_MS = 2500
 
@@ -110,20 +120,31 @@ export function toMiraServerState(raw: unknown): MiraServerState {
   }
 }
 
-// `ip` (epic10 task 4): an optional override for the manual re-check from
-// the settings UI — the Pi may not live at the default address. The
-// 30s background poll (useMiraServer) always pings MIRA_SERVER_URL, and the
-// /img/ artwork + color routes (miraImg.ts) keep the default base url; a
-// permanently different address would need those to become dynamic.
-// A blank ip falls back to the default address.
-export function capabilitiesBaseUrl(ip?: string): string {
-  return ip && ip.trim() !== '' ? `http://${ip.trim()}:8080` : MIRA_SERVER_URL
+// The base url of the given Pi (single source of truth, ticket10-5A) —
+// every Pi route derives from this.
+export function piServerBase(ip: string): string {
+  return `http://${ip.trim()}:${MIRA_SERVER_PORT}`
 }
 
-// Fetches the capabilities and maps them to the UI state. Throws on
-// network failure, timeout, non-OK status, or invalid JSON — the store
-// layer (useMiraServer) catches and degrades to standalone.
-export async function fetchMiraServerCapabilities(ip?: string): Promise<MiraServerState> {
+// The capabilities route of the given Pi (the ticket's naming; identical to
+// piServerBase — the capabilities poll and the /img/ routes share the base).
+export function capabilitiesBaseUrl(ip: string): string {
+  return piServerBase(ip)
+}
+
+// ticket10-5A: the base url of the ACTIVE Pi profile, or null while no
+// profile is configured (fresh install / all profiles removed — the app
+// runs standalone and no Pi route may be used).
+export function activePiServerBase(): string | null {
+  const profile = activePiProfile(getSettings())
+  return profile ? piServerBase(profile.ip) : null
+}
+
+// Fetches the capabilities of the Pi at the given address and maps them to
+// the UI state. Throws on network failure, timeout, non-OK status, or
+// invalid JSON — the store layer (useMiraServer) catches and degrades to
+// standalone.
+export async function fetchMiraServerCapabilities(ip: string): Promise<MiraServerState> {
   const res = await miraFetch(capabilitiesBaseUrl(ip), '/api/v1/capabilities')
   if (!res.ok) throw new Error(`mira server capabilities ${res.status}`)
   return toMiraServerState(await safeJson(res))
