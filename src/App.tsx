@@ -25,6 +25,7 @@ import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBan
 import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { Screensaver } from '@/components/Screensaver'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
+import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TransferPrompt } from '@/components/TransferPrompt'
 
@@ -131,6 +132,8 @@ export default function App() {
   const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
   const [settingsOpenReal, setSettingsOpen] = useState(false)
   const [defaultDeviceModalOpen, setDefaultDeviceModalOpen] = useState(false)
+  // epic10 task 4: the Raspberry Pi provisioning/connection view
+  const [piServerModalOpen, setPiServerModalOpen] = useState(false)
   // bug46: the dimmable HA light control popup (entity + label while open)
   const [lightControl, setLightControl] = useState<{ entityId: string; label: string } | null>(null)
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
@@ -369,6 +372,7 @@ export default function App() {
     !settingsOpen &&
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
+    !piServerModalOpen &&
     !debugOpen &&
     !updateCardOpen &&
     !reportId &&
@@ -554,6 +558,7 @@ export default function App() {
     !settingsOpen &&
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
+    !piServerModalOpen &&
     !debugOpen &&
     !reportId &&
     !pairing
@@ -605,6 +610,10 @@ export default function App() {
     }
     if (defaultDeviceModalOpen) {
       setDefaultDeviceModalOpen(false)
+      return
+    }
+    if (piServerModalOpen) {
+      setPiServerModalOpen(false)
       return
     }
     if (btMenuOpen) {
@@ -661,6 +670,7 @@ export default function App() {
     reportId,
     debugOpen,
     deviceMenuOpen,
+    piServerModalOpen,
     btMenuOpen,
     settingsOpen,
     powerMenuOpen,
@@ -736,6 +746,7 @@ export default function App() {
     !powerMenuOpen &&
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
+    !piServerModalOpen &&
     !btMenuOpen &&
     !settingsOpen &&
     !pairing
@@ -800,6 +811,10 @@ export default function App() {
           onChange={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
           onClose={() => setDefaultDeviceModalOpen(false)}
         />
+      ) : null}
+      {/* epic10 task 4: the Raspberry Pi provisioning/connection view */}
+      {piServerModalOpen ? (
+        <PiServerModal onClose={() => setPiServerModalOpen(false)} />
       ) : null}
       {deviceMenuOpen ? (
         <DevicePicker
@@ -1017,6 +1032,8 @@ export default function App() {
         <MainMenuView
           // bug46: the dev screen also gets the light control popup
           onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
+          // epic10 task 4: the dev screen also gets the Pi settings view
+          onOpenPiServer={() => setPiServerModalOpen(true)}
         />
         {globalOverlays}
       </div>
@@ -1154,6 +1171,8 @@ export default function App() {
             onOpenBluetooth={() => setBtMenuOpen(true)}
             // bug46: dimmable HA light cards open the control popup
             onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
+            // epic10 task 4: the Raspberry Pi row opens the provisioning view
+            onOpenPiServer={() => setPiServerModalOpen(true)}
           />
           {globalOverlays}
         </div>

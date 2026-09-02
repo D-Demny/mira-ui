@@ -1,0 +1,201 @@
+// epic10 task 4: the Raspberry Pi settings view (credentials + provisioning)
+.backdrop {
+  position: fixed;
+  @include inset-0;
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.62);
+  animation: fadeIn $dur-base $ease-standard both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card {
+  width: 540px;
+  max-width: calc(100% - #{$s-6});
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  @include hide-scrollbar;
+  @include column;
+  @include flex-gap-y($s-4);
+  padding: $s-5;
+  background: $bg;
+  border-radius: $r-2xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: slideIn $dur-base $ease-emphasized both;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.header {
+  @include column;
+  @include flex-gap-y($s-2);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: $fs-2xl;
+  font-weight: $fw-semibold;
+  letter-spacing: -0.01em;
+  color: $text-primary;
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: $r-md;
+  color: $text-secondary;
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: $text-primary;
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.status {
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+}
+
+.statusOn {
+  color: $accent;
+}
+
+.statusOff {
+  color: $text-tertiary;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: $s-2;
+}
+
+.fieldLabel {
+  font-size: $fs-sm;
+  color: $text-secondary;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: $s-3 $s-4;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.05);
+  color: $text-primary;
+  font-size: $fs-md;
+  outline: none;
+  transition: border-color $dur-fast $ease-standard;
+
+  &:focus {
+    border-color: $accent;
+  }
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: $s-3;
+}
+
+.btn {
+  flex: 0 0 auto;
+  padding: $s-3 $s-4;
+  border-radius: $r-lg;
+  border: none;
+  background: rgba(255, 255, 255, 0.09);
+  color: $text-primary;
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  cursor: pointer;
+  transition:
+    transform $dur-fast $ease-standard,
+    opacity $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.btnPrimary {
+  width: 100%;
+  background: $accent;
+  color: #000;
+}
+
+.testOk {
+  font-size: $fs-md;
+  color: $accent;
+}
+
+.testFail {
+  font-size: $fs-md;
+  color: $text-tertiary;
+}
+
+.setupError {
+  font-size: $fs-md;
+  color: #ff6b6b;
+  word-break: break-word;
+}
+
+.setupSuccess {
+  font-size: $fs-md;
+  color: $accent;
+  word-break: break-word;
+}
+
+.log {
+  margin: 0;
+  max-height: 96px;
+  overflow-y: auto;
+  @include hide-scrollbar;
+  padding: $s-3 $s-4;
+  border-radius: $r-md;
+  background: rgba(0, 0, 0, 0.4);
+  color: $text-tertiary;
+  font-size: $fs-xs;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

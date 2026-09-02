@@ -46,11 +46,11 @@ export interface MiraServerState {
 // Chrome 69 target: AbortSignal.timeout() does not exist, so the request
 // timeout is implemented with a plain AbortController + setTimeout
 // (same pattern as src/api/homeassistant.ts).
-async function miraFetch(path: string): Promise<Response> {
+async function miraFetch(baseUrl: string, path: string): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), MIRA_SERVER_TIMEOUT_MS)
   try {
-    return await fetch(`${MIRA_SERVER_URL}${path}`, {
+    return await fetch(`${baseUrl}${path}`, {
       signal: controller.signal,
       cache: 'no-store',
     })
@@ -110,11 +110,21 @@ export function toMiraServerState(raw: unknown): MiraServerState {
   }
 }
 
+// `ip` (epic10 task 4): an optional override for the manual re-check from
+// the settings UI — the Pi may not live at the default address. The
+// 30s background poll (useMiraServer) always pings MIRA_SERVER_URL, and the
+// /img/ artwork + color routes (miraImg.ts) keep the default base url; a
+// permanently different address would need those to become dynamic.
+// A blank ip falls back to the default address.
+export function capabilitiesBaseUrl(ip?: string): string {
+  return ip && ip.trim() !== '' ? `http://${ip.trim()}:8080` : MIRA_SERVER_URL
+}
+
 // Fetches the capabilities and maps them to the UI state. Throws on
 // network failure, timeout, non-OK status, or invalid JSON — the store
 // layer (useMiraServer) catches and degrades to standalone.
-export async function fetchMiraServerCapabilities(): Promise<MiraServerState> {
-  const res = await miraFetch('/api/v1/capabilities')
+export async function fetchMiraServerCapabilities(ip?: string): Promise<MiraServerState> {
+  const res = await miraFetch(capabilitiesBaseUrl(ip), '/api/v1/capabilities')
   if (!res.ok) throw new Error(`mira server capabilities ${res.status}`)
   return toMiraServerState(await safeJson(res))
 }

@@ -9,6 +9,7 @@ import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
 import { HOME_LIGHTS, __resetHomeLightStore } from '@/hooks/useHomeLight'
+import { __resetMiraServerState, checkMiraServer } from '@/hooks/useMiraServer'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
@@ -166,6 +167,9 @@ describe('MainMenuView', () => {
     // bug45 option C: the warmed-art set is module-level — reset it per test
     // so the bug8.2 pre-decode assertions start from a fresh session
     __resetWarmedArt()
+    // epic10: the Pi server store is module-level — reset it per test so the
+    // 'Raspberry Pi' row starts from the standalone default
+    __resetMiraServerState()
     // bug25: the settings store persists to localStorage — start every test
     // from the pristine defaults
     localStorage.clear()
@@ -1830,7 +1834,7 @@ describe('MainMenuView', () => {
   })
 
   describe('bug25: settings vertical list', () => {
-    it('renders the six root rows instead of a carousel', async () => {
+    it('renders the root rows instead of a carousel', async () => {
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       for (const label of [
@@ -1840,6 +1844,8 @@ describe('MainMenuView', () => {
         'Mic',
         'Devices',
         'Bluetooth Pairing',
+        // epic10 task 4
+        'Raspberry Pi',
       ]) {
         expect(await screen.findByText(label)).toBeInTheDocument()
       }
@@ -1958,6 +1964,47 @@ describe('MainMenuView', () => {
       confirmDial() // sub-level, focus on 'Default Device' (0)
       confirmDial()
       expect(onOpenDefaultDevice).toHaveBeenCalledTimes(1)
+    })
+
+    it('Raspberry Pi opens the Pi server panel', async () => {
+      const onOpenPiServer = vi.fn()
+      render(<MainMenuView onOpenPiServer={onOpenPiServer} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+
+      wheel(-10) // 1 Show Lyrics
+      wheel(-10) // 2 Karaoke Lyrics
+      wheel(-10) // 3 Mic
+      wheel(-10) // 4 Devices
+      wheel(-10) // 5 Bluetooth Pairing
+      wheel(-10) // 6 Raspberry Pi
+      confirmDial()
+      expect(onOpenPiServer).toHaveBeenCalledTimes(1)
+    })
+
+    it('the Raspberry Pi row value mirrors the live Pi server mode', async () => {
+      // the default capabilities handler keeps the app in standalone mode
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      // only the dial-focused row carries role="button" — take the row div
+      const row = (await screen.findByText('Raspberry Pi')).closest('.row')
+      // the mount-time check settles to standalone; let it settle explicitly
+      await act(async () => {
+        await checkMiraServer()
+      })
+      expect(row?.textContent).toContain('Standalone')
+
+      server.use(
+        http.get('*/api/v1/capabilities', () =>
+          HttpResponse.json({ tier: 'compute', disk_cache: true, remote_colors: true, remote_blur: true }),
+        ),
+      )
+      await act(async () => {
+        await checkMiraServer()
+      })
+      // the re-render keeps the row element — its value cell flips to the
+      // live mode
+      expect(row?.textContent).toContain('Compute Mode')
     })
 
     it('adjust mode does not survive leaving the sub-level', async () => {

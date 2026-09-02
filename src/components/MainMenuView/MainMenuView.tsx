@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useHomeLights, type HomeLightView } from '@/hooks/useHomeLight'
 import { useMiraServer } from '@/hooks/useMiraServer'
+import type { MiraServerState } from '@/api/miraServer'
 import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
 import { usePlaylists } from '@/hooks/usePlaylists'
 import { usePlaylistTracks, LIKED_SONGS_ID } from '@/hooks/usePlaylistTracks'
@@ -50,8 +51,19 @@ function lightSubtitleFor(view: Pick<HomeLightView, 'state' | 'loading' | 'error
   return view.state === 'on' ? 'An' : 'Aus'
 }
 
+// epic10 task 4: the short status shown on the 'Raspberry Pi' settings row
+function piRowValue(mode: MiraServerState['mode']): string {
+  if (mode === 'compute') return 'Compute Mode'
+  if (mode === 'lightweight') return 'Cache Only'
+  return 'Standalone'
+}
+
 // bug25: root rows of the 'Einstellungen' vertical list
-function buildRootSettingsRows(settings: Settings, deviceName: string): SettingsRow[] {
+function buildRootSettingsRows(
+  settings: Settings,
+  deviceName: string,
+  piMode: MiraServerState['mode'],
+): SettingsRow[] {
   return [
     { id: 'set-main', title: 'Settings', value: '', kind: 'open-settings' },
     { id: 'set-lyrics', title: 'Show Lyrics', value: settings.showLyrics ? 'On' : 'Off', kind: 'toggle' },
@@ -64,6 +76,8 @@ function buildRootSettingsRows(settings: Settings, deviceName: string): Settings
     { id: 'set-mic', title: 'Mic', value: settings.voiceMic ? 'On' : 'Off', kind: 'toggle' },
     { id: 'set-devices', title: 'Devices', value: deviceName, kind: 'open-link' },
     { id: 'set-bt', title: 'Bluetooth Pairing', value: '', kind: 'open-link' },
+    // epic10 task 4: opens the Raspberry Pi provisioning/connection view
+    { id: 'set-pi', title: 'Raspberry Pi', value: piRowValue(piMode), kind: 'open-link' },
   ]
 }
 
@@ -196,6 +210,9 @@ export interface MainMenuViewProps {
   // bug46: a dimmable HA light card opens the brightness / color-temperature
   // popup (rendered by the App's globalOverlays) instead of toggling directly
   onOpenLightControl?: (entityId: string, label: string) => void
+  // epic10 task 4: the 'Raspberry Pi' settings row opens the provisioning
+  // view (rendered by the App's globalOverlays)
+  onOpenPiServer?: () => void
 }
 
 // Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4b, 8.4c).
@@ -209,6 +226,7 @@ export function MainMenuView({
   onOpenDevices,
   onOpenBluetooth,
   onOpenLightControl,
+  onOpenPiServer,
 }: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
   // bug4: non-null while a playlist's track list is open as a sub-menu
@@ -342,10 +360,11 @@ export function MainMenuView({
     : undefined
 
   // bug25: the 'Einstellungen' vertical list rows (root + sub-level); the
-  // confirmed level is what the focus hook counts and confirms
+  // confirmed level is what the focus hook counts and confirms. The
+  // 'Raspberry Pi' row's value mirrors the live Pi server mode (epic10)
   const settingsRootRows = useMemo(
-    () => buildRootSettingsRows(settings, nowPlaying?.device_name ?? ''),
-    [settings, nowPlaying?.device_name],
+    () => buildRootSettingsRows(settings, nowPlaying?.device_name ?? '', miraServer.mode),
+    [settings, nowPlaying?.device_name, miraServer.mode],
   )
   const settingsAdjustRows = useMemo(
     () => buildAdjustSettingsRows(settings, defaultDevice, phoneVolume),
@@ -638,6 +657,9 @@ export function MainMenuView({
       onOpenDevices?.()
     } else if (card.id === 'set-bt') {
       onOpenBluetooth?.()
+    } else if (card.id === 'set-pi') {
+      // epic10 task 4: the Raspberry Pi provisioning/connection view
+      onOpenPiServer?.()
     } else if (card.id === 'set-default-device') {
       onOpenDefaultDevice?.()
     } else if (card.id === 'set-brightness') {

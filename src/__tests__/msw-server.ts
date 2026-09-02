@@ -53,4 +53,9 @@ export const server = setupServer(
   // Epic 10: Pi helper-server capabilities (192.168.7.1:8080) — default is
   // unreachable, so the app runs in standalone mode unless a test opts in
   http.get('*/api/v1/capabilities', () => HttpResponse.error()),
+  // Epic 10 task 4: the daemon's Pi provisioning endpoints — defaults mirror
+  // the daemon's behavior (503 = handler not wired / old build; status is
+  // idle). Tests opt in with server.use
+  http.post('*/api/setup-pi', () => new HttpResponse(null, { status: 503 })),
+  http.get('*/api/setup-pi/status', () => HttpResponse.json({ state: 'idle' })),
 )

@@ -100,4 +100,24 @@ describe('settings store', () => {
     expect(getPreset(2)?.label).toBe('Album Z')
     expect(getSettings().presets[2]?.contextUri).toBe('spotify:album:z')
   })
+
+  it('pi server credentials use the ticket defaults when nothing is stored', () => {
+    expect(getSettings().piServer).toEqual({ ip: '192.168.7.1', user: 'root', password: '' })
+  })
+
+  it('round-trips the pi server credentials through localStorage', () => {
+    updateSettings({ piServer: { ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' } })
+    expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' })
+    __resetSettings() // reload from localStorage
+    expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' })
+  })
+
+  it('coerces a hand-edited pi server blob back to usable strings', () => {
+    localStorage.setItem(
+      'mira.settings.v1',
+      JSON.stringify({ piServer: { ip: ' 10.0.0.9 ', user: 42, password: null } }),
+    )
+    __resetSettings()
+    expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'root', password: '' })
+  })
 })
