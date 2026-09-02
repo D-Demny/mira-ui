@@ -1,0 +1,124 @@
+// ticket10-2: on-screen keyboard for the Pi credential fields (design
+// decisions in the component). Chromium 69: no flex `gap` (Chrome 84+, Bug49)
+// — all spacing is margin-based via the flex-gap-x/flex-gap-y mixins.
+$key-gap: 6px;
+
+.backdrop {
+  position: fixed;
+  @include inset-0;
+  // rendered after the PiServerModal in globalOverlays → same z, above it
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.72);
+  animation: fadeIn $dur-base $ease-standard both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card {
+  width: 768px;
+  max-width: calc(100% - #{$s-6});
+  @include column;
+  @include flex-gap-y($s-3);
+  padding: $s-4;
+  background: rgba(30, 30, 38, 0.96);
+  border: 1px solid $menu-border;
+  border-radius: $r-xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: slideIn $dur-base $ease-emphasized both;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fieldName {
+  font-size: $fs-lg;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+}
+
+.preview {
+  max-width: 420px;
+  overflow: hidden;
+  @include truncate(1);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: $fs-md;
+  color: $text-secondary;
+  letter-spacing: 0.04em;
+}
+
+.grid {
+  @include column;
+  @include flex-gap-y($key-gap);
+}
+
+.row {
+  display: flex;
+  @include flex-gap-x($key-gap);
+}
+
+.key {
+  flex: 1 1 0;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.06);
+  color: $text-primary;
+  font-size: $fs-lg;
+  font-weight: $fw-medium;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color $dur-fast $ease-standard,
+    border-color $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.96);
+  }
+
+  // bug31-style dial focus highlight (like the other overlays)
+  &.focused {
+    border-color: $accent;
+    background: rgba(30, 215, 96, 0.16);
+  }
+}
+
+.okBtn {
+  height: 44px;
+  border: none;
+  border-radius: $r-lg;
+  background: $accent;
+  color: #000;
+  font-size: $fs-lg;
+  font-weight: $fw-semibold;
+  cursor: pointer;
+
+  &:active {
+    transform: scale(0.98);
+  }
+}

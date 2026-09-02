@@ -25,6 +25,7 @@ import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBan
 import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { Screensaver } from '@/components/Screensaver'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
+import { PiKeyboardOverlay, type PiKeyboardField } from '@/components/SettingsSheet/PiKeyboardOverlay'
 import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TransferPrompt } from '@/components/TransferPrompt'
@@ -134,6 +135,8 @@ export default function App() {
   const [defaultDeviceModalOpen, setDefaultDeviceModalOpen] = useState(false)
   // epic10 task 4: the Raspberry Pi provisioning/connection view
   const [piServerModalOpen, setPiServerModalOpen] = useState(false)
+  // ticket10-2: the on-screen keyboard for the Pi credential fields (null = closed)
+  const [piKeyboardField, setPiKeyboardField] = useState<PiKeyboardField | null>(null)
   // bug46: the dimmable HA light control popup (entity + label while open)
   const [lightControl, setLightControl] = useState<{ entityId: string; label: string } | null>(null)
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
@@ -373,6 +376,7 @@ export default function App() {
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
     !piServerModalOpen &&
+    !piKeyboardField &&
     !debugOpen &&
     !updateCardOpen &&
     !reportId &&
@@ -612,6 +616,13 @@ export default function App() {
       setDefaultDeviceModalOpen(false)
       return
     }
+    // ticket10-2: back hierarchy — the open keyboard is closed FIRST (its own
+    // ListFocusContext entry normally already consumes the press; this is the
+    // App-level fallback), a second back then closes the Pi menu
+    if (piKeyboardField) {
+      setPiKeyboardField(null)
+      return
+    }
     if (piServerModalOpen) {
       setPiServerModalOpen(false)
       return
@@ -670,6 +681,7 @@ export default function App() {
     reportId,
     debugOpen,
     deviceMenuOpen,
+    piKeyboardField,
     piServerModalOpen,
     btMenuOpen,
     settingsOpen,
@@ -814,7 +826,17 @@ export default function App() {
       ) : null}
       {/* epic10 task 4: the Raspberry Pi provisioning/connection view */}
       {piServerModalOpen ? (
-        <PiServerModal onClose={() => setPiServerModalOpen(false)} />
+        <PiServerModal
+          onClose={() => {
+            setPiServerModalOpen(false)
+            setPiKeyboardField(null)
+          }}
+          onOpenKeyboard={(field) => setPiKeyboardField(field)}
+        />
+      ) : null}
+      {/* ticket10-2: the on-screen keyboard for the Pi credential fields */}
+      {piKeyboardField ? (
+        <PiKeyboardOverlay field={piKeyboardField} onClose={() => setPiKeyboardField(null)} />
       ) : null}
       {deviceMenuOpen ? (
         <DevicePicker
