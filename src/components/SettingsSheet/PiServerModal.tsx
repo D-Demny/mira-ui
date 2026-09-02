@@ -36,6 +36,15 @@ function statusLineFor(mode: 'standalone' | 'lightweight' | 'compute', model: st
   return model ? `Connected (${model} - Cache Only)` : 'Connected (Cache Only)'
 }
 
+// ticket10-3: the SSH key status line below the mode line — a key error
+// always wins (clear message, no half state), otherwise the installed flag
+// decides between key login and password login
+function keyLineFor(installed: boolean, error: string | undefined): string {
+  if (error) return `Key-Setup fehlgeschlagen: ${error}`
+  if (installed) return 'SSH-Key installiert'
+  return 'Passwort-Login erforderlich'
+}
+
 type TestState =
   | { phase: 'idle' }
   | { phase: 'checking' }
@@ -60,16 +69,25 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
 
   // model / tier the last provisioning run detected (null until known)
   const [piInfo, setPiInfo] = useState<{ model?: string; tier?: string } | null>(null)
+  // ticket10-3: SSH key status from the status endpoint (null until the
+  // first successful status read — probe or live poll; a key error is the
+  // daemon's clear failure message, empty/missing = no error)
+  const [keyInfo, setKeyInfo] = useState<{ installed: boolean; error?: string } | null>(null)
   // best-effort probe on open: a run that finished in a previous session
-  // still has its model in the daemon's in-memory status
+  // still has its model AND key state in the daemon's in-memory status —
+  // this is what makes the key line visible in the idle state after a run
+  // (the daemon installs the key at the end of the run, so the idle status
+  // already reflects the outcome; no extra polling needed)
   useEffect(() => {
     let cancelled = false
     void getPiSetupStatus()
       .then((s) => {
-        if (!cancelled && (s.model || s.tier)) setPiInfo({ model: s.model, tier: s.tier })
+        if (cancelled) return
+        if (s.model || s.tier) setPiInfo({ model: s.model, tier: s.tier })
+        setKeyInfo({ installed: s.keyInstalled, error: s.keyError })
       })
       .catch(() => {
-        // old daemon without the endpoints (503) or offline — no model info
+        // old daemon without the endpoints (503) or offline — no info
       })
     return () => {
       cancelled = true
@@ -144,6 +162,8 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       if (status.model || status.tier) {
         setPiInfo({ model: status.model, tier: status.tier })
       }
+      // the run just finished — the key outcome is part of this status
+      setKeyInfo({ installed: status.keyInstalled, error: status.keyError })
       return
     }
     if (status.state === 'failed') {
@@ -153,6 +173,8 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
         error: status.error ?? 'The setup failed',
         logTail: status.logTail,
       })
+      // a failed run never installed a key — surface the key error if any
+      setKeyInfo({ installed: status.keyInstalled, error: status.keyError })
     }
   }
 
@@ -211,6 +233,21 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           >
             {statusLine}
           </div>
+          {/* ticket10-3: key status below the mode line (hidden until the
+              first successful status read — old daemon / offline) */}
+          {keyInfo !== null && (
+            <div
+              className={`${styles.keyLine} ${
+                keyInfo.error
+                  ? styles.keyLineError
+                  : keyInfo.installed
+                    ? styles.keyLineOk
+                    : styles.keyLineWarn
+              }`}
+            >
+              {keyLineFor(keyInfo.installed, keyInfo.error)}
+            </div>
+          )}
         </div>
 
         <label className={styles.field}>

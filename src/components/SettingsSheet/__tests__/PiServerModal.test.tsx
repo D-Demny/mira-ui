@@ -79,6 +79,51 @@ describe('PiServerModal: status line', () => {
   })
 })
 
+describe('PiServerModal: SSH key status line (ticket10-3)', () => {
+  it('shows "SSH-Key installiert" when the daemon reports the key installed', async () => {
+    server.use(
+      http.get('*/api/setup-pi/status', () =>
+        HttpResponse.json({ state: 'idle', key_installed: true }),
+      ),
+    )
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await screen.findByText('SSH-Key installiert')
+  })
+
+  it('shows "Passwort-Login erforderlich" when the key is not installed', async () => {
+    server.use(
+      http.get('*/api/setup-pi/status', () =>
+        HttpResponse.json({ state: 'idle', key_installed: false }),
+      ),
+    )
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await screen.findByText('Passwort-Login erforderlich')
+  })
+
+  it('shows the key error message — the error line wins over the installed flag', async () => {
+    server.use(
+      http.get('*/api/setup-pi/status', () =>
+        HttpResponse.json({
+          state: 'idle',
+          key_installed: true,
+          key_error: 'ssh: append to authorized_keys failed',
+        }),
+      ),
+    )
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await screen.findByText('Key-Setup fehlgeschlagen: ssh: append to authorized_keys failed')
+    expect(screen.queryByText('SSH-Key installiert')).not.toBeInTheDocument()
+  })
+
+  it('treats MISSING key fields (key_installed/key_error) as no error, not as a failure', async () => {
+    // the default MSW handler answers { state: 'idle' } with neither key
+    // field — the line must show the plain password-required text, no error
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await screen.findByText('Passwort-Login erforderlich')
+    expect(screen.queryByText(/Key-Setup fehlgeschlagen/)).not.toBeInTheDocument()
+  })
+})
+
 describe('PiServerModal: Verbindung testen', () => {
   it('pings the ENTERED ip and reports success', async () => {
     // settle the mount check (default handler: offline), then make only the
@@ -187,6 +232,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
           state: 'success',
           model: 'Raspberry Pi Zero 2 W',
           tier: 'compute',
+          key_installed: true,
           log_tail: ['done'],
         }),
       ),
@@ -200,6 +246,9 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
     expect(
       screen.getByText('Erfolgreich eingerichtet — Raspberry Pi Zero 2 W (compute)'),
     ).toBeInTheDocument()
+    // ticket10-3: the finished run reports the key outcome — the key line
+    // updates live from the poll tick (no modal reload needed)
+    expect(screen.getByText('SSH-Key installiert')).toBeInTheDocument()
     vi.useRealTimers()
   })
 
@@ -211,6 +260,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
         HttpResponse.json({
           state: 'failed',
           error: 'SSH authentication failed',
+          key_error: 'ssh-keygen: key generation failed',
           log_tail: ['ssh: Permission denied'],
         }),
       ),
@@ -230,6 +280,10 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
     })
     expect(screen.getByText('SSH authentication failed')).toBeInTheDocument()
     expect(screen.getByText('ssh: Permission denied')).toBeInTheDocument()
+    // ticket10-3: a failed run surfaces the key error in the key line
+    // (key_installed missing = false — the line is the error, not a half state)
+    expect(screen.getByText('Key-Setup fehlgeschlagen: ssh-keygen: key generation failed'))
+      .toBeInTheDocument()
     vi.useRealTimers()
   })
 
