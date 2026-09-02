@@ -58,4 +58,9 @@ export const server = setupServer(
   // idle). Tests opt in with server.use
   http.post('*/api/setup-pi', () => new HttpResponse(null, { status: 503 })),
   http.get('*/api/setup-pi/status', () => HttpResponse.json({ state: 'idle' })),
+  // Epic 10 ticket10-4: the daemon's Pi auto-reconnect status — the default
+  // mirrors an OLD daemon (503 = handler not wired) so the live session
+  // status line stays hidden unless a test opts in (consistent with the
+  // POST /api/setup-pi default)
+  http.get('*/api/pi/status', () => new HttpResponse(null, { status: 503 })),
 )

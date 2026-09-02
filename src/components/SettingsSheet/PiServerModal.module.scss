@@ -118,6 +118,23 @@
   color: #ff6b6b;
 }
 
+// ticket10-4: live SSH-session status line (between the mode line and the
+// key line; the .header column's flex-gap-y mixin provides the spacing —
+// no flex gap here, CR69/Bug49)
+.piLine {
+  font-size: $fs-sm;
+  font-weight: $fw-medium;
+  word-break: break-word;
+}
+
+.piLineOn {
+  color: $accent;
+}
+
+.piLineMuted {
+  color: $text-tertiary;
+}
+
 .field {
   display: flex;
   flex-direction: column;
