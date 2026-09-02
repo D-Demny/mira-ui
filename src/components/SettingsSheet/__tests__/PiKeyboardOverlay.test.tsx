@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { PiKeyboardOverlay } from '../PiKeyboardOverlay'
-import { __resetSettings, getSettings, updateSettings } from '@/settings'
+import { __resetSettings, getSettings, updateActivePiProfileField } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import type { ListFocusEntry } from '@/navigation/listFocusContext'
 
@@ -112,22 +112,27 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
   describe('dial press (confirm) inserts into the active field', () => {
     it('appends the confirmed character to the user field', () => {
       render(<PiKeyboardOverlay field="user" onClose={vi.fn()} />)
-      expect(getSettings().piServer.user).toBe('root')
+      // ticket10-5A: without a profile the display shows the default user
+      expect(screen.getByText('root')).toBeInTheDocument()
 
       turnClockwise(20) // → 'a' (index 20)
       confirmDial()
 
-      expect(getSettings().piServer.user).toBe('roota')
+      // the first write lazily creates profile 1 with the entered value
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].user).toBe('roota')
     })
 
     it('appends the confirmed character to the ip field', () => {
       render(<PiKeyboardOverlay field="ip" onClose={vi.fn()} />)
-      expect(getSettings().piServer.ip).toBe('192.168.7.1')
+      // without a profile the display shows the default ip
+      expect(screen.getByText('192.168.7.1')).toBeInTheDocument()
 
       turnClockwise(4) // → '5' (index 4)
       confirmDial()
 
-      expect(getSettings().piServer.ip).toBe('192.168.7.15')
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].ip).toBe('192.168.7.15')
     })
 
     it('tapping a key focuses it and inserts (touch path)', () => {
@@ -135,7 +140,8 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
 
       fireEvent.click(screen.getByRole('button', { name: '7' }))
 
-      expect(getSettings().piServer.ip).toBe('192.168.7.17')
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].ip).toBe('192.168.7.17')
       expect(screen.getByRole('button', { name: '7' })).toHaveClass('focused')
     })
   })
@@ -147,16 +153,19 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
       turnClockwise(29) // → ⌫ (index 29)
       confirmDial()
 
-      expect(getSettings().piServer.user).toBe('roo')
+      // ticket10-5A: the write creates profile 1 with the shortened value
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].user).toBe('roo')
     })
 
-    it('⌫ on an empty field is a no-op', () => {
+    it('⌫ on an empty field is a no-op (no profile is created)', () => {
       render(<PiKeyboardOverlay field="password" onClose={vi.fn()} />)
 
       turnClockwise(29)
       confirmDial()
 
-      expect(getSettings().piServer.password).toBe('')
+      // ticket10-5A: writing the empty default on a fresh store persists nothing
+      expect(getSettings().piProfiles).toEqual([])
     })
 
     it('Aa toggles the case for the following letters', () => {
@@ -172,7 +181,8 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
       expect(screen.getByRole('button', { name: 'A' })).toHaveClass('focused')
       confirmDial()
 
-      expect(getSettings().piServer.user).toBe('rootA')
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].user).toBe('rootA')
     })
 
     it('␣ inserts a space', () => {
@@ -181,7 +191,8 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
       turnClockwise(39) // → ␣ (index 39)
       confirmDial()
 
-      expect(getSettings().piServer.user).toBe('root ')
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].user).toBe('root ')
     })
 
     it('. inserts the dot (for ip addresses)', () => {
@@ -190,12 +201,13 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
       turnClockwise(37) // → '.' (index 37)
       confirmDial()
 
-      expect(getSettings().piServer.ip).toBe('192.168.7.1.')
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].ip).toBe('192.168.7.1.')
     })
   })
 
   it('keeps the password masked in the preview and routes characters to it', () => {
-    updateSettings({ piServer: { ...getSettings().piServer, password: 'secret' } })
+    updateActivePiProfileField('password', 'secret')
     render(<PiKeyboardOverlay field="password" onClose={vi.fn()} />)
 
     expect(screen.getByText('••••••')).toBeInTheDocument()
@@ -203,13 +215,13 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '5' }))
 
-    expect(getSettings().piServer.password).toBe('secret5')
+    expect(getSettings().piProfiles[0].password).toBe('secret5')
     expect(screen.getByText('•••••••')).toBeInTheDocument()
     expect(screen.queryByText('secret5')).not.toBeInTheDocument()
   })
 
   it('shows the plain value for the non-secret fields', () => {
-    updateSettings({ piServer: { ...getSettings().piServer, user: 'dietpi' } })
+    updateActivePiProfileField('user', 'dietpi')
     render(<PiKeyboardOverlay field="user" onClose={vi.fn()} />)
 
     expect(screen.getByText('dietpi')).toBeInTheDocument()

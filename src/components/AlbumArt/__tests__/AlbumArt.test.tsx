@@ -7,6 +7,7 @@ import {
   __resetMiraServerState,
   checkMiraServer,
 } from '@/hooks/useMiraServer'
+import { __resetSettings, updateSettings } from '@/settings'
 import type { MiraServerCapabilities } from '@/api/miraServer'
 import { AlbumArt } from '../AlbumArt'
 
@@ -56,14 +57,24 @@ describe('epic10 task 2: remoteBlur artwork adapter', () => {
 
   beforeEach(() => {
     __resetMiraServerState()
+    __resetSettings() // ticket10-5A: start every test without a Pi profile
   })
 
-  // pre-seed the shared store (without a subscriber) so the first render
-  // already sees remoteBlur — the check completes before anything renders
+  // ticket10-5A: an active profile is the target of BOTH the capabilities
+  // check and the /img/.../160.jpg route (no hard-coded default address
+  // anymore). The handler is registered before the profile so the re-target
+  // check the profile creation triggers already sees the COMPUTE answer —
+  // the check completes before anything renders
   async function enableRemoteBlur() {
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+      ],
+      activePiId: 'pi-1',
+    })
     await act(async () => {
-      await checkMiraServer()
+      await checkMiraServer('192.168.7.1')
     })
   }
 
@@ -126,7 +137,7 @@ describe('epic10 task 2: remoteBlur artwork adapter', () => {
     // so enableRemoteBlur's re-check is a fresh request, not a join of the
     // in-flight one
     await act(async () => {
-      await checkMiraServer()
+      await checkMiraServer('192.168.7.1')
     })
     await enableRemoteBlur()
     expect(screen.getByRole('img', { name: 'Cover' })).toHaveAttribute('src', remoteArtUrl(CDN))

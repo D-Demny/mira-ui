@@ -6,6 +6,7 @@ import {
   __resetMiraServerState,
   checkMiraServer,
 } from '@/hooks/useMiraServer'
+import { __resetSettings, updateSettings } from '@/settings'
 import { type MiraServerCapabilities } from '@/api/miraServer'
 import {
   DEFAULT_COLOR,
@@ -71,6 +72,7 @@ afterAll(() => {
   beforeEach(() => {
     clearColorCache()
     __resetMiraServerState()
+    __resetSettings() // ticket10-5A: start every test without a Pi profile
     fakeCtx.getImageData.mockClear()
     currentData = makeData(230, 60, 30)
     taintCanvas = false
@@ -125,12 +127,19 @@ describe('epic10 task 2: remoteColors adapter', () => {
     remote_blur: true,
   }
 
-  // pre-seed the shared store (without a subscriber) so the first render
-  // already sees remoteColors — the check completes before anything renders
+  // ticket10-5A: an active profile is the target of BOTH the capabilities
+  // check and the /img/.../colors route (no hard-coded default address
+  // anymore), so the helper configures profile 1 and pings its ip
   async function enableRemoteColors() {
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+      ],
+      activePiId: 'pi-1',
+    })
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     await act(async () => {
-      await checkMiraServer()
+      await checkMiraServer('192.168.7.1')
     })
   }
 
@@ -151,21 +160,30 @@ describe('epic10 task 2: remoteColors adapter', () => {
   })
 
   it('re-extracts when the feature flips on for an already-mounted url', async () => {
-    // standalone first: the image fails to load → default color, nothing
-    // cached (so the cached-color shortcut cannot mask the flip)
+    // standalone first (no profile yet): the image fails to load → default
+    // color, nothing cached (so the cached-color shortcut cannot mask the flip)
     const { result } = renderHook(() => useColorExtract('http://i.scdn.co/image/fail'))
     await waitFor(() => expect(result.current).toEqual(DEFAULT_COLOR))
     // let the mount-time check settle first (standalone via the default
     // handler), so the re-check below is a fresh request, not a join of the
     // in-flight one
     await act(async () => {
-      await checkMiraServer()
+      await checkMiraServer('192.168.7.1')
     })
-    // the Pi shows up while the card is still focused
+    // the Pi shows up while the card is still focused: it reports compute
+    // capabilities AND a profile is configured (the remote URL target) —
+    // the handlers are registered before the profile so the re-target
+    // check the profile creation triggers already sees the COMPUTE answer
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     server.use(http.get('*/img/*/colors', () => HttpResponse.json({ dominant: [10, 20, 30] })))
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+      ],
+      activePiId: 'pi-1',
+    })
     await act(async () => {
-      await checkMiraServer()
+      await checkMiraServer('192.168.7.1')
     })
     await waitFor(() => expect(result.current).toEqual([10, 20, 30]))
   })

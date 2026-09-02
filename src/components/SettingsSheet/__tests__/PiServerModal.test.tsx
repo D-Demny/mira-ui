@@ -5,7 +5,13 @@ import { http, HttpResponse } from 'msw'
 import { PiServerModal } from '../PiServerModal'
 import { __resetMiraServerState, checkMiraServer, getMiraServerState } from '@/hooks/useMiraServer'
 import type { MiraServerCapabilities } from '@/api/miraServer'
-import { __resetSettings, getSettings } from '@/settings'
+import {
+  PI_SERVER_DEFAULT_IP,
+  __resetSettings,
+  activePiProfile,
+  getSettings,
+  updateSettings,
+} from '@/settings'
 import { SETUP_PI_POLL_MS, SETUP_PI_UI_CAP_MS } from '@/api/piServer'
 import { server } from '@/__tests__/msw-server'
 
@@ -23,12 +29,26 @@ const CACHE: MiraServerCapabilities = {
   remote_blur: false,
 }
 
+// ticket10-5A: seed an active profile so the mount-time capabilities check
+// (useMiraServer subscription) has a target (fresh installs have none and
+// stay standalone without polling)
+function setProfile(ip = '192.168.7.1') {
+  updateSettings({
+    piProfiles: [
+      { id: 'pi-1', label: 'Pi 1', ip, user: 'root', password: '', keyInstalled: false },
+    ],
+    activePiId: 'pi-1',
+  })
+}
+
 // the mount-time capabilities check (useMiraServer subscription) must settle
 // before a manual re-check, otherwise the re-check joins it (default handler
-// = standalone) and the test would assert the wrong request
+// = standalone) and the test would assert the wrong request. The mount check
+// targets the active profile's ip (or the shown default while none exists)
 async function settleMountCheck() {
+  const ip = activePiProfile(getSettings())?.ip ?? PI_SERVER_DEFAULT_IP
   await act(async () => {
-    await checkMiraServer()
+    await checkMiraServer(ip)
   })
 }
 
@@ -52,6 +72,7 @@ describe('PiServerModal: status line', () => {
   })
 
   it('shows the compute status line once the Pi reports compute capabilities', async () => {
+    setProfile()
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() => expect(screen.getByText('Verbunden (Compute Mode)')).toBeInTheDocument())
@@ -59,6 +80,7 @@ describe('PiServerModal: status line', () => {
   })
 
   it('shows the lightweight (cache only) status line', async () => {
+    setProfile()
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(CACHE)))
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() => expect(screen.getByText('Connected (Cache Only)')).toBeInTheDocument())
@@ -66,6 +88,7 @@ describe('PiServerModal: status line', () => {
   })
 
   it('includes the detected model from the setup status in the status line', async () => {
+    setProfile()
     server.use(
       http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)),
       http.get('*/api/setup-pi/status', () =>
@@ -254,6 +277,8 @@ describe('PiServerModal: Verbindung testen', () => {
 
 describe('PiServerModal: persistent credentials', () => {
   it('persists ip / user / password in the settings store (localStorage)', async () => {
+    // ticket10-5A: the first keystroke lazily creates profile 1 (no profile
+    // on a fresh install) — the values persist with the profile
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'IP-Adresse' }), {
       target: { value: '10.0.0.9' },
@@ -264,14 +289,21 @@ describe('PiServerModal: persistent credentials', () => {
     fireEvent.change(screen.getByLabelText('SSH Passwort'), {
       target: { value: 'hunter2' },
     })
-    await waitFor(() =>
-      expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' }),
-    )
+    const expected = [
+      { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.9', user: 'dietpi', password: 'hunter2', keyInstalled: false },
+    ]
+    await waitFor(() => expect(getSettings().piProfiles).toEqual(expected))
+    expect(getSettings().activePiId).toBe('pi-1')
     // the store writes through to the settings blob in localStorage
     const stored = JSON.parse(localStorage.getItem('mira.settings.v1') ?? '{}') as {
-      piServer?: { ip: string; user: string; password: string }
+      piProfiles?: unknown
+      activePiId?: string | null
+      piServer?: unknown
     }
-    expect(stored.piServer).toEqual({ ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' })
+    expect(stored.piProfiles).toEqual(expected)
+    expect(stored.activePiId).toBe('pi-1')
+    // the legacy flat key is gone after the first profile write
+    expect(stored.piServer).toBeUndefined()
   })
 
   it('restores the persisted credentials on a fresh mount (simulated reload)', async () => {
@@ -283,7 +315,9 @@ describe('PiServerModal: persistent credentials', () => {
       target: { value: 'secret' },
     })
     await waitFor(() =>
-      expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'root', password: 'secret' }),
+      expect(getSettings().piProfiles).toEqual([
+        { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.9', user: 'root', password: 'secret', keyInstalled: false },
+      ]),
     )
     unmount()
     // a reload re-reads the blob from localStorage

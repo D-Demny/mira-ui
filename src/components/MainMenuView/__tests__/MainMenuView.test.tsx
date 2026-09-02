@@ -1990,7 +1990,7 @@ describe('MainMenuView', () => {
       const row = (await screen.findByText('Raspberry Pi')).closest('.row')
       // the mount-time check settles to standalone; let it settle explicitly
       await act(async () => {
-        await checkMiraServer()
+        await checkMiraServer('192.168.7.1')
       })
       expect(row?.textContent).toContain('Standalone')
 
@@ -2000,7 +2000,7 @@ describe('MainMenuView', () => {
         ),
       )
       await act(async () => {
-        await checkMiraServer()
+        await checkMiraServer('192.168.7.1')
       })
       // the re-render keeps the row element — its value cell flips to the
       // live mode

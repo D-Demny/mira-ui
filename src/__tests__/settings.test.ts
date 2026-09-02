@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { __resetSettings, getSettings, updateSettings } from '../settings'
+import {
+  __resetSettings,
+  activePiProfile,
+  defaultPiProfile,
+  getSettings,
+  updateActivePiProfileField,
+  updateSettings,
+} from '../settings'
 import { getPreset, setPreset } from '../presets'
 
 beforeEach(() => {
@@ -101,23 +108,142 @@ describe('settings store', () => {
     expect(getSettings().presets[2]?.contextUri).toBe('spotify:album:z')
   })
 
-  it('pi server credentials use the ticket defaults when nothing is stored', () => {
-    expect(getSettings().piServer).toEqual({ ip: '192.168.7.1', user: 'root', password: '' })
-  })
+  describe('pi profiles (ticket10-5A)', () => {
+    it('starts with an empty profile list on a fresh install (no synthetic default profile)', () => {
+      expect(getSettings().piProfiles).toEqual([])
+      expect(getSettings().activePiId).toBeNull()
+      expect(activePiProfile(getSettings())).toBeNull()
+    })
 
-  it('round-trips the pi server credentials through localStorage', () => {
-    updateSettings({ piServer: { ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' } })
-    expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' })
-    __resetSettings() // reload from localStorage
-    expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'dietpi', password: 'hunter2' })
-  })
+    it('migrates a legacy piServer entry into exactly one profile (fields kept verbatim)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ piServer: { ip: ' 10.0.0.5 ', user: 'dietpi', password: 'secret' } }),
+      )
+      __resetSettings()
+      expect(getSettings().piProfiles).toEqual([
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '10.0.0.5',
+          user: 'dietpi',
+          password: 'secret',
+          keyInstalled: false,
+        },
+      ])
+      expect(getSettings().activePiId).toBe('pi-1')
+      expect(activePiProfile(getSettings())?.ip).toBe('10.0.0.5')
+    })
 
-  it('coerces a hand-edited pi server blob back to usable strings', () => {
-    localStorage.setItem(
-      'mira.settings.v1',
-      JSON.stringify({ piServer: { ip: ' 10.0.0.9 ', user: 42, password: null } }),
-    )
-    __resetSettings()
-    expect(getSettings().piServer).toEqual({ ip: '10.0.0.9', user: 'root', password: '' })
+    it('treats a legacy blob holding only the ticket defaults as a fresh install', () => {
+      // a pure-defaults blob is indistinguishable from a fresh install —
+      // it never carried real credentials, so nothing is lost
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ piServer: { ip: '192.168.7.1', user: 'root', password: '' } }),
+      )
+      __resetSettings()
+      expect(getSettings().piProfiles).toEqual([])
+      expect(getSettings().activePiId).toBeNull()
+    })
+
+    it('does not migrate twice (idempotent through the persist cycle)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ piServer: { ip: '10.0.0.5', user: 'dietpi', password: 'secret' } }),
+      )
+      __resetSettings()
+      updateSettings({}) // the persist cycle the app runs after a load
+      __resetSettings() // reload the persisted (new-shape) blob
+      expect(getSettings().piProfiles).toEqual([
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '10.0.0.5',
+          user: 'dietpi',
+          password: 'secret',
+          keyInstalled: false,
+        },
+      ])
+      expect(getSettings().activePiId).toBe('pi-1')
+    })
+
+    it('round-trips profiles + active id through localStorage', () => {
+      updateSettings({
+        piProfiles: [
+          { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: 'a', keyInstalled: true },
+          { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.2', user: 'root', password: 'b', keyInstalled: false },
+        ],
+        activePiId: 'pi-2',
+      })
+      expect(getSettings().activePiId).toBe('pi-2')
+      __resetSettings() // reload from localStorage
+      expect(getSettings().piProfiles[0].keyInstalled).toBe(true)
+      expect(getSettings().piProfiles[1].ip).toBe('10.0.0.2')
+      expect(getSettings().activePiId).toBe('pi-2')
+    })
+
+    it('coerces a hand-edited profile list (drops unusable entries, dedupes ids)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({
+          piProfiles: [
+            { id: 'a', label: '', ip: ' 10.0.0.1 ', user: '  ', password: 'p1' },
+            { id: 'a', label: 'Dup', ip: '10.0.0.2', user: 'root', password: 'x' },
+            { id: '', ip: '', user: 'root', password: '' },
+            'garbage',
+          ],
+          activePiId: 'missing',
+        }),
+      )
+      __resetSettings()
+      expect(getSettings().piProfiles).toEqual([
+        { id: 'a', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: 'p1', keyInstalled: false },
+      ])
+      // a stale active id falls back to the first profile
+      expect(getSettings().activePiId).toBe('a')
+    })
+
+    it('falls back to the first profile for a stale active id and to null for an empty list', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({
+          piProfiles: [{ id: 'b', label: 'Pi B', ip: '10.0.0.9', user: 'root', password: '' }],
+          activePiId: 'gone',
+        }),
+      )
+      __resetSettings()
+      expect(getSettings().activePiId).toBe('b')
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ piProfiles: [], activePiId: 'gone' }))
+      __resetSettings()
+      expect(getSettings().activePiId).toBeNull()
+    })
+
+    it('updateActivePiProfileField lazily creates profile 1 and then updates it', () => {
+      expect(activePiProfile(getSettings())).toBeNull()
+      updateActivePiProfileField('ip', '10.9.9.9')
+      expect(getSettings().piProfiles).toEqual([
+        { id: 'pi-1', label: 'Pi 1', ip: '10.9.9.9', user: 'root', password: '', keyInstalled: false },
+      ])
+      expect(getSettings().activePiId).toBe('pi-1')
+      updateActivePiProfileField('user', 'dietpi')
+      expect(getSettings().piProfiles).toHaveLength(1)
+      expect(getSettings().piProfiles[0].user).toBe('dietpi')
+    })
+
+    it('updateActivePiProfileField is a no-op for the display default without a profile', () => {
+      // the wizard's shown defaults are not persisted until they actually change
+      updateActivePiProfileField('ip', '192.168.7.1')
+      updateActivePiProfileField('password', '')
+      expect(getSettings().piProfiles).toEqual([])
+      expect(defaultPiProfile()).toEqual({
+        id: 'pi-1',
+        label: 'Pi 1',
+        ip: '192.168.7.1',
+        user: 'root',
+        password: '',
+        keyInstalled: false,
+      })
+    })
   })
 })
