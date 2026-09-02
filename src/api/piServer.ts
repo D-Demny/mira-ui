@@ -16,7 +16,8 @@
 //   GET /api/setup-pi/status
 //       200 { state: 'idle'|'running'|'success'|'failed',
 //             job_id?, started_at?, finished_at?, model?, tier?,
-//             error?, log_tail?: string[] }
+//             error?, log_tail?: string[],
+//             key_installed: bool, key_error? }   // ticket10-3
 //       503 (no body)   — handler not wired (old daemon build)
 //
 // The daemon API is CORS-open (allow_origin "*"), same as the /ha-api/
@@ -52,6 +53,13 @@ export interface SetupPiStatus {
   tier?: string
   error?: string
   logTail: string[]
+  // ticket10-3: did the last run install the SSH key on the Pi (always
+  // present in the daemon response; false until a run succeeded)
+  keyInstalled: boolean
+  // ticket10-3: key-specific failure message (missing/empty = no error —
+  // a failed run can still report state=success with this set, or the run
+  // can fail before the key step; the password login keeps working)
+  keyError?: string
 }
 
 // res.json() throws a TypeError on non-JSON error bodies (the 503s ship
@@ -137,5 +145,9 @@ export async function getPiSetupStatus(): Promise<SetupPiStatus> {
     tier: typeof body.tier === 'string' && body.tier !== '' ? body.tier : undefined,
     error: typeof body.error === 'string' && body.error !== '' ? body.error : undefined,
     logTail,
+    // the daemon always sends key_installed (bool); a missing field (older
+    // shape / partial response) degrades to "key not installed"
+    keyInstalled: body.key_installed === true,
+    keyError: typeof body.key_error === 'string' && body.key_error !== '' ? body.key_error : undefined,
   }
 }

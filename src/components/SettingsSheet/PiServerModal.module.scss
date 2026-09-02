@@ -99,6 +99,25 @@
   color: $text-tertiary;
 }
 
+// ticket10-3: SSH key status line below the mode line
+.keyLine {
+  font-size: $fs-sm;
+  font-weight: $fw-medium;
+  word-break: break-word;
+}
+
+.keyLineOk {
+  color: $accent;
+}
+
+.keyLineWarn {
+  color: $text-tertiary;
+}
+
+.keyLineError {
+  color: #ff6b6b;
+}
+
 .field {
   display: flex;
   flex-direction: column;
