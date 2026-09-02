@@ -40,7 +40,7 @@ beforeEach(() => {
 
 describe('PiServerModal: status line', () => {
   it('shows the standalone status and the default credentials', async () => {
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     expect(await screen.findByText('Getrennt (Standalone)')).toBeInTheDocument()
     // the default ip / user are pre-filled from the settings store
     expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveValue('192.168.7.1')
@@ -53,14 +53,14 @@ describe('PiServerModal: status line', () => {
 
   it('shows the compute status line once the Pi reports compute capabilities', async () => {
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() => expect(screen.getByText('Verbunden (Compute Mode)')).toBeInTheDocument())
     expect(getMiraServerState().mode).toBe('compute')
   })
 
   it('shows the lightweight (cache only) status line', async () => {
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(CACHE)))
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() => expect(screen.getByText('Connected (Cache Only)')).toBeInTheDocument())
     expect(getMiraServerState().mode).toBe('lightweight')
   })
@@ -72,7 +72,7 @@ describe('PiServerModal: status line', () => {
         HttpResponse.json({ state: 'idle', model: 'Pi Zero 2 W', tier: 'compute' }),
       ),
     )
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() =>
       expect(screen.getByText('Verbunden (Pi Zero 2 W - Compute Mode)')).toBeInTheDocument(),
     )
@@ -83,7 +83,7 @@ describe('PiServerModal: Verbindung testen', () => {
   it('pings the ENTERED ip and reports success', async () => {
     // settle the mount check (default handler: offline), then make only the
     // custom ip answer — proves the test used the input value, not the default
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await settleMountCheck()
     expect(getMiraServerState().mode).toBe('standalone')
     server.use(
@@ -101,7 +101,7 @@ describe('PiServerModal: Verbindung testen', () => {
   })
 
   it('pings the default ip when the input is untouched and reports failure when offline', async () => {
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await settleMountCheck()
     // no custom handler: the default (default ip) stays offline
     fireEvent.click(screen.getByRole('button', { name: 'Verbindung testen' }))
@@ -112,7 +112,7 @@ describe('PiServerModal: Verbindung testen', () => {
 
 describe('PiServerModal: persistent credentials', () => {
   it('persists ip / user / password in the settings store (localStorage)', async () => {
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'IP-Adresse' }), {
       target: { value: '10.0.0.9' },
     })
@@ -133,7 +133,7 @@ describe('PiServerModal: persistent credentials', () => {
   })
 
   it('restores the persisted credentials on a fresh mount (simulated reload)', async () => {
-    const { unmount } = render(<PiServerModal onClose={() => {}} />)
+    const { unmount } = render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     fireEvent.change(screen.getByRole('textbox', { name: 'IP-Adresse' }), {
       target: { value: '10.0.0.9' },
     })
@@ -146,7 +146,7 @@ describe('PiServerModal: persistent credentials', () => {
     unmount()
     // a reload re-reads the blob from localStorage
     __resetSettings()
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveValue('10.0.0.9')
     expect(screen.getByLabelText('SSH Passwort')).toHaveValue('secret')
   })
@@ -161,7 +161,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
         HttpResponse.json({ state: 'running', log_tail: ['ssh: connected', 'installing...'] }),
       ),
     )
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
@@ -215,7 +215,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
         }),
       ),
     )
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
@@ -244,7 +244,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
         return HttpResponse.json({ state: 'idle' })
       }),
     )
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument())
     fireEvent.change(screen.getByRole('textbox', { name: 'IP-Adresse' }), {
       target: { value: 'abc' },
@@ -261,7 +261,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
         HttpResponse.json({ error: 'a provisioning run is already in progress' }, { status: 409 }),
       ),
     )
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Pi automatisch einrichten' }))
     await waitFor(() =>
@@ -278,7 +278,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
       }),
       http.get('*/api/setup-pi/status', () => HttpResponse.json({ state: 'idle' })),
     )
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument())
     fireEvent.change(screen.getByRole('textbox', { name: 'IP-Adresse' }), {
       target: { value: '10.0.0.9' },
@@ -303,7 +303,7 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
         HttpResponse.json({ state: 'running', log_tail: ['hanging...'] }),
       ),
     )
-    render(<PiServerModal onClose={() => {}} />)
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
@@ -318,11 +318,29 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
 
   it('closes via the backdrop and the close button', () => {
     const onClose = vi.fn()
-    render(<PiServerModal onClose={onClose} />)
+    render(<PiServerModal onClose={onClose} onOpenKeyboard={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledTimes(1)
     // tapping the dimmed backdrop (outside the card) closes the view
     fireEvent.click(document.querySelector('.backdrop') as HTMLElement)
     expect(onClose).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('PiServerModal: on-screen keyboard (ticket10-2)', () => {
+  it('focusing a credential field opens the keyboard for exactly that field', () => {
+    const onOpenKeyboard = vi.fn()
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={onOpenKeyboard} />)
+
+    fireEvent.focus(screen.getByRole('textbox', { name: 'IP-Adresse' }))
+    expect(onOpenKeyboard).toHaveBeenLastCalledWith('ip')
+
+    fireEvent.focus(screen.getByRole('textbox', { name: 'SSH Benutzer' }))
+    expect(onOpenKeyboard).toHaveBeenLastCalledWith('user')
+
+    fireEvent.focus(screen.getByLabelText('SSH Passwort'))
+    expect(onOpenKeyboard).toHaveBeenLastCalledWith('password')
+
+    expect(onOpenKeyboard).toHaveBeenCalledTimes(3)
   })
 })

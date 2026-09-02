@@ -12,6 +12,7 @@ import {
   startPiSetup,
   type SetupPiStatus,
 } from '@/api/piServer'
+import type { PiKeyboardField } from './PiKeyboardOverlay'
 import styles from './PiServerModal.module.scss'
 
 // epic10 task 4: the "Raspberry Pi" settings view — connection status, the
@@ -20,6 +21,9 @@ import styles from './PiServerModal.module.scss'
 // its status log.
 interface Props {
   onClose: () => void
+  // ticket10-2: tapping/focusing a credential field opens the on-screen
+  // keyboard overlay (rendered by the App above this modal) for that field
+  onOpenKeyboard: (field: PiKeyboardField) => void
 }
 
 // the status line of the ticket (model only known after a provisioning run
@@ -47,7 +51,7 @@ type SetupState = {
 
 const SETUP_IDLE: SetupState = { phase: 'idle', logTail: [] }
 
-function PiServerModalImpl({ onClose }: Props) {
+function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // the settings store is the single source of truth — every keystroke is
   // persisted (localStorage + the daemon's settings blob) via updateSettings
   const settings = useSettings()
@@ -211,12 +215,14 @@ function PiServerModalImpl({ onClose }: Props) {
 
         <label className={styles.field}>
           <span className={styles.fieldLabel}>IP-Adresse</span>
+          {/* ticket10-2: tapping/focusing a credential field opens the on-screen keyboard */}
           <input
             className={styles.input}
             type="text"
             inputMode="decimal"
             value={piServer.ip}
             onChange={(e) => setField('ip', e.target.value)}
+            onFocus={() => onOpenKeyboard('ip')}
           />
         </label>
 
@@ -227,6 +233,7 @@ function PiServerModalImpl({ onClose }: Props) {
             type="text"
             value={piServer.user}
             onChange={(e) => setField('user', e.target.value)}
+            onFocus={() => onOpenKeyboard('user')}
           />
         </label>
 
@@ -239,6 +246,7 @@ function PiServerModalImpl({ onClose }: Props) {
             type="password"
             value={piServer.password}
             onChange={(e) => setField('password', e.target.value)}
+            onFocus={() => onOpenKeyboard('password')}
           />
         </label>
 
