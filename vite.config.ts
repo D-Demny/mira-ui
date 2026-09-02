@@ -18,6 +18,8 @@ const apiProxy = {
   '/network': API_TARGET,
   '/system': API_TARGET,
   '/settings': API_TARGET,
+  // epic10 task 4: the daemon's Pi provisioning endpoints (POST /api/setup-pi)
+  '/api': API_TARGET,
   '/events': { target: API_TARGET, ws: true, changeOrigin: true },
 }
 

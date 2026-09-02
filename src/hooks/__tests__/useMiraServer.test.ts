@@ -9,6 +9,7 @@ import {
   useMiraServer,
 } from '../useMiraServer'
 import {
+  fetchMiraServerCapabilities,
   MIRA_SERVER_TIMEOUT_MS,
   standaloneMiraServerState,
   toMiraServerState,
@@ -22,6 +23,13 @@ const COMPUTE: MiraServerCapabilities = {
   disk_cache: true,
   remote_colors: true,
   remote_blur: true,
+}
+
+const CACHE: MiraServerCapabilities = {
+  tier: 'cache',
+  disk_cache: true,
+  remote_colors: false,
+  remote_blur: false,
 }
 
 type FakeMethod = 'setInterval' | 'clearInterval' | 'setTimeout' | 'clearTimeout'
@@ -231,6 +239,82 @@ describe('useMiraServer', () => {
       remoteColors: true,
       remoteBlur: true,
     })
+  })
+
+  it('checkMiraServer(ip) pings the custom ip instead of the default address', async () => {
+    // only the custom address answers — the default stays offline. Fake
+    // timers before the render so the poll interval is a fake timer too.
+    vi.useFakeTimers(FAKE_CLOCK)
+    server.use(
+      http.get('*/api/v1/capabilities', ({ request }) => {
+        const host = new URL(request.url).hostname
+        return host === '10.9.8.7' ? HttpResponse.json(COMPUTE) : HttpResponse.error()
+      }),
+    )
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('standalone')
+    await act(async () => {
+      await checkMiraServer('10.9.8.7')
+    })
+    expect(result.current.mode).toBe('compute')
+    // the poll (default address) is unaffected: a tick later it is offline
+    // again (the extra 0-drain settles the poll request's resolution)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('standalone')
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('a manual re-check for a custom ip does not join the in-flight default poll', async () => {
+    // the mount-time check targets the default address (offline here); the
+    // custom address answers. The re-check is issued synchronously while
+    // that check is still in flight — joining it would report the default
+    // address' (offline) result instead of the custom ip's
+    server.use(
+      http.get('*/api/v1/capabilities', ({ request }) => {
+        const host = new URL(request.url).hostname
+        return host === '10.9.8.7' ? HttpResponse.json(COMPUTE) : HttpResponse.error()
+      }),
+    )
+    const { result } = renderHook(() => useMiraServer())
+    const pending = checkMiraServer('10.9.8.7')
+    await act(async () => {
+      await pending
+    })
+    expect(result.current.mode).toBe('compute')
+  })
+
+  it('a blank ip falls back to the default address (fetchMiraServerCapabilities)', async () => {
+    // only the default address answers — a blank override must target it
+    server.use(
+      http.get('*/api/v1/capabilities', ({ request }) => {
+        const host = new URL(request.url).hostname
+        return host === '192.168.7.1' ? HttpResponse.json(COMPUTE) : HttpResponse.error()
+      }),
+    )
+    const state = await fetchMiraServerCapabilities('   ')
+    expect(state.mode).toBe('compute')
+    const stateNoArg = await fetchMiraServerCapabilities()
+    expect(stateNoArg.mode).toBe('compute')
+  })
+
+  it('fetchMiraServerCapabilities targets http://<ip>:8080 for a custom ip', async () => {
+    server.use(
+      http.get('*/api/v1/capabilities', ({ request }) => {
+        const url = new URL(request.url)
+        return url.origin === 'http://10.9.8.7:8080' ? HttpResponse.json(CACHE) : HttpResponse.error()
+      }),
+    )
+    const state = await fetchMiraServerCapabilities('10.9.8.7')
+    expect(state.mode).toBe('lightweight')
   })
 
   it('keeps multiple hook instances in sync (shared store)', async () => {

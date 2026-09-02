@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  capabilitiesBaseUrl,
   fetchMiraServerCapabilities,
   standaloneMiraServerState,
   type MiraServerState,
@@ -24,6 +25,10 @@ export interface MiraServerView extends MiraServerState {
 const listeners = new Set<() => void>()
 let store: MiraServerView = { ...standaloneMiraServerState(), checking: false }
 let inFlight: Promise<void> | null = null
+// the base url the in-flight request targets — a manual re-check for a
+// different address must not join it (epic10 task 4), or the settings UI
+// would report the default address' result for the entered ip
+let inFlightBase: string | null = null
 let activeCount = 0
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -32,18 +37,28 @@ function emit() {
 }
 
 // One capabilities check. Concurrent callers (poll tick + manual re-check)
-// share the in-flight request. Keeps the last known mode while the request
-// is in flight so a slow re-poll never flashes the UI back to standalone.
-async function check(): Promise<void> {
+// share the in-flight request when they target the same address. Keeps the
+// last known mode while the request is in flight so a slow re-poll never
+// flashes the UI back to standalone.
+// `ip` (epic10 task 4) pings a custom address instead of MIRA_SERVER_URL —
+// it only affects the manual re-check from the settings UI; the background
+// poll always pings the default address (see fetchMiraServerCapabilities).
+// A different address never joins the in-flight request: it waits for the
+// shared request to settle, then pings its own address (otherwise the
+// settings UI would report the other address' result).
+async function check(ip?: string): Promise<void> {
+  const base = capabilitiesBaseUrl(ip)
   if (inFlight) {
+    const joins = inFlightBase === base
     await inFlight
-    return
+    if (joins) return
   }
+  inFlightBase = base
   inFlight = (async () => {
     store = { ...store, checking: true }
     emit()
     try {
-      const state = await fetchMiraServerCapabilities()
+      const state = await fetchMiraServerCapabilities(ip)
       store = { ...state, checking: false }
     } catch (err) {
       // Pi offline (or slow / broken) — degrade to standalone
@@ -52,6 +67,7 @@ async function check(): Promise<void> {
       store = { ...standaloneMiraServerState(), checking: false }
     } finally {
       inFlight = null
+      inFlightBase = null
       emit()
     }
   })()
@@ -93,12 +109,21 @@ export function __resetMiraServerState() {
   listeners.clear()
   activeCount = 0
   inFlight = null
+  inFlightBase = null
   store = { ...standaloneMiraServerState(), checking: false }
 }
 
-// Manual re-check (e.g. the settings UI's "re-check" button, epic10 §4)
-export function checkMiraServer(): Promise<void> {
-  return check()
+// Manual re-check (the settings UI's "Verbindung testen", epic10 §4).
+// `ip` pings the Pi at a custom address (the ip input of the settings UI);
+// without it the default MIRA_SERVER_URL is used.
+export function checkMiraServer(ip?: string): Promise<void> {
+  return check(ip)
+}
+
+// Synchronous read of the shared state (e.g. the settings UI shows the
+// result of a just-finished re-check; the hook covers reactive consumers)
+export function getMiraServerState(): MiraServerView {
+  return { mode: store.mode, features: store.features, checking: store.checking }
 }
 
 // Shared global state for the Pi helper server (epic10 §1). Subscribing

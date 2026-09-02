@@ -5,6 +5,16 @@ import type { PresetConfig } from '@/presets'
 // preferences for volume, offset, brightness store
 // settings are all given by the daemon
 
+// epic10 task 4: the Raspberry Pi helper-server connection (ip + ssh
+// credentials for the provisioning wizard). Persisted with the rest of the
+// settings (localStorage + the daemon's opaque settings blob). The password
+// is stored in plain text — documented open point, see the PiServerModal.
+export interface PiServerConfig {
+  ip: string
+  user: string
+  password: string
+}
+
 export interface Settings {
   showLyrics: boolean
   karaokeLyrics: boolean
@@ -16,6 +26,7 @@ export interface Settings {
   uiScalePct: number
   presets: Record<number, PresetConfig>
   defaultDeviceId: string | null
+  piServer: PiServerConfig
 }
 
 export const VOLUME_STEP_MIN = 1
@@ -31,6 +42,11 @@ const SCHEMA_VERSION = 1
 const LS_KEY = 'mira.settings.v1'
 const PUT_DEBOUNCE_MS = 400
 
+// epic10: the Pi helper-server defaults — the Pi sits behind the USB-Ethernet
+// gateway at 192.168.7.1 (same host the capabilities ping targets)
+export const PI_SERVER_DEFAULT_IP = '192.168.7.1'
+export const PI_SERVER_DEFAULT_USER = 'root'
+
 const DEFAULTS: Settings = {
   showLyrics: true,
   karaokeLyrics: true,
@@ -42,6 +58,7 @@ const DEFAULTS: Settings = {
   uiScalePct: UI_SCALE_DEFAULT,
   presets: {},
   defaultDeviceId: null,
+  piServer: { ip: PI_SERVER_DEFAULT_IP, user: PI_SERVER_DEFAULT_USER, password: '' },
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -60,6 +77,17 @@ function coerceUiScale(raw: unknown): number {
   return clamp(Math.round(n / UI_SCALE_STEP) * UI_SCALE_STEP, UI_SCALE_MIN, UI_SCALE_MAX)
 }
 
+// a hand-edited blob must never leave a non-string in the inputs — ip/user
+// are trimmed (trailing whitespace would break the url / the ssh login), the
+// password is kept verbatim (it is a secret, not an identifier)
+function coercePiServer(raw: unknown): PiServerConfig {
+  const obj = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<PiServerConfig>
+  const ip = typeof obj.ip === 'string' && obj.ip.trim() !== '' ? obj.ip.trim() : DEFAULTS.piServer.ip
+  const user = typeof obj.user === 'string' ? obj.user.trim() : DEFAULTS.piServer.user
+  const password = typeof obj.password === 'string' ? obj.password : ''
+  return { ip, user, password }
+}
+
 function coerce(partial: Partial<Settings> | null | undefined): Settings {
   return {
     showLyrics: partial?.showLyrics ?? DEFAULTS.showLyrics,
@@ -76,6 +104,7 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     uiScalePct: coerceUiScale(partial?.uiScalePct),
     presets: partial?.presets ?? {},
     defaultDeviceId: partial?.defaultDeviceId ?? DEFAULTS.defaultDeviceId,
+    piServer: coercePiServer(partial?.piServer),
   }
 }
 
