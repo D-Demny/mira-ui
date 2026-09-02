@@ -12,6 +12,7 @@ import {
   startPiSetup,
   type SetupPiStatus,
 } from '@/api/piServer'
+import { fetchPiStatus, type PiConn, type PiStatus } from '@/api/piStatus'
 import type { PiKeyboardField } from './PiKeyboardOverlay'
 import styles from './PiServerModal.module.scss'
 
@@ -45,6 +46,49 @@ function keyLineFor(installed: boolean, error: string | undefined): string {
   return 'Passwort-Login erforderlich'
 }
 
+// ticket10-4: the age of the last reconnect attempt in whole seconds
+// (RFC3339 UTC timestamp vs now, rounded; null = no usable timestamp —
+// unparsable or future values are treated as missing, clock skew never
+// renders negative)
+function attemptAgeSeconds(rfc3339: string | undefined, now: number): number | null {
+  if (!rfc3339) return null
+  const t = Date.parse(rfc3339)
+  if (Number.isNaN(t)) return null
+  return Math.max(0, Math.round((now - t) / 1000))
+}
+
+// ticket10-4: the live SSH-session status line — the texts are exactly the
+// ones from the ticket. The model/tier suffix is the last known-good
+// provisioning result (remembered while connected, kept for
+// connecting/disconnected); its format mirrors the mode line
+// ("<model> - Compute Mode" / "<model> - Cache Only"). While connecting the
+// line carries the attempt age instead (the ticket's format), no suffix.
+function piLineFor(
+  conn: PiConn,
+  model: string | undefined,
+  tier: string | undefined,
+  ageSeconds: number | null,
+): string {
+  if (conn === 'connecting') {
+    return ageSeconds === null
+      ? 'Verbinde…'
+      : `Verbinde… (letzter Versuch vor ${ageSeconds}s)`
+  }
+  const suffix = model
+    ? tier === 'compute'
+      ? `${model} - Compute Mode`
+      : tier === 'lightweight'
+        ? `${model} - Cache Only`
+        : model
+    : tier === 'compute'
+      ? 'Compute Mode'
+      : tier === 'lightweight'
+        ? 'Cache Only'
+        : ''
+  const base = conn === 'connected' ? 'Verbunden' : 'Getrennt'
+  return suffix ? `${base} (${suffix})` : base
+}
+
 type TestState =
   | { phase: 'idle' }
   | { phase: 'checking' }
@@ -67,12 +111,24 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   const { piServer } = settings
   const miraServer = useMiraServer()
 
-  // model / tier the last provisioning run detected (null until known)
+  // model / tier the last provisioning run detected (null until known) —
+  // feeds the mode line's model suffix (setup-status data source, ticket10-3)
   const [piInfo, setPiInfo] = useState<{ model?: string; tier?: string } | null>(null)
   // ticket10-3: SSH key status from the status endpoint (null until the
   // first successful status read — probe or live poll; a key error is the
   // daemon's clear failure message, empty/missing = no error)
   const [keyInfo, setKeyInfo] = useState<{ installed: boolean; error?: string } | null>(null)
+  // ticket10-4: live SSH-session state from GET /api/pi/status (null until
+  // the first successful read — old daemon (503) / offline keeps the line
+  // hidden, same degradation as the key line and the model info). The age
+  // of the last attempt is computed in the poll tick (NOT during render —
+  // Date.now is impure) and refreshes with every 2 s tick
+  const [piStatus, setPiStatus] = useState<{ status: PiStatus; ageSeconds: number | null } | null>(null)
+  // ticket10-4: the "letzter guter Zustand" of the live session line — the
+  // model/tier remembered while connected, kept for connecting/disconnected
+  // (own cache, NOT piInfo: the mode line keeps its setup-status data
+  // source, so the two lines do not mirror each other)
+  const [piModel, setPiModel] = useState<{ model?: string; tier?: string } | null>(null)
   // best-effort probe on open: a run that finished in a previous session
   // still has its model AND key state in the daemon's in-memory status —
   // this is what makes the key line visible in the idle state after a run
@@ -97,6 +153,9 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   const [test, setTest] = useState<TestState>({ phase: 'idle' })
   const [setup, setSetup] = useState<SetupState>(SETUP_IDLE)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // ticket10-4: wall-time start of the active provisioning run (null =
+  // idle) — the shared 2 s interval serves the run only while this is set
+  const runStartedAtRef = useRef<number | null>(null)
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -104,7 +163,8 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       pollRef.current = null
     }
   }, [])
-  // a wizard run must not outlive the view (unmount or closing the modal)
+  // the shared interval must not outlive the view (unmount or closing the
+  // modal)
   useEffect(() => stopPolling, [stopPolling])
 
   const setField = (field: 'ip' | 'user' | 'password', value: string) => {
@@ -128,10 +188,31 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     setTest({ phase: 'done', ok: mode !== 'standalone', mode })
   }
 
-  // one status tick of the running wizard; resolves the run on success /
-  // failed and stops watching. idle means the daemon reset (e.g. restart) —
-  // keep watching until the wall-time cap.
-  const pollTick = async (startedAt: number) => {
+  // one tick of the shared 2 s rhythm (SETUP_PI_POLL_MS). Design decision
+  // (ticket10-4B): ONE interval drives BOTH status feeds — the live Pi
+  // session status (always) and the provisioning job status (only while a
+  // run is active) — instead of a second, parallel poll; the request rate
+  // on the local daemon stays bounded and the interval dies with the view.
+  // A finished run only clears runStartedAtRef (the rhythm keeps serving
+  // the session status until unmount). idle means the daemon reset
+  // (e.g. restart) — keep watching until the wall-time cap.
+  const pollTick = useCallback(async () => {
+    // (1) ticket10-4: the live session status — part of every tick
+    try {
+      const s = await fetchPiStatus()
+      // "letzter guter Zustand": remembered while connected, kept for
+      // connecting / disconnected
+      if (s.conn === 'connected' && (s.model || s.tier)) {
+        setPiModel({ model: s.model, tier: s.tier })
+      }
+      setPiStatus({ status: s, ageSeconds: attemptAgeSeconds(s.lastAttemptAt, Date.now()) })
+    } catch {
+      // daemon unreachable for a moment — keep the last known state, the
+      // next tick retries (no flicker, the line does not disappear)
+    }
+    // (2) the wizard job status — only while a run is active
+    const startedAt = runStartedAtRef.current
+    if (startedAt === null) return
     let status: SetupPiStatus
     try {
       status = await getPiSetupStatus()
@@ -139,7 +220,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       return // daemon unreachable for a moment — the next tick retries
     }
     if (Date.now() - startedAt > SETUP_PI_UI_CAP_MS) {
-      stopPolling()
+      runStartedAtRef.current = null
       setSetup({
         phase: 'failed',
         error: 'Setup took longer than 5 minutes — give up',
@@ -152,7 +233,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       return
     }
     if (status.state === 'success') {
-      stopPolling()
+      runStartedAtRef.current = null
       setSetup({
         phase: 'success',
         model: status.model,
@@ -167,7 +248,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       return
     }
     if (status.state === 'failed') {
-      stopPolling()
+      runStartedAtRef.current = null
       setSetup({
         phase: 'failed',
         error: status.error ?? 'The setup failed',
@@ -176,13 +257,27 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       // a failed run never installed a key — surface the key error if any
       setKeyInfo({ installed: status.keyInstalled, error: status.keyError })
     }
-  }
+  }, [])
 
-  // "Pi automatisch einrichten": POST the credentials to the local daemon,
-  // then poll the job status every 2s (capped at 5 min of wall time)
+  // ticket10-4: immediate first read of the live session status + the
+  // shared 2 s rhythm for the lifetime of the view (it also serves the
+  // wizard job status while a run is active). The first read is scheduled
+  // in a promise callback (the probe above does the same) — a plain call
+  // in the effect body trips react-hooks/set-state-in-effect
+  useEffect(() => {
+    void Promise.resolve().then(() => {
+      void pollTick()
+    })
+    pollRef.current = setInterval(() => {
+      void pollTick()
+    }, SETUP_PI_POLL_MS)
+  }, [pollTick])
+
+  // "Pi automatisch einrichten": POST the credentials to the local daemon;
+  // the shared 2 s interval (already running since mount) then serves the
+  // job status (capped at 5 min of wall time)
   const handleSetup = async () => {
     if (setup.phase === 'starting' || setup.phase === 'running') return
-    stopPolling()
     setSetup({ phase: 'starting', logTail: [] })
     try {
       await startPiSetup({
@@ -199,11 +294,8 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       return
     }
     setSetup({ phase: 'running', logTail: [] })
-    const startedAt = Date.now()
-    void pollTick(startedAt)
-    pollRef.current = setInterval(() => {
-      void pollTick(startedAt)
-    }, SETUP_PI_POLL_MS)
+    runStartedAtRef.current = Date.now()
+    void pollTick()
   }
 
   const statusLine = statusLineFor(miraServer.mode, piInfo?.model ?? null)
@@ -233,6 +325,23 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           >
             {statusLine}
           </div>
+          {/* ticket10-4: the live SSH-session status between the mode line
+              and the key line (hidden until the first successful read —
+              old daemon (503) / offline, same degradation as the key line) */}
+          {piStatus !== null && (
+            <div
+              className={`${styles.piLine} ${
+                piStatus.status.conn === 'connected' ? styles.piLineOn : styles.piLineMuted
+              }`}
+            >
+              {piLineFor(
+                piStatus.status.conn,
+                piStatus.status.model ?? piModel?.model,
+                piStatus.status.tier ?? piModel?.tier,
+                piStatus.ageSeconds,
+              )}
+            </div>
+          )}
           {/* ticket10-3: key status below the mode line (hidden until the
               first successful status read — old daemon / offline) */}
           {keyInfo !== null && (

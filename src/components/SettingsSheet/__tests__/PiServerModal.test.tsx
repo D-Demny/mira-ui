@@ -124,6 +124,103 @@ describe('PiServerModal: SSH key status line (ticket10-3)', () => {
   })
 })
 
+describe('PiServerModal: live session status line (ticket10-4)', () => {
+  it('shows "Verbunden" with the model and tier while connected', async () => {
+    server.use(
+      http.get('*/api/pi/status', () =>
+        HttpResponse.json({ conn: 'connected', model: 'Pi 4 Model B', tier: 'compute' }),
+      ),
+    )
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    // the mode line stays "Getrennt (Standalone)" (default capabilities
+    // handler is offline) — the exact match picks the session line out
+    await screen.findByText('Verbunden (Pi 4 Model B - Compute Mode)')
+  })
+
+  it('shows "Verbinde… (letzter Versuch vor Xs)" from the last_attempt_at age', async () => {
+    // Date.now spy instead of fake timers: MSW + fake timers + the manual
+    // AbortController timeout is the known hang trap (MEMORY lesson)
+    const BASE = 1_700_000_000_000
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(BASE)
+    try {
+      server.use(
+        http.get('*/api/pi/status', () =>
+          HttpResponse.json({
+            conn: 'connecting',
+            last_attempt_at: new Date(BASE - 45_000).toISOString(),
+          }),
+        ),
+      )
+      render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+      await screen.findByText('Verbinde… (letzter Versuch vor 45s)')
+      // the age tracks the clock — the next 2 s tick re-renders with a
+      // fresh Date.now (waitForOptions are the 3rd arg in this
+      // testing-library version; the 2nd arg is the query options)
+      nowSpy.mockReturnValue(BASE + 20_000)
+      await screen.findByText('Verbinde… (letzter Versuch vor 65s)', undefined, {
+        timeout: 4000,
+      })
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('shows "Verbinde…" without an age when last_attempt_at is missing', async () => {
+    server.use(http.get('*/api/pi/status', () => HttpResponse.json({ conn: 'connecting' })))
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await screen.findByText('Verbinde…')
+  })
+
+  it('shows "Getrennt" when the session is disconnected', async () => {
+    server.use(http.get('*/api/pi/status', () => HttpResponse.json({ conn: 'disconnected' })))
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    // the mode line is "Getrennt (Standalone)" — the exact text match picks
+    // out the session line
+    await screen.findByText('Getrennt')
+  })
+
+  it('keeps the last known model and tier after the connection drops (cache)', async () => {
+    vi.useFakeTimers()
+    server.use(
+      http.get('*/api/pi/status', () =>
+        HttpResponse.json({ conn: 'connected', model: 'Pi 4 Model B', tier: 'compute' }),
+      ),
+    )
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    // the mount-time read settles over the 0-drains (MSW macrotask hops)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('Verbunden (Pi 4 Model B - Compute Mode)')).toBeInTheDocument()
+    // the Pi drops — the next rhythm tick sees disconnected WITHOUT
+    // model/tier: the remembered "letzter guter Zustand" must carry over
+    server.use(http.get('*/api/pi/status', () => HttpResponse.json({ conn: 'disconnected' })))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETUP_PI_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('Getrennt (Pi 4 Model B - Compute Mode)')).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('hides the line entirely on an old daemon (503 = default handler)', async () => {
+    // no server.use for /api/pi/status — the default handler answers 503
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await screen.findByText('Getrennt (Standalone)')
+    expect(screen.queryByText('Getrennt')).not.toBeInTheDocument()
+    expect(screen.queryByText('Verbunden')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Verbinde…/)).not.toBeInTheDocument()
+  })
+})
+
 describe('PiServerModal: Verbindung testen', () => {
   it('pings the ENTERED ip and reports success', async () => {
     // settle the mount check (default handler: offline), then make only the
