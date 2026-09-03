@@ -5,6 +5,7 @@ export const DEV_SCREENS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_D
 export type DevForcedScreen =
   | null
   | 'connection-chooser'
+  | 'tethering-onboarding'
   | 'pc-connect'
   | 'needs-network'
   | 'starting'

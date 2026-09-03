@@ -68,3 +68,69 @@ describe('pi status api (ticket10-4)', () => {
     expect((err as Error).message).toBe('pi status timeout')
   })
 })
+
+// ticket10-6B: the one-time RPi reboot recovery state (consumed by the
+// connection chooser — the onboarding card is replaced by a status panel
+// while the recovery runs)
+describe('pi status api: recovery fields (ticket10-6B)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('maps recovery + recovery_started_at (rebooting)', async () => {
+    server.use(
+      http.get('*/api/pi/status', () =>
+        HttpResponse.json({
+          conn: 'disconnected',
+          recovery: 'rebooting',
+          recovery_started_at: '2026-09-03T07:33:00Z',
+        }),
+      ),
+    )
+    const s = await fetchPiStatus()
+    expect(s.recovery).toBe('rebooting')
+    expect(s.recoveryStartedAt).toBe('2026-09-03T07:33:00Z')
+  })
+
+  it('maps the waiting_after_reboot state', async () => {
+    server.use(
+      http.get('*/api/pi/status', () =>
+        HttpResponse.json({
+          conn: 'disconnected',
+          recovery: 'waiting_after_reboot',
+          recovery_started_at: '2026-09-03T07:40:00Z',
+        }),
+      ),
+    )
+    const s = await fetchPiStatus()
+    expect(s.recovery).toBe('waiting_after_reboot')
+    expect(s.recoveryStartedAt).toBe('2026-09-03T07:40:00Z')
+  })
+
+  it('degrades missing recovery fields to undefined (idle)', async () => {
+    server.use(http.get('*/api/pi/status', () => HttpResponse.json({ conn: 'connected' })))
+    const s = await fetchPiStatus()
+    expect(s.recovery).toBeUndefined()
+    expect(s.recoveryStartedAt).toBeUndefined()
+  })
+
+  it('degrades an unknown recovery state to idle (strict, like the conn field)', async () => {
+    server.use(
+      http.get('*/api/pi/status', () =>
+        HttpResponse.json({ conn: 'disconnected', recovery: 'something_new' }),
+      ),
+    )
+    expect((await fetchPiStatus()).recovery).toBeUndefined()
+  })
+
+  it('degrades an empty recovery_started_at to undefined', async () => {
+    server.use(
+      http.get('*/api/pi/status', () =>
+        HttpResponse.json({ conn: 'disconnected', recovery: 'rebooting', recovery_started_at: '' }),
+      ),
+    )
+    const s = await fetchPiStatus()
+    expect(s.recovery).toBe('rebooting')
+    expect(s.recoveryStartedAt).toBeUndefined()
+  })
+})

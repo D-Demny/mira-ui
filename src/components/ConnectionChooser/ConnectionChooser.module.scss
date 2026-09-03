@@ -32,6 +32,39 @@
   @include flex-gap-x($s-7);
 }
 
+// ticket10-6C: with the third card the row is 3 × 220px + 2 × 32px = 724px
+// wide, which does not fit the 704px content width (800px − 2 × $s-8
+// padding) — the card size shrinks to 200px only for the three-card layout
+// (3 × 200 + 64 = 664px), the glassy styling stays untouched
+.cardsThree .card {
+  width: 200px;
+  height: 200px;
+}
+
+// ticket10-6C: the recovery status panel (replaces the onboarding card
+// while the daemon's one-time reboot recovery runs) — the same card frame,
+// non-interactive, with a smaller two-line text
+.recoveryCard {
+  cursor: default;
+
+  &:active {
+    transform: none;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.025) 100%
+    );
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.recoveryText {
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+  color: $text-secondary;
+  line-height: 1.35;
+}
+
 // went for a glassy look on these for fun
 // TODO resign these to actually reflect a more uniform system design language that is still undecided
 .card {
