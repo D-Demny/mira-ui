@@ -8,6 +8,7 @@ import {
   activePiProfile,
   defaultPiProfile,
   getSettings,
+  newPiProfile,
   updateActivePiProfileField,
   updateSettings,
   useSettings,
@@ -20,7 +21,9 @@ import {
   startPiSetup,
   type SetupPiStatus,
 } from '@/api/piServer'
+import { deletePiProfile } from '@/api/piProfile'
 import { fetchPiStatus, type PiConn, type PiStatus } from '@/api/piStatus'
+import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import type { PiKeyboardField } from './PiKeyboardOverlay'
 import styles from './PiServerModal.module.scss'
 
@@ -28,11 +31,19 @@ import styles from './PiServerModal.module.scss'
 // ip / ssh credentials (persisted with the settings store), the capabilities
 // test against the entered ip, and the daemon-side provisioning wizard with
 // its status log.
-// ticket10-5A: the view operates on the ACTIVE Pi profile (the single
-// profile that the legacy config migrated into). The profile LIST (add /
-// switch / delete) arrives with the follow-up worker 10-5C — until then
-// there is exactly one profile in play, and on a fresh install the fields
-// show the ticket defaults until the first write lazily creates profile 1.
+// ticket10-5C: the view now shows the PROFILE LIST (add / switch / delete)
+// on top of the single-profile wizard: every row carries label, ip and the
+// per-profile status (the live session state of the ACTIVE profile only —
+// inactive profiles have no live session; the key state per profile), and
+// the "aktiv" marker names the profile that decides the capabilities target
+// (ticket10-5A). The credential fields below the list edit the ACTIVE
+// profile (label / ip / user / password via the on-screen keyboard,
+// ticket10-2); "Profil hinzufügen" creates the next profile (pi-N), makes it
+// active, and the existing wizard button starts the provisioning for it
+// (POST /api/setup-pi with profile_id, ticket10-5B contract). Deletion goes
+// through a confirmation overlay and the daemon's
+// DELETE /api/pi/profile (device key + the reachable Pi's authorized_keys).
+
 interface Props {
   onClose: () => void
   // ticket10-2: tapping/focusing a credential field opens the on-screen
@@ -107,6 +118,21 @@ function piLineFor(
   return suffix ? `${base} (${suffix})` : base
 }
 
+// ticket10-5C: per-profile key state precedence (design decision,
+// documented): the DAEMON's live /api/pi/status `profiles[].key_installed`
+// (device-side key pair presence — the ground truth, re-read from the
+// settings blob by the daemon on every tick) wins once the status has been
+// read at least once (piStatus !== null) and lists the profile. Otherwise
+// the SETTINGS flag (the UI's own record, persisted after the provisioning
+// run) is shown. Old daemons (503) never fill piStatus → settings only.
+function keyInstalledFor(profile: PiProfile, piStatus: { status: PiStatus } | null): boolean {
+  if (piStatus !== null) {
+    const entry = piStatus.status.profiles?.find((e) => e.id === profile.id)
+    if (entry) return entry.keyInstalled
+  }
+  return profile.keyInstalled
+}
+
 type TestState =
   | { phase: 'idle' }
   | { phase: 'checking' }
@@ -122,12 +148,107 @@ type SetupState = {
 
 const SETUP_IDLE: SetupState = { phase: 'idle', logTail: [] }
 
+// ticket10-5C: the dial-focus items of the view, in visual order — the
+// profile rows first, then the action buttons. ONE useOverlayListFocus
+// entry (bug31/bug46 pattern) routes wheel/Enter/Back over the whole list;
+// Back closes the view (the delete confirmation and the keyboard push their
+// own entries on top, so they close first — the ticket's back hierarchy).
+type FocusItem =
+  | { kind: 'profile'; id: string }
+  | { kind: 'add' }
+  | { kind: 'delete' }
+  | { kind: 'test' }
+  | { kind: 'setup' }
+
+// ticket10-5C: the profile deletion confirmation — its own small overlay
+// with its own ListFocusContext entry, so Back closes the dialog FIRST,
+// then the profile list, then the menu. Focus starts on "Abbrechen" (the
+// safe default); the destructive action needs an explicit dial press.
+function DeleteConfirmDialog({
+  label,
+  ip,
+  onConfirm,
+  onCancel,
+}: {
+  label: string
+  ip: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
+    itemCount: 2,
+    initialIndex: 0,
+    onConfirm: (index) => {
+      if (index === 1) onConfirm()
+      else onCancel()
+    },
+    onBack: onCancel,
+  })
+  return (
+    // the dialog is nested inside the modal's backdrop (single-root
+    // component) — a click on the dimmed area must cancel the dialog and
+    // NOT bubble to the modal's own backdrop (that would close both at
+    // once), hence the explicit stopPropagation
+    <div
+      className={styles.confirmBackdrop}
+      onClick={(e) => {
+        e.stopPropagation()
+        onCancel()
+      }}
+    >
+      <div
+        className={styles.confirmCard}
+        role="dialog"
+        aria-label="Profil entfernen"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={styles.confirmTitle}>Profil entfernen</div>
+        <div className={styles.confirmText}>
+          «{label}» ({ip}) wird entfernt — der SSH-Key wird vom Gerät und, wenn erreichbar, vom Pi
+          gelöscht.
+        </div>
+        <div className={styles.confirmButtons}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGrow} ${
+              focusedIndex === 0 ? styles.focused : ''
+            }`}
+            ref={focusedIndex === 0 ? setFocusRef : undefined}
+            tabIndex={focusedIndex === 0 ? 0 : -1}
+            onClick={() => {
+              tapItem(0)
+              onCancel()
+            }}
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGrow} ${styles.btnDanger} ${
+              focusedIndex === 1 ? styles.focused : ''
+            }`}
+            ref={focusedIndex === 1 ? setFocusRef : undefined}
+            tabIndex={focusedIndex === 1 ? 0 : -1}
+            onClick={() => {
+              tapItem(1)
+              onConfirm()
+            }}
+          >
+            Entfernen
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // the settings store is the single source of truth — every keystroke is
   // persisted (localStorage + the daemon's settings blob) via
   // updateActivePiProfileField (ticket10-5A: writes go to the ACTIVE
-  // profile)
+  // profile; ticket10-5C: the label joins the editable set)
   const settings = useSettings()
+  const profiles = settings.piProfiles
   const activeProfile = activePiProfile(settings)
   const profile = activeProfile ?? EMPTY_PROFILE
   const miraServer = useMiraServer()
@@ -143,17 +264,23 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // the first successful read — old daemon (503) / offline keeps the line
   // hidden, same degradation as the key line and the model info). The age
   // of the last attempt is computed in the poll tick (NOT during render —
-  // Date.now is impure) and refreshes with every 2 s tick
+  // Date.now is impure) and refreshes with every 2 s tick. ticket10-5: the
+  // status now also carries the per-profile key existence (profiles) and
+  // the bound profile id (profileId)
   const [piStatus, setPiStatus] = useState<{ status: PiStatus; ageSeconds: number | null } | null>(null)
   // ticket10-4: the "letzter guter Zustand" of the live session line — the
   // model/tier remembered while connected, kept for connecting/disconnected
   // (own cache, NOT piInfo: the mode line keeps its setup-status data
   // source, so the two lines do not mirror each other)
   const [piModel, setPiModel] = useState<{ model?: string; tier?: string } | null>(null)
+  // ticket10-5C: the delete confirmation overlay (null = closed) + the
+  // surfaced daemon cleanup error (best-effort, see handleDeleteProfile)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   // ticket10-5A: persist the key result into the ACTIVE profile — the
   // daemon only holds the last run in memory, the per-profile keyInstalled
-  // flag in the settings store is what the follow-up worker's profile list
-  // shows per profile. No-op while no profile exists yet.
+  // flag in the settings store is what the profile list shows per profile
+  // (daemon status takes precedence once it is read, see keyInstalledFor)
   const persistKeyInstalled = useCallback((installed: boolean) => {
     const cur = getSettings()
     const active = activePiProfile(cur)
@@ -168,7 +295,14 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // still has its model AND key state in the daemon's in-memory status —
   // this is what makes the key line visible in the idle state after a run
   // (the daemon installs the key at the end of the run, so the idle status
-  // already reflects the outcome; no extra polling needed)
+  // already reflects the outcome; no extra polling needed).
+  // ticket10-5C: the probe is DISPLAY-ONLY — it no longer persists
+  // keyInstalled into the store. A fresh daemon (restart) has an empty
+  // in-memory state (key_installed: false) even though the device-side key
+  // file still exists; persisting that false would clobber the store's
+  // record (the per-profile key flag the list falls back to). Only a
+  // FINISHED RUN is a trustworthy key outcome — that is what
+  // persistKeyInstalled is called for (pollTick's success/failed branches).
   useEffect(() => {
     let cancelled = false
     void getPiSetupStatus()
@@ -176,7 +310,6 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
         if (cancelled) return
         if (s.model || s.tier) setPiInfo({ model: s.model, tier: s.tier })
         setKeyInfo({ installed: s.keyInstalled, error: s.keyError })
-        persistKeyInstalled(s.keyInstalled)
       })
       .catch(() => {
         // old daemon without the endpoints (503) or offline — no info
@@ -184,7 +317,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     return () => {
       cancelled = true
     }
-  }, [persistKeyInstalled])
+  }, [])
 
   const [test, setTest] = useState<TestState>({ phase: 'idle' })
   const [setup, setSetup] = useState<SetupState>(SETUP_IDLE)
@@ -205,7 +338,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
 
   // ticket10-5A: every keystroke writes the ACTIVE profile (the first write
   // lazily creates profile 1 — see updateActivePiProfileField)
-  const setField = (field: 'ip' | 'user' | 'password', value: string) => {
+  const setField = (field: 'label' | 'ip' | 'user' | 'password', value: string) => {
     updateActivePiProfileField(field, value)
   }
 
@@ -318,8 +451,10 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // ticket10-5A: the wizard operates on the ACTIVE profile. On a fresh
   // install none exists yet — the setup run materializes profile 1 from the
   // shown (default) values, so the wizard keeps working before the profile
-  // list UI arrives (design decision, follow-up worker 10-5C builds the
-  // explicit add flow on top).
+  // list UI exists. ticket10-5C: the POST carries the explicit profile_id
+  // (the 10-5B contract) — the daemon would resolve a missing id to the
+  // active profile from the blob anyway, the explicit id keeps the run
+  // unambiguous (e.g. a stale active id on a hand-edited blob).
   const handleSetup = async () => {
     if (setup.phase === 'starting' || setup.phase === 'running') return
     setSetup({ phase: 'starting', logTail: [] })
@@ -333,6 +468,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
         ip: stored.ip,
         user: stored.user,
         password: stored.password,
+        profileId: stored.id,
       })
     } catch (err) {
       setSetup({
@@ -346,6 +482,113 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     runStartedAtRef.current = Date.now()
     void pollTick()
   }
+
+  // ticket10-5C: "Profil hinzufügen" — create the next profile (id pi-N,
+  // the gap-aware next number, label "Pi N", ticket-default ip) and make it
+  // active IMMEDIATELY: the credential fields below (and the keyboard) now
+  // edit it, and the existing wizard button starts the provisioning for it
+  // (the POST carries its profile_id). The profile is stored from the first
+  // field write onward and STAYS active after a successful run — the
+  // retarget to the new ip happens with the activePiId write (ticket10-5A
+  // subscription), nothing else to wire.
+  const handleAddProfile = () => {
+    const cur = getSettings()
+    const fresh = newPiProfile(cur.piProfiles)
+    setDeleteError(null)
+    updateSettings({ piProfiles: [...cur.piProfiles, fresh], activePiId: fresh.id })
+  }
+
+  // ticket10-5C: "Profil entfernen" — the button operates on the ACTIVE
+  // profile (the one being edited; any other profile becomes the active
+  // one by a single tap on its row first). Opens the confirmation overlay.
+  const requestDelete = () => {
+    if (!activePiProfile(getSettings())) return
+    setConfirmDelete(true)
+  }
+
+  // ticket10-5C: remove the ACTIVE profile (confirmed). Design decisions
+  // (documented): (1) the daemon cleanup (device-side key pair + the
+  // reachable Pi's authorized_keys) is BEST-EFFORT — the profile is removed
+  // from the store even when the daemon is unreachable or too old (503);
+  // an orphaned device key file is harmless (it is only ever used via the
+  // settings blob), and a cleanup error is surfaced below the list. (2)
+  // deleting the ACTIVE profile makes the FIRST remaining profile active;
+  // deleting the LAST profile leaves the list empty and activePiId null →
+  // the app goes standalone (useMiraServer stops polling, the fields show
+  // the display defaults, the list shows "Kein Pi konfiguriert").
+  const handleDeleteProfile = async () => {
+    const target = activePiProfile(getSettings())
+    setConfirmDelete(false)
+    if (!target) return
+    try {
+      await deletePiProfile(target.id, {
+        ip: target.ip,
+        user: target.user,
+        password: target.password,
+      })
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'profile removal failed')
+    }
+    const cur = getSettings()
+    const remaining = cur.piProfiles.filter((p) => p.id !== target.id)
+    updateSettings({
+      piProfiles: remaining,
+      activePiId:
+        remaining.length === 0
+          ? null
+          : cur.activePiId === target.id
+            ? remaining[0].id
+            : cur.activePiId,
+    })
+  }
+
+  // ticket10-5C: switch the active profile. The settings write alone drives
+  // everything (ticket10-5A/10-5B contracts): useMiraServer retargets the
+  // capabilities poll and the /img/ routes immediately on the settings
+  // subscription; this modal re-renders from useSettings (rows, fields,
+  // status lines); the daemon re-binds its SSH session to the new (id, ip,
+  // user, key) target on its next config read.
+  const handleSelectProfile = (id: string) => {
+    const cur = getSettings()
+    if (cur.activePiId === id) return
+    setDeleteError(null)
+    updateSettings({ activePiId: id })
+  }
+
+  // ticket10-5C: the focus list in visual order + the single dial entry
+  const focusItems: FocusItem[] = [
+    ...profiles.map((p): FocusItem => ({ kind: 'profile', id: p.id })),
+    { kind: 'add' },
+    { kind: 'delete' },
+    { kind: 'test' },
+    { kind: 'setup' },
+  ]
+  const handleFocusItem = (index: number) => {
+    const item = focusItems[index]
+    if (!item) return
+    if (item.kind === 'profile') {
+      handleSelectProfile(item.id)
+    } else if (item.kind === 'add') {
+      handleAddProfile()
+    } else if (item.kind === 'delete') {
+      requestDelete()
+    } else if (item.kind === 'test') {
+      void handleTest()
+    } else {
+      void handleSetup()
+    }
+  }
+  const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
+    itemCount: focusItems.length,
+    initialIndex: 0,
+    onConfirm: handleFocusItem,
+    onBack: onClose,
+  })
+
+  const idxAdd = profiles.length
+  const idxDelete = profiles.length + 1
+  const idxTest = profiles.length + 2
+  const idxSetup = profiles.length + 3
 
   const statusLine = statusLineFor(miraServer.mode, piInfo?.model ?? null)
   const testBusy = test.phase === 'checking' || setup.phase === 'starting' || setup.phase === 'running'
@@ -408,6 +651,82 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           )}
         </div>
 
+        {/* ticket10-5C: the profile list — label + ip per row, the live
+            session state of the ACTIVE profile only (inactive profiles
+            have no live session), the per-profile key state (daemon status
+            first, settings flag as fallback — keyInstalledFor), and the
+            "aktiv" marker. Tap/confirm on a row switches the active
+            profile; the row of the active profile is a no-op. */}
+        <ul className={styles.profileList}>
+          {profiles.length === 0 ? (
+            <li className={styles.emptyHint}>Kein Pi konfiguriert</li>
+          ) : (
+            profiles.map((p, i) => {
+              const isActive = activeProfile !== null && p.id === activeProfile.id
+              // the live session state exists only for the ACTIVE profile
+              // (and only once the daemon status has been read at least once)
+              const conn: PiConn | null =
+                isActive && piStatus !== null ? piStatus.status.conn : null
+              const keyOk = keyInstalledFor(p, piStatus)
+              return (
+                <li
+                  key={p.id}
+                  role="button"
+                  tabIndex={focusedIndex === i ? 0 : -1}
+                  className={[
+                    styles.profileRow,
+                    focusedIndex === i ? styles.focused : '',
+                    isActive ? styles.profileActive : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  ref={focusedIndex === i ? setFocusRef : undefined}
+                  onClick={() => {
+                    tapItem(i)
+                    handleSelectProfile(p.id)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleSelectProfile(p.id)
+                    }
+                  }}
+                >
+                  <span className={styles.profileMain}>
+                    <span className={styles.profileLabel}>{p.label}</span>
+                    {isActive && <span className={styles.activeTag}>aktiv</span>}
+                    <span className={styles.profileIp}>{p.ip}</span>
+                  </span>
+                  <span className={styles.profileStatus}>
+                    {conn !== null && (
+                      <span className={conn === 'connected' ? styles.connOn : styles.connOff}>
+                        {conn === 'connected' ? 'Verbunden' : 'Getrennt'}
+                      </span>
+                    )}
+                    <span className={keyOk ? styles.keyTagOk : styles.keyTagWarn}>
+                      {keyOk ? 'SSH-Key installiert' : 'Passwort-Login erforderlich'}
+                    </span>
+                  </span>
+                </li>
+              )
+            })
+          )}
+        </ul>
+        {deleteError !== null && <div className={styles.setupError}>{deleteError}</div>}
+
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Profil-Name</span>
+          {/* ticket10-2/10-5C: tapping/focusing a profile field opens the
+              on-screen keyboard for the ACTIVE profile */}
+          <input
+            className={styles.input}
+            type="text"
+            value={profile.label}
+            onChange={(e) => setField('label', e.target.value)}
+            onFocus={() => onOpenKeyboard('label')}
+          />
+        </label>
+
         <label className={styles.field}>
           <span className={styles.fieldLabel}>IP-Adresse</span>
           {/* ticket10-2: tapping/focusing a credential field opens the on-screen keyboard */}
@@ -445,12 +764,51 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           />
         </label>
 
+        {/* ticket10-5C: the profile management actions (part of the same
+            dial focus list as the rows above, in this visual order) */}
+        <div className={styles.profileActions}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGrow} ${
+              focusedIndex === idxAdd ? styles.focused : ''
+            }`}
+            ref={focusedIndex === idxAdd ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxAdd ? 0 : -1}
+            onClick={() => {
+              tapItem(idxAdd)
+              handleAddProfile()
+            }}
+          >
+            Profil hinzufügen
+          </button>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnGrow} ${
+              focusedIndex === idxDelete ? styles.focused : ''
+            }`}
+            ref={focusedIndex === idxDelete ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxDelete ? 0 : -1}
+            disabled={profiles.length === 0}
+            onClick={() => {
+              tapItem(idxDelete)
+              requestDelete()
+            }}
+          >
+            Profil entfernen
+          </button>
+        </div>
+
         <div className={styles.actions}>
           <button
             type="button"
-            className={styles.btn}
+            className={`${styles.btn} ${focusedIndex === idxTest ? styles.focused : ''}`}
+            ref={focusedIndex === idxTest ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxTest ? 0 : -1}
             disabled={testBusy}
-            onClick={() => void handleTest()}
+            onClick={() => {
+              tapItem(idxTest)
+              void handleTest()
+            }}
           >
             {test.phase === 'checking' ? 'Prüfe…' : 'Verbindung testen'}
           </button>
@@ -467,9 +825,16 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
 
         <button
           type="button"
-          className={`${styles.btn} ${styles.btnPrimary}`}
+          className={`${styles.btn} ${styles.btnPrimary} ${
+            focusedIndex === idxSetup ? styles.focused : ''
+          }`}
+          ref={focusedIndex === idxSetup ? setFocusRef : undefined}
+          tabIndex={focusedIndex === idxSetup ? 0 : -1}
           disabled={testBusy}
-          onClick={() => void handleSetup()}
+          onClick={() => {
+            tapItem(idxSetup)
+            void handleSetup()
+          }}
         >
           {setup.phase === 'starting'
             ? 'Starte Einrichtung…'
@@ -494,6 +859,17 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           </pre>
         )}
       </div>
+
+      {/* ticket10-5C: the deletion confirmation (its own focus entry —
+          Back closes it first, then the profile list, then the menu) */}
+      {confirmDelete && activeProfile !== null && (
+        <DeleteConfirmDialog
+          label={activeProfile.label}
+          ip={activeProfile.ip}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => void handleDeleteProfile()}
+        />
+      )}
     </div>
   )
 }

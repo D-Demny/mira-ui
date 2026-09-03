@@ -295,13 +295,44 @@ export function defaultPiProfile(index = 1): PiProfile {
   }
 }
 
-// ticket10-5A: write one credential field of the ACTIVE profile. The first
-// write lazily creates profile 1 (design decision: the wizard of
+// ticket10-5C: the next free profile number for the "pi-N" id format. The
+// format is what the daemon's sanitizeProfileID (ticket10-5B) accepts, and
+// it matches the migrated legacy profile (pi-1) and the coerced ids
+// (coercePiProfile falls back to pi-<index+1>). Numbering is gap-aware:
+// after deleting pi-2 from [pi-1, pi-3] the next profile is pi-2 again
+// (labels are cosmetic; ids just have to stay unique and safe).
+export function nextPiProfileNumber(profiles: PiProfile[]): number {
+  const taken = new Set(profiles.map((p) => p.id))
+  let n = 1
+  while (taken.has(`pi-${n}`)) n += 1
+  return n
+}
+
+// ticket10-5C: the fresh profile the "Profil hinzufügen" button creates.
+// Id and label derive from the number ("pi-3" / "Pi 3"); the ip is seeded
+// with the ticket default (the USB-Ethernet gateway) so "Verbindung testen"
+// works out of the box — the user edits ip/user/password via the keyboard
+// before starting the wizard.
+export function newPiProfile(profiles: PiProfile[]): PiProfile {
+  const n = nextPiProfileNumber(profiles)
+  return {
+    id: `pi-${n}`,
+    label: `Pi ${n}`,
+    ip: PI_SERVER_DEFAULT_IP,
+    user: PI_SERVER_DEFAULT_USER,
+    password: '',
+    keyInstalled: false,
+  }
+}
+
+// ticket10-5A: write one field of the ACTIVE profile (ticket10-5C added the
+// label to the editable set — the keyboard covers label/ip/user/password).
+// The first write lazily creates profile 1 (design decision: the wizard of
 // ticket10-4 keeps working unchanged — it operates on the active profile,
 // which does not exist yet on a fresh install). Writing exactly the
 // display default on a fresh store is a no-op (nothing new to persist).
 export function updateActivePiProfileField(
-  field: 'ip' | 'user' | 'password',
+  field: 'label' | 'ip' | 'user' | 'password',
   value: string,
 ): void {
   const cur = getSettings()

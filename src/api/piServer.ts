@@ -6,7 +6,7 @@
 // credentials from the settings and tracks the job in memory. The UI then
 // polls the job status and shows the tail of the wizard log.
 //
-//   POST /api/setup-pi            { ip, user, password }
+//   POST /api/setup-pi            { ip, user, password, profile_id? }
 //       202 { job_id }  — accepted, the run is tracked via /status
 //       400 { error }   — validation (ip format, empty fields) / bad JSON
 //       409 { error }   — a provisioning run is already in progress
@@ -42,6 +42,10 @@ export interface SetupPiCredentials {
   ip: string
   user: string
   password: string
+  // ticket10-5: the explicit profile the wizard runs for (per-profile key
+  // storage on the daemon side). Missing = the active profile from the
+  // daemon's settings blob — the UI always sends it explicitly.
+  profileId?: string
 }
 
 export type SetupPiState = 'idle' | 'running' | 'success' | 'failed'
@@ -116,10 +120,19 @@ async function errorFrom(res: Response): Promise<string> {
 // getPiSetupStatus), throws an Error with the daemon's message on 400/409/
 // 5xx and on network/timeout failures.
 export async function startPiSetup(creds: SetupPiCredentials): Promise<void> {
+  const body: Record<string, string> = {
+    ip: creds.ip,
+    user: creds.user,
+    password: creds.password,
+  }
+  // ticket10-5: the daemon resolves a missing profile_id to the active
+  // profile from the blob — the UI sends the explicit id (the profile the
+  // view edits) so the run is unambiguous
+  if (creds.profileId) body.profile_id = creds.profileId
   const res = await setupPiFetch('/api/setup-pi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(creds),
+    body: JSON.stringify(body),
   })
   if (res.status === 202) return
   throw new Error(await errorFrom(res))
