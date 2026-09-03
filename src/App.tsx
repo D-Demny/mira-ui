@@ -3,7 +3,7 @@ import { AlbumArt } from '@/components/AlbumArt'
 import { AuthScreen } from '@/components/AuthScreen'
 import { BluetoothMenu } from '@/components/BluetoothMenu'
 import { BootSplash } from '@/components/BootSplash'
-import { ConnectionChooser } from '@/components/ConnectionChooser'
+import { ConnectionChooser, TetheringWizard } from '@/components/ConnectionChooser'
 import { Controls } from '@/components/Controls'
 import { DevicePicker } from '@/components/DevicePicker'
 import { HomeMenuView } from '@/components/HomeMenuView'
@@ -154,7 +154,9 @@ export default function App() {
   // 'auto' = opened by the idle timer
   const [screensaverBy, setScreensaverBy] = useState<'manual' | 'auto'>('manual')
 
-  const [offlineMethod, setOfflineMethod] = useState<'chooser' | 'bluetooth' | 'pc'>('chooser')
+  const [offlineMethod, setOfflineMethod] = useState<
+    'chooser' | 'bluetooth' | 'pc' | 'tethering-onboarding'
+  >('chooser')
   const [setupOverride, setSetupOverride] = useState(false)
   const stageRef = useRef<HTMLDivElement | null>(null)
 
@@ -419,7 +421,14 @@ export default function App() {
 
   // which offline screen wins
   let offlineScreen:
-    'checking' | 'tethering' | 'reconnecting' | 'chooser' | 'pc' | 'bluetooth' | null = null
+    | 'checking'
+    | 'tethering'
+    | 'reconnecting'
+    | 'chooser'
+    | 'pc'
+    | 'bluetooth'
+    | 'tethering-onboarding'
+    | null = null
   if (offlineActive) {
     if (offlineChecking) {
       offlineScreen = 'checking'
@@ -623,6 +632,18 @@ export default function App() {
       setPiKeyboardField(null)
       return
     }
+    // ticket10-6C: the tethering onboarding wizard — after its keyboard (the
+    // check above) closed, a back press returns to the connection chooser
+    // (the wizard itself also routes its own ListFocus entry's Back here)
+    if (
+      forced === 'tethering-onboarding' ||
+      (!forced && offlineScreen === 'tethering-onboarding')
+    ) {
+      if (forced === 'tethering-onboarding') setForced('connection-chooser')
+      else setOfflineMethod('chooser')
+      setPiKeyboardField(null)
+      return
+    }
     if (piServerModalOpen) {
       setPiServerModalOpen(false)
       return
@@ -682,6 +703,8 @@ export default function App() {
     debugOpen,
     deviceMenuOpen,
     piKeyboardField,
+    forced,
+    setForced,
     piServerModalOpen,
     btMenuOpen,
     settingsOpen,
@@ -882,6 +905,22 @@ export default function App() {
         <ConnectionChooser
           onPickPc={() => setForced('pc-connect')}
           onPickBluetooth={() => setForced('needs-network')}
+          // ticket10-6C: the USB-tethering onboarding wizard (dev screen
+          // path — the production path is the offline branch below)
+          onPickUsbTethering={() => setForced('tethering-onboarding')}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+  // ticket10-6C: the USB-tethering onboarding wizard (dev screen path)
+  if (forced === 'tethering-onboarding') {
+    return (
+      <div className={styles.app}>
+        <TetheringWizard
+          onBack={() => setForced('connection-chooser')}
+          onOpenKeyboard={(field) => setPiKeyboardField(field)}
+          keyboardField={piKeyboardField}
         />
         {globalOverlays}
       </div>
@@ -1089,11 +1128,25 @@ export default function App() {
         case 'bluetooth':
           screen = <NeedsNetwork />
           break
+        case 'tethering-onboarding':
+          // ticket10-6C: the USB-tethering onboarding wizard — unmounts by
+          // itself as soon as the internet arrives (the offline condition
+          // clears with the tethering up), same as the chooser before it
+          screen = (
+            <TetheringWizard
+              onBack={() => setOfflineMethod('chooser')}
+              onOpenKeyboard={(field) => setPiKeyboardField(field)}
+              keyboardField={piKeyboardField}
+            />
+          )
+          break
         default:
           screen = (
             <ConnectionChooser
               onPickPc={() => setOfflineMethod('pc')}
               onPickBluetooth={() => setOfflineMethod('bluetooth')}
+              // ticket10-6C: the third card opens the onboarding wizard
+              onPickUsbTethering={() => setOfflineMethod('tethering-onboarding')}
             />
           )
       }

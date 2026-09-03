@@ -57,6 +57,7 @@ interface ScreenDef {
 
 const SCREENS: ScreenDef[] = [
   { id: 'connection-chooser', label: 'Connection chooser', hint: 'PC/Bluetooth picker' },
+  { id: 'tethering-onboarding', label: 'Tethering onboarding', hint: 'USB tethering wizard (ticket10-6)' },
   { id: 'pc-connect', label: 'PC connect', hint: 'USB tethering sub-screen' },
   { id: 'needs-network', label: 'Bluetooth connect', hint: 'BT pairing sub-screen' },
   { id: 'boot-splash', label: 'Boot splash', hint: 'Animated brand splash' },

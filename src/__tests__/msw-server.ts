@@ -67,4 +67,13 @@ export const server = setupServer(
   // mirrors an OLD daemon (503 = handler not wired, ticket10-5B) so the
   // profile removal degrades to a store-only deletion unless a test opts in
   http.delete('*/api/pi/profile', () => new HttpResponse(null, { status: 503 })),
+  // Epic 10 ticket10-6: the daemon's USB-tethering endpoints — the defaults
+  // mirror an OLD daemon (503 = handler not wired, ticket10-6A) so the
+  // tethering wizard degrades to a clear error unless a test opts in; the
+  // status default is the idle shape (both ok-flags false, like the
+  // daemon's fresh in-memory job)
+  http.post('*/api/pi/tethering', () => new HttpResponse(null, { status: 503 })),
+  http.get('*/api/pi/tethering/status', () =>
+    HttpResponse.json({ state: 'idle', tethering_ok: false, internet_ok: false }),
+  ),
 )

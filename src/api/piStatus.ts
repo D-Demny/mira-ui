@@ -8,7 +8,8 @@
 //   GET /api/pi/status
 //       200 { conn: 'connected'|'connecting'|'disconnected',
 //             last_attempt_at? (RFC3339 UTC), model?, tier?,
-//             profile_id?, profiles?: [{ id, key_installed }] }
+//             profile_id?, profiles?: [{ id, key_installed }],
+//             recovery? (ticket10-6B), recovery_started_at? (RFC3339 UTC) }
 //       503 (no body)   — handler not wired (old daemon build)
 //
 // `conn` is ALWAYS present; the other fields are omitted when unknown
@@ -29,7 +30,22 @@ import { API_BASE } from '@/config'
 // AbortController + setTimeout, same pattern as piServer.ts)
 export const PI_STATUS_TIMEOUT_MS = 10000
 
+// ticket10-6C: the 2 s rhythm at which views that watch the live session
+// status (the settings view, the connection chooser) poll it — the same
+// period as the provisioning job status (SETUP_PI_POLL_MS), one constant
+// for the whole pi-status surface
+export const PI_STATUS_POLL_MS = 2000
+
 export type PiConn = 'connected' | 'connecting' | 'disconnected'
+
+// ticket10-6B: the daemon's one-time RPi reboot recovery for a RECOGNIZED pi
+// without tethering internet. The daemon reboots the RPi exactly once,
+// remembers that in a persistent flag file, and then waits patiently for the
+// complete RPi boot (the boot can take longer than the Mira boot — no false
+// conclusions from early SSH failures, ticket constraint 3). The state is
+// omitted from the response (and thus `undefined` here) while idle; the
+// recovery is finished when the field disappears again.
+export type PiRecovery = 'rebooting' | 'waiting_after_reboot'
 
 // ticket10-5: one entry of the per-profile list — the profile id (matches
 // the settings store's PiProfile.id) and whether the device-side key pair
@@ -54,6 +70,14 @@ export interface PiStatus {
   // ticket10-5: per-profile device-side key existence for all stored
   // profiles (missing = old daemon without the multi-profile shape)
   profiles?: PiProfileKeyStatus[]
+  // ticket10-6B: the reboot-recovery state of the ACTIVE profile (missing
+  // = idle; the daemon omits both recovery fields in that case — an old
+  // daemon never sends them)
+  recovery?: PiRecovery
+  // ticket10-6B: RFC3339 UTC timestamp of the recovery start (missing =
+  // idle / unknown — the chooser shows the state without an age in that
+  // case, same degradation as lastAttemptAt)
+  recoveryStartedAt?: string
 }
 
 // res.json() throws a TypeError on non-JSON error bodies (the 503 ships
@@ -137,5 +161,17 @@ export async function fetchPiStatus(): Promise<PiStatus> {
     profileId:
       typeof body.profile_id === 'string' && body.profile_id !== '' ? body.profile_id : undefined,
     profiles,
+    // ticket10-6B: strict like the other fields — only the two known
+    // recovery states pass through, anything else (hand-edited daemon
+    // output, a future third state) degrades to "idle" (undefined), so the
+    // UI never renders an unknown recovery state
+    recovery:
+      body.recovery === 'rebooting' || body.recovery === 'waiting_after_reboot'
+        ? body.recovery
+        : undefined,
+    recoveryStartedAt:
+      typeof body.recovery_started_at === 'string' && body.recovery_started_at !== ''
+        ? body.recovery_started_at
+        : undefined,
   }
 }
