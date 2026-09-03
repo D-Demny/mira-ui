@@ -7,11 +7,17 @@
 //
 //   GET /api/pi/status
 //       200 { conn: 'connected'|'connecting'|'disconnected',
-//             last_attempt_at? (RFC3339 UTC), model?, tier? }
+//             last_attempt_at? (RFC3339 UTC), model?, tier?,
+//             profile_id?, profiles?: [{ id, key_installed }] }
 //       503 (no body)   — handler not wired (old daemon build)
 //
-// `conn` is ALWAYS present; the other three fields are omitted when unknown
+// `conn` is ALWAYS present; the other fields are omitted when unknown
 // (missing / empty → `undefined` here, same safeJson pattern as piServer.ts).
+// ticket10-5: `conn`/`profile_id` describe the session bound to the ACTIVE
+// profile; `profiles` carries the DEVICE-SIDE key presence for every stored
+// profile (omitted when none are stored / on old daemons — the settings view
+// falls back to the per-profile `keyInstalled` flag from the settings store,
+// see keyInstalledFor in PiServerModal).
 // The Raspberry Pi settings view polls this on the same 2 s rhythm as the
 // provisioning job status (one shared interval in PiServerModal) and hides
 // its status line entirely when the daemon is too old (503).
@@ -25,6 +31,15 @@ export const PI_STATUS_TIMEOUT_MS = 10000
 
 export type PiConn = 'connected' | 'connecting' | 'disconnected'
 
+// ticket10-5: one entry of the per-profile list — the profile id (matches
+// the settings store's PiProfile.id) and whether the device-side key pair
+// for it exists (the "SSH-Key installiert" vs "Passwort-Login erforderlich"
+// source with daemon precedence, see PiServerModal)
+export interface PiProfileKeyStatus {
+  id: string
+  keyInstalled: boolean
+}
+
 export interface PiStatus {
   // always present in the daemon response; an unknown value degrades to
   // 'disconnected' (the line then shows the safe state, never nothing)
@@ -34,6 +49,11 @@ export interface PiStatus {
   // last known-good provisioning result (missing = unknown)
   model?: string
   tier?: string
+  // ticket10-5: the profile the session is bound to (missing = none yet)
+  profileId?: string
+  // ticket10-5: per-profile device-side key existence for all stored
+  // profiles (missing = old daemon without the multi-profile shape)
+  profiles?: PiProfileKeyStatus[]
 }
 
 // res.json() throws a TypeError on non-JSON error bodies (the 503 ships
@@ -95,6 +115,17 @@ export async function fetchPiStatus(): Promise<PiStatus> {
     body.conn === 'connected' || body.conn === 'connecting' || body.conn === 'disconnected'
       ? body.conn
       : 'disconnected'
+  // ticket10-5: per-profile key existence — malformed entries (non-object,
+  // missing/empty id) are dropped, the rest maps key_installed strictly
+  const profiles = Array.isArray(body.profiles)
+    ? body.profiles
+        .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
+        .map((e) => ({
+          id: typeof e.id === 'string' ? e.id : '',
+          keyInstalled: e.key_installed === true,
+        }))
+        .filter((e) => e.id !== '')
+    : undefined
   return {
     conn,
     lastAttemptAt:
@@ -103,5 +134,8 @@ export async function fetchPiStatus(): Promise<PiStatus> {
         : undefined,
     model: typeof body.model === 'string' && body.model !== '' ? body.model : undefined,
     tier: typeof body.tier === 'string' && body.tier !== '' ? body.tier : undefined,
+    profileId:
+      typeof body.profile_id === 'string' && body.profile_id !== '' ? body.profile_id : undefined,
+    profiles,
   }
 }

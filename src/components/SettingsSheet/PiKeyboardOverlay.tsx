@@ -10,8 +10,9 @@ import {
 } from '@/settings'
 import styles from './PiKeyboardOverlay.module.scss'
 
-// ticket10-2: on-screen keyboard for the PiServerModal credential fields
-// (ip / user / password) — the 800×480 CR69 display has no physical keyboard.
+// ticket10-2: on-screen keyboard for the PiServerModal profile fields
+// (label / ip / user / password; ticket10-5C added the label) — the 800×480
+// CR69 display has no physical keyboard.
 //
 // Design decisions (marked "final in worker review" in the ticket):
 // - Dial model: a flat linear walk over all 40 keys in reading order with wrap
@@ -38,9 +39,10 @@ import styles from './PiKeyboardOverlay.module.scss'
 // - CR69: no flex `gap` in this module (Chrome 84+; Bug49 lesson) — all
 //   spacing is margin-based via the flex-gap-x/flex-gap-y mixins.
 
-export type PiKeyboardField = 'ip' | 'user' | 'password'
+export type PiKeyboardField = 'label' | 'ip' | 'user' | 'password'
 
 const FIELD_LABELS: Record<PiKeyboardField, string> = {
+  label: 'Profil-Name',
   ip: 'IP-Adresse',
   user: 'SSH Benutzer',
   password: 'SSH Passwort',

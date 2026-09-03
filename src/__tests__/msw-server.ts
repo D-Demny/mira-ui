@@ -63,4 +63,8 @@ export const server = setupServer(
   // status line stays hidden unless a test opts in (consistent with the
   // POST /api/setup-pi default)
   http.get('*/api/pi/status', () => new HttpResponse(null, { status: 503 })),
+  // Epic 10 ticket10-5: the daemon's Pi profile deletion — the default
+  // mirrors an OLD daemon (503 = handler not wired, ticket10-5B) so the
+  // profile removal degrades to a store-only deletion unless a test opts in
+  http.delete('*/api/pi/profile', () => new HttpResponse(null, { status: 503 })),
 )

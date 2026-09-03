@@ -235,3 +235,160 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+// ticket10-5C: the profile list (CR69/Bug49: no flex gap — the flex-gap-y
+// mixin provides the row spacing via margins)
+.profileList {
+  @include column;
+  @include flex-gap-y($s-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.emptyHint {
+  padding: $s-2 0;
+  font-size: $fs-sm;
+  color: $text-tertiary;
+}
+
+.profileRow {
+  @include touch-target;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    border-color $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.99);
+  }
+}
+
+// the dial focus highlight (same style family as the keyboard keys and the
+// default-device rows)
+.focused {
+  border-color: $accent;
+  background: rgba(30, 215, 96, 0.12);
+}
+
+.profileActive {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.profileMain {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-2);
+}
+
+.profileLabel {
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+}
+
+.activeTag {
+  padding: 1px $s-2;
+  border-radius: $r-pill;
+  background: $accent;
+  color: #000;
+  font-size: $fs-xs;
+  font-weight: $fw-semibold;
+}
+
+.profileIp {
+  font-size: $fs-sm;
+  color: $text-secondary;
+}
+
+.profileStatus {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
+
+.connOn {
+  font-size: $fs-sm;
+  color: $accent;
+}
+
+.connOff {
+  font-size: $fs-sm;
+  color: $text-tertiary;
+}
+
+.keyTagOk {
+  font-size: $fs-sm;
+  color: $accent;
+}
+
+.keyTagWarn {
+  font-size: $fs-sm;
+  color: $text-tertiary;
+}
+
+// the profile management action row (add / delete share the width)
+.profileActions {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
+
+.btnGrow {
+  flex: 1 1 0;
+}
+
+.btnDanger {
+  background: rgba(255, 107, 107, 0.14);
+  color: #ff6b6b;
+
+  &:hover {
+    background: rgba(255, 107, 107, 0.22);
+  }
+}
+
+// ticket10-5C: the deletion confirmation overlay (above the card, same
+// z-level — later in the DOM)
+.confirmBackdrop {
+  position: fixed;
+  @include inset-0;
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.confirmCard {
+  width: 400px;
+  max-width: calc(100% - #{$s-6});
+  @include column;
+  @include flex-gap-y($s-3);
+  padding: $s-5;
+  background: $bg;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: $r-2xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+}
+
+.confirmTitle {
+  font-size: $fs-lg;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+}
+
+.confirmText {
+  font-size: $fs-sm;
+  color: $text-secondary;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.confirmButtons {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
