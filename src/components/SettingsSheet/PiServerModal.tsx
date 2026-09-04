@@ -148,14 +148,16 @@ type SetupState = {
 
 const SETUP_IDLE: SetupState = { phase: 'idle', logTail: [] }
 
-// ticket10-5C + Bug10-2: the dial-focus items of the view, in visual order —
-// the profile rows, the credential fields of the ACTIVE profile (label / ip /
-// user / password; Bug10-2: they join the dial chain between the rows and the
-// buttons, in the same order the layout renders them), then the action
-// buttons. ONE useOverlayListFocus entry (bug31/bug46 pattern) routes
-// wheel/Enter/Back over the whole list; Back closes the view (the delete
-// confirmation and the keyboard push their own entries on top, so they close
-// first — the ticket's back hierarchy).
+// ticket10-5C + Bug10-2 + ticket10-7 KR4: the dial-focus items of the view,
+// in visual order — the profile rows, the credential fields of the ACTIVE
+// profile (label / ip / user / password; Bug10-2: they join the dial chain
+// between the rows and the buttons, in the same order the layout renders
+// them), then the action buttons (the deactivation danger action closes the
+// chain, and only while it is actionable — see disableInChain below). ONE
+// useOverlayListFocus entry (bug31/bug46 pattern) routes wheel/Enter/Back
+// over the whole list; Back closes the view (the delete/deactivate
+// confirmations and the keyboard push their own entries on top, so they
+// close first — the ticket's back hierarchy).
 type FocusItem =
   | { kind: 'profile'; id: string }
   | { kind: 'field'; field: PiKeyboardField }
@@ -163,19 +165,24 @@ type FocusItem =
   | { kind: 'delete' }
   | { kind: 'test' }
   | { kind: 'setup' }
+  | { kind: 'disable' }
 
-// ticket10-5C: the profile deletion confirmation — its own small overlay
-// with its own ListFocusContext entry, so Back closes the dialog FIRST,
-// then the profile list, then the menu. Focus starts on "Abbrechen" (the
+// ticket10-5C + ticket10-7 KR4: the confirmation dialog — its own small
+// overlay with its own ListFocusContext entry, so Back closes the dialog
+// FIRST, then the list, then the menu. Focus starts on "Abbrechen" (the
 // safe default); the destructive action needs an explicit dial press.
-function DeleteConfirmDialog({
-  label,
-  ip,
+// ticket10-7: generalized (title / text / confirmLabel) — the profile
+// deletion and the hybrid deactivation share the exact same pattern.
+function ConfirmDialog({
+  title,
+  text,
+  confirmLabel,
   onConfirm,
   onCancel,
 }: {
-  label: string
-  ip: string
+  title: string
+  text: string
+  confirmLabel: string
   onConfirm: () => void
   onCancel: () => void
 }) {
@@ -203,14 +210,11 @@ function DeleteConfirmDialog({
       <div
         className={styles.confirmCard}
         role="dialog"
-        aria-label="Profil entfernen"
+        aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={styles.confirmTitle}>Profil entfernen</div>
-        <div className={styles.confirmText}>
-          «{label}» ({ip}) wird entfernt — der SSH-Key wird vom Gerät und, wenn erreichbar, vom Pi
-          gelöscht.
-        </div>
+        <div className={styles.confirmTitle}>{title}</div>
+        <div className={styles.confirmText}>{text}</div>
         <div className={styles.confirmButtons}>
           <button
             type="button"
@@ -238,7 +242,7 @@ function DeleteConfirmDialog({
               onConfirm()
             }}
           >
-            Entfernen
+            {confirmLabel}
           </button>
         </div>
       </div>
@@ -281,6 +285,15 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // surfaced daemon cleanup error (best-effort, see handleDeleteProfile)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // ticket10-7 KR4: the deactivation confirmation (false = closed) + the
+  // busy flag (the sequential daemon cleanup runs below the closed dialog —
+  // it must not be re-triggered while it runs) + the one-shot outcome lines
+  // (success always; error only for the profiles whose daemon-side removal
+  // failed — best-effort transparency)
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false)
+  const [deactivateBusy, setDeactivateBusy] = useState(false)
+  const [deactivateResult, setDeactivateResult] = useState<string | null>(null)
+  const [deactivateError, setDeactivateError] = useState<string | null>(null)
   // ticket10-5A: persist the key result into the ACTIVE profile — the
   // daemon only holds the last run in memory, the per-profile keyInstalled
   // flag in the settings store is what the profile list shows per profile
@@ -499,6 +512,11 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     const cur = getSettings()
     const fresh = newPiProfile(cur.piProfiles)
     setDeleteError(null)
+    // ticket10-7 KR4: a new profile re-enables hybrid (the hook clears the
+    // flag on the profile-count growth) — the one-shot deactivation outcome
+    // lines would be stale
+    setDeactivateResult(null)
+    setDeactivateError(null)
     updateSettings({ piProfiles: [...cur.piProfiles, fresh], activePiId: fresh.id })
   }
 
@@ -546,6 +564,58 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     })
   }
 
+  // ticket10-7 KR4: "Deaktivieren" — the off-switch for the entire hybrid
+  // operation (KR4 "Off-Switch / Reversibel"). Opens the confirmation
+  // overlay. The button itself carries the guards (hidden with an empty
+  // list — nothing to deactivate; disabled + out of the focus chain while a
+  // provisioning job runs — the G-D3 UI guard, the daemon would finish the
+  // job and reinstall the device key on the Pi after the cleanup), this is
+  // the belt-and-braces repeat of the same conditions.
+  const requestDeactivate = () => {
+    if (getSettings().piProfiles.length === 0) return
+    if (setup.phase === 'starting' || setup.phase === 'running') return
+    if (deactivateBusy) return
+    setConfirmDeactivate(true)
+  }
+
+  // ticket10-7 KR4: the confirmed deactivation — design decisions
+  // (documented): (1) the daemon cleanup (device-side key pair + the
+  // reachable Pi's authorized_keys) runs SEQUENTIALLY per profile — the
+  // daemon is single-flight per run and parallel SSH sessions to the same
+  // device would race; it is BEST-EFFORT like handleDeleteProfile: a
+  // failing profile is collected and the loop continues (an orphaned device
+  // key is harmless), the failures are surfaced below the list. (2) ONE
+  // store write at the end: piProfiles [] + activePiId null +
+  // hybridDisabled — the hook's retarget then stops the capability poll and
+  // drops to standalone (the flag alone already forces the no-profile
+  // state; the empty list makes the end state a fresh standalone with no
+  // leftover entries).
+  const handleDeactivate = async () => {
+    setConfirmDeactivate(false)
+    setDeactivateBusy(true)
+    setDeactivateResult(null)
+    setDeactivateError(null)
+    const all = getSettings().piProfiles
+    const errors: string[] = []
+    for (const p of all) {
+      try {
+        await deletePiProfile(p.id, {
+          ip: p.ip,
+          user: p.user,
+          password: p.password,
+        })
+      } catch (err) {
+        errors.push(`${p.label}: ${err instanceof Error ? err.message : 'profile removal failed'}`)
+      }
+    }
+    updateSettings({ piProfiles: [], activePiId: null, hybridDisabled: true })
+    setDeactivateBusy(false)
+    setDeactivateResult('Hybrid deaktiviert')
+    if (errors.length > 0) {
+      setDeactivateError(`Nicht entfernt: ${errors.join(' · ')}`)
+    }
+  }
+
   // ticket10-5C: switch the active profile. The settings write alone drives
   // everything (ticket10-5A/10-5B contracts): useMiraServer retargets the
   // capabilities poll and the /img/ routes immediately on the settings
@@ -559,9 +629,18 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     updateSettings({ activePiId: id })
   }
 
+  // ticket10-7 KR4: the deactivation is part of the chain only while it is
+  // actionable — an empty list renders no button (nothing to deactivate)
+  // and a running provisioning job must not be undercut (the G-D3 UI guard:
+  // the button is then visible-but-disabled and LEAVES the dial chain, so
+  // the dial can never confirm it)
+  const jobActive = setup.phase === 'starting' || setup.phase === 'running'
+  const disableInChain = profiles.length > 0 && !jobActive && !deactivateBusy
+
   // ticket10-5C: the focus list in visual order + the single dial entry.
   // Bug10-2: the credential fields sit between the profile rows and the
   // buttons (their layout position) — Enter on a field opens the keyboard.
+  // ticket10-7: the danger action closes the chain (below the setup button).
   const focusItems: FocusItem[] = [
     ...profiles.map((p): FocusItem => ({ kind: 'profile', id: p.id })),
     { kind: 'field', field: 'label' },
@@ -572,6 +651,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     { kind: 'delete' },
     { kind: 'test' },
     { kind: 'setup' },
+    ...(disableInChain ? [{ kind: 'disable' } as FocusItem] : []),
   ]
   const handleFocusItem = (index: number) => {
     const item = focusItems[index]
@@ -590,8 +670,10 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       requestDelete()
     } else if (item.kind === 'test') {
       void handleTest()
-    } else {
+    } else if (item.kind === 'setup') {
       void handleSetup()
+    } else {
+      requestDeactivate()
     }
   }
   const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
@@ -611,6 +693,9 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   const idxDelete = profiles.length + 5
   const idxTest = profiles.length + 6
   const idxSetup = profiles.length + 7
+  // ticket10-7 KR4: -1 while the button is not part of the chain (then it
+  // is disabled or absent, so focusedIndex can never equal it)
+  const idxDisable = disableInChain ? profiles.length + 8 : -1
 
   const statusLine = statusLineFor(miraServer.mode, piInfo?.model ?? null)
   const testBusy = test.phase === 'checking' || setup.phase === 'starting' || setup.phase === 'running'
@@ -646,6 +731,15 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           >
             {statusLine}
           </div>
+          {/* ticket10-7 KR4: the hint line under the status line while the
+              hybrid operation is deactivated — the deliberate end state of
+              "Deaktivieren" (a fresh profile clears the flag again via the
+              hook, re-enabling hybrid) */}
+          {settings.hybridDisabled && (
+            <div className={styles.disabledHint}>
+              Hybrid deaktiviert — ein neues Profil aktiviert ihn wieder
+            </div>
+          )}
           {/* ticket10-4: the live SSH-session status between the mode line
               and the key line (hidden until the first successful read —
               old daemon (503) / offline, same degradation as the key line) */}
@@ -742,6 +836,16 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
           )}
         </ul>
         {deleteError !== null && <div className={styles.setupError}>{deleteError}</div>}
+        {/* ticket10-7 KR4: the one-shot deactivation outcome below the list
+            (same slot as the delete error — failures stay in the Pi menu,
+            KR3): the success line always, the per-profile cleanup failures
+            (best-effort transparency) additionally */}
+        {deactivateResult !== null && (
+          <div className={styles.setupSuccess}>{deactivateResult}</div>
+        )}
+        {deactivateError !== null && (
+          <div className={styles.setupError}>{deactivateError}</div>
+        )}
 
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Profil-Name</span>
@@ -890,6 +994,30 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
               : 'Pi automatisch einrichten'}
         </button>
 
+        {/* ticket10-7 KR4: the deactivation danger action — rendered only
+            with ≥1 profile (an empty list has nothing to deactivate and
+            stays a silent fresh standalone), below the setup button.
+            Disabled while a provisioning job runs (the G-D3 UI guard) or
+            while its own cleanup runs — and out of the dial focus chain in
+            both cases (idxDisable = -1, see focusItems) */}
+        {profiles.length > 0 && (
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnDanger} ${styles.btnDangerFull} ${
+              focusedIndex === idxDisable ? styles.focused : ''
+            }`}
+            ref={focusedIndex === idxDisable ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxDisable ? 0 : -1}
+            disabled={jobActive || deactivateBusy}
+            onClick={() => {
+              tapItem(idxDisable)
+              requestDeactivate()
+            }}
+          >
+            Deaktivieren
+          </button>
+        )}
+
         {setup.phase === 'failed' && setup.error && (
           <div className={styles.setupError}>{setup.error}</div>
         )}
@@ -911,11 +1039,25 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       {/* ticket10-5C: the deletion confirmation (its own focus entry —
           Back closes it first, then the profile list, then the menu) */}
       {confirmDelete && activeProfile !== null && (
-        <DeleteConfirmDialog
-          label={activeProfile.label}
-          ip={activeProfile.ip}
+        <ConfirmDialog
+          title="Profil entfernen"
+          text={`«${activeProfile.label}» (${activeProfile.ip}) wird entfernt — der SSH-Key wird vom Gerät und, wenn erreichbar, vom Pi gelöscht.`}
+          confirmLabel="Entfernen"
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => void handleDeleteProfile()}
+        />
+      )}
+
+      {/* ticket10-7 KR4: the deactivation confirmation — same pattern as
+          the deletion (its own focus entry on top, focus starts on
+          "Abbrechen", Back closes the dialog first, then the view) */}
+      {confirmDeactivate && (
+        <ConfirmDialog
+          title="Hybrid deaktivieren"
+          text="Alle Pi-Profile + SSH-Keys werden entfernt und der Hybrid-Betrieb deaktiviert. Der 30-s-Check stoppt. Ein neues Profil aktiviert Hybrid wieder."
+          confirmLabel="Deaktivieren"
+          onCancel={() => setConfirmDeactivate(false)}
+          onConfirm={() => void handleDeactivate()}
         />
       )}
     </div>

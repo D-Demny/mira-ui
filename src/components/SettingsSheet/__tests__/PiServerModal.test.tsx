@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { PiServerModal } from '../PiServerModal'
 import { PiKeyboardOverlay, type PiKeyboardField } from '../PiKeyboardOverlay'
 import { __resetMiraServerState, checkMiraServer, getMiraServerState } from '@/hooks/useMiraServer'
 import type { MiraServerCapabilities } from '@/api/miraServer'
+import * as settingsModule from '@/settings'
 import {
   PI_SERVER_DEFAULT_IP,
   __resetSettings,
@@ -949,8 +950,9 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     // and switches the shared state — the /img/ routes follow the same base
     await waitFor(() => expect(getMiraServerState().mode).toBe('compute'))
 
-    // the aktiv marker moved to the second row
-    const activeRows = screen.getAllByRole('button', { name: /aktiv/ })
+    // the aktiv marker moved to the second row (row pattern — the
+    // ticket10-7 "Deaktivieren" button also contains "aktiv" in its name)
+    const activeRows = screen.getAllByRole('button', { name: /Pi \d+.*aktiv/ })
     expect(activeRows).toHaveLength(1)
     expect(activeRows[0]).toHaveTextContent('10.0.0.9')
     // tapping the active row again is a no-op (still exactly one active)
@@ -1139,13 +1141,20 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     wheel(-40) // → "Verbindung testen"
     expect(screen.getByRole('button', { name: 'Verbindung testen' })).toHaveClass('focused')
 
-    wheel(-40) // → "Pi automatisch einrichten" (last item, clamped)
+    wheel(-40) // → "Pi automatisch einrichten"
     expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toHaveClass('focused')
+
+    wheel(-40) // → "Deaktivieren" (last item, clamped — the ticket10-7 KR4
+    // danger action closes the chain below the setup button)
+    expect(screen.getByRole('button', { name: 'Deaktivieren' })).toHaveClass('focused')
 
     wheel(-40) // stays clamped at the end
+    expect(screen.getByRole('button', { name: 'Deaktivieren' })).toHaveClass('focused')
+
+    wheel(40) // counter-clockwise one step back to the setup button
     expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toHaveClass('focused')
 
-    wheel(40) // counter-clockwise one step back to the test button
+    wheel(40) // …and on to the test button
     expect(screen.getByRole('button', { name: 'Verbindung testen' })).toHaveClass('focused')
 
     wheel(40) // …and on to the "Profil entfernen" button
@@ -1193,8 +1202,11 @@ describe('PiServerModal: layout (Bug10-1)', () => {
     // header (status lines) → credential fields → buttons: everything is in
     // normal document flow inside the scroll container, so the blocks can
     // never render at fixed offsets on top of each other
-    expect(header?.compareDocumentPosition(passwordField!) & FOLLOWING).toBeTruthy()
-    expect(passwordField?.compareDocumentPosition(addBtn) & FOLLOWING).toBeTruthy()
+    // the optional chains can yield undefined (querySelector/closest) — the
+    // `?? 0` makes a missing element fail the bit test instead of tripping
+    // TS2532 on the `&` (a missing node is a test failure, not a type hole)
+    expect((header?.compareDocumentPosition(passwordField!) ?? 0) & FOLLOWING).toBeTruthy()
+    expect((passwordField?.compareDocumentPosition(addBtn) ?? 0) & FOLLOWING).toBeTruthy()
     expect(addBtn.compareDocumentPosition(deleteBtn) & FOLLOWING).toBeTruthy()
     expect(deleteBtn.compareDocumentPosition(setupBtn) & FOLLOWING).toBeTruthy()
     // no button block or field is outside the scroll container (nothing is
@@ -1202,5 +1214,237 @@ describe('PiServerModal: layout (Bug10-1)', () => {
     for (const el of [header!, passwordField!, addBtn, deleteBtn, setupBtn]) {
       expect(content!.contains(el)).toBe(true)
     }
+  })
+})
+
+// ticket10-7 KR4: the "Deaktivieren" off-switch — removes ALL profiles
+// (sequentially, best-effort daemon cleanup) and sets the hybridDisabled
+// flag in ONE store write → fresh standalone (no poll, no leftover state)
+describe('PiServerModal: Deaktivieren (ticket10-7 KR4)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    ListFocusContext.setActive(null)
+  })
+
+  function twoProfiles() {
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: 'pw1', keyInstalled: true },
+        { id: 'pi-2', label: 'Büro', ip: '10.0.0.9', user: 'dietpi', password: 'pw2', keyInstalled: false },
+      ],
+      activePiId: 'pi-1',
+    })
+  }
+
+  // the observable for "EIN Store-Write": the settings store exposes exactly
+  // one write path (updateSettings, settings.ts), so a spy on it captures
+  // every store write and its patch (a window.localStorage spy did not
+  // observe the store's write path in jsdom)
+  function captureStoreWrites() {
+    const patches: unknown[] = []
+    const original = settingsModule.updateSettings.bind(settingsModule)
+    vi.spyOn(settingsModule, 'updateSettings').mockImplementation(
+      (patch: Parameters<typeof settingsModule.updateSettings>[0]) => {
+        patches.push(patch)
+        original(patch)
+      },
+    )
+    return patches
+  }
+
+  it('removes ALL profiles sequentially (id + credentials per call) and clears the store in ONE write', async () => {
+    const calls: { id: string | null; body: unknown }[] = []
+    server.use(
+      http.delete('*/api/pi/profile', async ({ request }) => {
+        calls.push({
+          id: new URL(request.url).searchParams.get('id'),
+          body: await request.json(),
+        })
+        return HttpResponse.json({ key_removed: true, authorized_keys_removed: true })
+      }),
+    )
+    twoProfiles()
+    const storeWrites = captureStoreWrites()
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+
+    // the confirmation names the action; focus starts on "Abbrechen"
+    fireEvent.click(screen.getByRole('button', { name: 'Deaktivieren' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Hybrid deaktivieren' })
+    expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toHaveClass('focused')
+
+    // confirm → the sequential daemon cleanup runs, then the store write
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Deaktivieren' }))
+
+    await waitFor(() => {
+      expect(getSettings().piProfiles).toEqual([])
+    })
+    // both DELETEs ran, sequentially, each with its own id (query) and
+    // credentials (body — the best-effort authorized_keys cleanup)
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toEqual({
+      id: 'pi-1',
+      body: { ip: '192.168.7.1', user: 'root', password: 'pw1' },
+    })
+    expect(calls[1]).toEqual({
+      id: 'pi-2',
+      body: { ip: '10.0.0.9', user: 'dietpi', password: 'pw2' },
+    })
+
+    // ONE store write with the exact end state: piProfiles [] + activePiId
+    // null + hybridDisabled
+    expect(storeWrites).toHaveLength(1)
+    expect(storeWrites[0]).toEqual({ piProfiles: [], activePiId: null, hybridDisabled: true })
+    expect(getSettings().piProfiles).toEqual([])
+    expect(getSettings().activePiId).toBeNull()
+    expect(getSettings().hybridDisabled).toBe(true)
+
+    // the result line + the empty list view, the dialog is gone, and the
+    // button disappears with the empty list
+    expect(screen.getByText('Hybrid deaktiviert')).toBeInTheDocument()
+    expect(screen.getByText('Kein Pi konfiguriert')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Deaktivieren' })).not.toBeInTheDocument()
+    // the capability poll is stopped (standalone)
+    expect(getMiraServerState().mode).toBe('standalone')
+  })
+
+  it('canceling the confirmation does nothing (no DELETE, no store write)', async () => {
+    let deleteCalls = 0
+    server.use(
+      http.delete('*/api/pi/profile', () => {
+        deleteCalls += 1
+        return HttpResponse.json({})
+      }),
+    )
+    twoProfiles()
+    const storeWrites = captureStoreWrites()
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deaktivieren' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Hybrid deaktivieren' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(deleteCalls).toBe(0)
+    expect(storeWrites).toHaveLength(0)
+    expect(getSettings().piProfiles).toHaveLength(2)
+    expect(getSettings().activePiId).toBe('pi-1')
+    expect(getSettings().hybridDisabled).toBe(false)
+  })
+
+  it('best-effort: a failing first DELETE does not stop the loop — the second still runs, the store is still cleared, the error is surfaced', async () => {
+    const seen: string[] = []
+    server.use(
+      http.delete('*/api/pi/profile', ({ request }) => {
+        const id = new URL(request.url).searchParams.get('id') ?? ''
+        seen.push(id)
+        if (id === 'pi-1') {
+          return HttpResponse.json({ error: 'key removal failed' }, { status: 400 })
+        }
+        return HttpResponse.json({ key_removed: true, authorized_keys_removed: true })
+      }),
+    )
+    twoProfiles()
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deaktivieren' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Hybrid deaktivieren' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Deaktivieren' }))
+
+    // the loop continues past the failure — both ids hit the endpoint
+    await waitFor(() => expect(seen).toEqual(['pi-1', 'pi-2']))
+    expect(getSettings().piProfiles).toEqual([])
+    expect(getSettings().activePiId).toBeNull()
+    expect(getSettings().hybridDisabled).toBe(true)
+    // the success line AND the surfaced per-profile error (best-effort
+    // transparency — the failure stays in the Pi menu, KR3)
+    expect(screen.getByText('Hybrid deaktiviert')).toBeInTheDocument()
+    expect(screen.getByText('Nicht entfernt: Pi 1: key removal failed')).toBeInTheDocument()
+  })
+
+  it('the button is disabled and out of the focus chain while a setup job runs (G-D3 UI guard)', async () => {
+    vi.useFakeTimers()
+    server.use(
+      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job-g3' }, { status: 202 })),
+      http.get('*/api/setup-pi/status', () =>
+        HttpResponse.json({ state: 'running', log_tail: ['installing...'] }),
+      ),
+    )
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: 'pw1', keyInstalled: false },
+      ],
+      activePiId: 'pi-1',
+    })
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    // start the provisioning run
+    fireEvent.click(screen.getByRole('button', { name: 'Pi automatisch einrichten' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByRole('button', { name: 'Einrichtung läuft…' })).toBeInTheDocument()
+
+    // G-D3: the danger button is visible-but-disabled while the job runs
+    expect(screen.getByRole('button', { name: 'Deaktivieren' })).toBeDisabled()
+
+    // and it left the dial focus chain — the walk ends on the setup button
+    const wheel = (deltaX: number) => {
+      act(() => {
+        ListFocusContext.entry.onWheel({ deltaX, preventDefault: vi.fn() } as unknown as WheelEvent)
+      })
+    }
+    // 1 profile: row (start) → 4 fields → add → delete → test → setup (end)
+    for (let i = 0; i < 8; i++) wheel(-40)
+    expect(screen.getByRole('button', { name: 'Einrichtung läuft…' })).toHaveClass('focused')
+    expect(screen.getByRole('button', { name: 'Deaktivieren' })).not.toHaveClass('focused')
+  })
+
+  it('shows no Deaktivieren button with an empty profile list; the hint line appears while the flag is set', async () => {
+    updateSettings({ hybridDisabled: true })
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await screen.findByText('Kein Pi konfiguriert')
+    expect(
+      screen.getByText('Hybrid deaktiviert — ein neues Profil aktiviert ihn wieder'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Deaktivieren' })).not.toBeInTheDocument()
+  })
+
+  it('the confirmation: back closes it first, then the view (back hierarchy, parent untouched)', () => {
+    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    ListFocusContext.setActive(parent)
+    const onClose = vi.fn()
+    twoProfiles()
+    const { unmount } = render(<PiServerModal onClose={onClose} onOpenKeyboard={vi.fn()} />)
+
+    // opening the confirmation pushes its own entry on top of the modal's
+    fireEvent.click(screen.getByRole('button', { name: 'Deaktivieren' }))
+    expect(screen.getByRole('dialog', { name: 'Hybrid deaktivieren' })).toBeInTheDocument()
+
+    // back #1: the confirmation closes (consumed), the view stays open
+    let consumed: boolean | undefined
+    act(() => {
+      consumed = ListFocusContext.entry.onBack?.()
+    })
+    expect(consumed).toBe(true)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // back #2: the modal's entry closes the view (the parent stays untouched)
+    act(() => {
+      consumed = ListFocusContext.entry.onBack?.()
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(parent.onBack).not.toHaveBeenCalled()
+
+    unmount()
+    expect(ListFocusContext.entry).toBe(parent)
   })
 })
