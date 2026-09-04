@@ -15,7 +15,7 @@ import {
   toMiraServerState,
   type MiraServerCapabilities,
 } from '@/api/miraServer'
-import { __resetSettings, updateSettings } from '@/settings'
+import { __resetSettings, getSettings, updateSettings } from '@/settings'
 
 const STANDBY = standaloneMiraServerState()
 
@@ -481,6 +481,222 @@ describe('useMiraServer: active profile targeting (ticket10-5A)', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     expect(hits).toBe(hitsAfterMount)
+    unmount()
+    vi.useRealTimers()
+  })
+})
+
+describe('useMiraServer: hybridDisabled (ticket10-7 KR4)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    __resetSettings()
+    __resetMiraServerState()
+  })
+
+  it('with a profile, the flag stops the poll and forces standalone (no requests per tick)', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    let hits = 0
+    server.use(
+      http.get('*/api/v1/capabilities', () => {
+        hits += 1
+        return HttpResponse.json(COMPUTE)
+      }),
+    )
+    setActiveProfile()
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('compute')
+    const hitsWhileActive = hits
+    expect(hitsWhileActive).toBeGreaterThan(0)
+    // the Deaktivieren flag is set while the profile still exists
+    updateSettings({ hybridDisabled: true })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // exactly the no-profile state: standalone, all features false
+    expect(result.current.mode).toBe('standalone')
+    expect(result.current.features).toEqual(STANDBY.features)
+    // a mere coexistence of flag + existing profile must NOT clear the flag
+    expect(getSettings().hybridDisabled).toBe(true)
+    // the poll is stopped: several full 30 s ticks produce zero requests
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(hits).toBe(hitsWhileActive)
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('creating a profile while disabled clears the flag and re-starts the poll', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    let hits = 0
+    server.use(
+      http.get('*/api/v1/capabilities', () => {
+        hits += 1
+        return HttpResponse.json(COMPUTE)
+      }),
+    )
+    // the Deaktivieren end state: flag set, no profile
+    updateSettings({ hybridDisabled: true })
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('standalone')
+    expect(hits).toBe(0)
+    // the user creates a profile while hybrid is disabled (wizard mount,
+    // add button and lazy keyboard creation all land here as a plain
+    // profile write)
+    setActiveProfile()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // the hook cleared the flag (settings write) and re-activated hybrid
+    expect(getSettings().hybridDisabled).toBe(false)
+    expect(result.current.mode).toBe('compute')
+    expect(hits).toBeGreaterThan(0)
+    // and the ambient poll runs again
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(hits).toBe(2)
+    expect(result.current.mode).toBe('compute')
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('the clearing write does not loop (one settings PUT, stable request counter)', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    let hits = 0
+    let settingsPuts = 0
+    server.use(
+      http.get('*/api/v1/capabilities', () => {
+        hits += 1
+        return HttpResponse.json(COMPUTE)
+      }),
+      http.put('*/settings', () => {
+        settingsPuts += 1
+        return HttpResponse.json({ ok: true })
+      }),
+    )
+    updateSettings({ hybridDisabled: true })
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    setActiveProfile()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(getSettings().hybridDisabled).toBe(false)
+    expect(result.current.mode).toBe('compute')
+    const hitsAfterClear = hits
+    // three full poll cycles (all debounce windows included): only the
+    // ambient poll may grow the counter, no clearing write may re-fire
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+    }
+    expect(hits).toBe(hitsAfterClear + 3)
+    // profile write + clearing write coalesce into a single daemon PUT
+    expect(settingsPuts).toBe(1)
+    expect(getSettings().hybridDisabled).toBe(false)
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('no profile + disabled behaves exactly like no profile (standalone regression)', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    let hits = 0
+    server.use(
+      http.get('*/api/v1/capabilities', () => {
+        hits += 1
+        return HttpResponse.json(COMPUTE)
+      }),
+    )
+    updateSettings({ hybridDisabled: true })
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.mode).toBe('standalone')
+    expect(result.current.features).toEqual(STANDBY.features)
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+    }
+    expect(hits).toBe(0) // like a fresh standalone: zero ambient requests
+    // unmount + remount stays quiet too (no profile = no poll target)
+    unmount()
+    const second = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(hits).toBe(0)
+    expect(second.result.current.mode).toBe('standalone')
+    second.unmount()
+    vi.useRealTimers()
+  })
+
+  it('a manual check while disabled is published, but the poll stays stopped', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    let hits = 0
+    server.use(
+      http.get('*/api/v1/capabilities', () => {
+        hits += 1
+        return HttpResponse.json(COMPUTE)
+      }),
+    )
+    updateSettings({ hybridDisabled: true })
+    const { result, unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // "Verbindung testen" — a deliberate user action, allowed while disabled
+    await act(async () => {
+      await checkMiraServer(DEFAULT_PROFILE_IP)
+    })
+    // the result is published to the shared store...
+    expect(result.current.mode).toBe('compute')
+    // ...but the ambient poll never started: a full tick later, no request
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(hits).toBe(1)
     unmount()
     vi.useRealTimers()
   })

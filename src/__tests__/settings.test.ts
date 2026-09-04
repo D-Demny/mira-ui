@@ -246,4 +246,45 @@ describe('settings store', () => {
       })
     })
   })
+
+  describe('hybridDisabled (ticket10-7 KR4)', () => {
+    it('defaults to false on a fresh install', () => {
+      expect(getSettings().hybridDisabled).toBe(false)
+    })
+
+    it('coerces a missing field in an old blob to false (idempotent migration)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, volumeStepPct: 3, piProfiles: [], activePiId: null }),
+      )
+      __resetSettings()
+      expect(getSettings().hybridDisabled).toBe(false)
+    })
+
+    it.each([
+      ['true', true, true],
+      ['the string "true"', '"true"', false],
+      ['the number 1', 1, false],
+      ['false', false, false],
+    ])('strict coercion: stored %s → %s', (_label, stored, expected) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ hybridDisabled: stored }))
+      __resetSettings()
+      expect(getSettings().hybridDisabled).toBe(expected)
+    })
+
+    it('round-trips true through localStorage', () => {
+      updateSettings({ hybridDisabled: true })
+      expect(getSettings().hybridDisabled).toBe(true)
+      __resetSettings()
+      expect(getSettings().hybridDisabled).toBe(true)
+    })
+
+    it('round-trips a clear back to false', () => {
+      updateSettings({ hybridDisabled: true })
+      updateSettings({ hybridDisabled: false })
+      expect(getSettings().hybridDisabled).toBe(false)
+      __resetSettings()
+      expect(getSettings().hybridDisabled).toBe(false)
+    })
+  })
 })

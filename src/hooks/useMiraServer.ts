@@ -5,7 +5,7 @@ import {
   standaloneMiraServerState,
   type MiraServerState,
 } from '@/api/miraServer'
-import { activePiProfile, getSettings, subscribeSettings } from '@/settings'
+import { activePiProfile, getSettings, subscribeSettings, updateSettings } from '@/settings'
 
 // Epic 10 — re-poll interval for Pi helper-server detection. A Pi that is
 // connected later (or back after a power loss) is picked up within one
@@ -88,22 +88,66 @@ async function check(ip: string, manual: boolean): Promise<void> {
   return inFlight
 }
 
+// ticket10-7 KR4: the profile count the last retarget saw. While
+// hybridDisabled is set the hook is behaviourally identical to "no profile"
+// (standalone store with all features false — remoteArtUrl/Colors fall back
+// to CDN/local immediately — and NO capability poll, even if profiles
+// exist: defence in depth, the Deaktivieren flow deletes the profiles in
+// the same write, but a leftover profile must not resurrect the poll).
+//
+// The flag clears ONLY when a profile is created while it is set — a
+// profile count GROWTH observed here. Design decision (ticket10-7, vs. the
+// four UI handlers proposed by audit block (f)): the clear lives in the ONE
+// place that sees every creation path (wizard mount, "Profil hinzufügen",
+// setup materialisation, lazy keyboard creation, any future one) instead of
+// being repeated in four handlers; a mere coexistence of flag + existing
+// profiles is not a creation and must NOT clear, so the disabled end state
+// stays stable across settings writes and remounts. The clearing write
+// re-enters retarget synchronously via the settings emit; the second run
+// sees the flag already false and performs no write, so the loop terminates
+// after exactly one settings write (the 400ms PUT debounce coalesces it
+// with the user's profile write into a single daemon PUT).
+let lastProfileCount = 0
+
 // ticket10-5A: point the poll (and the store) at the active profile's ip —
 // or drop to standalone without polling when the list is empty. Called on
 // (re)subscribe and on every settings change while a subscriber exists.
 function retarget(): void {
-  const profile = activePiProfile(getSettings())
-  const ip = profile ? profile.ip : null
-  if (ip === targetIp) return
-  targetIp = ip
-  if (ip === null) {
-    stopPolling()
-    store = { ...standaloneMiraServerState(), checking: false }
-    emit()
-  } else {
-    startPolling()
-    void check(ip, false)
+  const settings = getSettings()
+  const profileCount = settings.piProfiles.length
+  if (settings.hybridDisabled) {
+    if (profileCount > lastProfileCount) {
+      // a profile was created while hybrid was disabled — an explicit
+      // re-opt-in: clear the flag and let the re-entered retarget take
+      // the normal profile path (poll + immediate check)
+      lastProfileCount = profileCount
+      updateSettings({ hybridDisabled: false })
+      return
+    }
+    // exactly the no-profile state — idempotent, emits only on change
+    if (targetIp !== null) {
+      targetIp = null
+      stopPolling()
+      store = { ...standaloneMiraServerState(), checking: false }
+      emit()
+    }
+    lastProfileCount = profileCount
+    return
   }
+  const profile = activePiProfile(settings)
+  const ip = profile ? profile.ip : null
+  if (ip !== targetIp) {
+    targetIp = ip
+    if (ip === null) {
+      stopPolling()
+      store = { ...standaloneMiraServerState(), checking: false }
+      emit()
+    } else {
+      startPolling()
+      void check(ip, false)
+    }
+  }
+  lastProfileCount = profileCount
 }
 
 function startPolling() {
@@ -155,6 +199,7 @@ export function __resetMiraServerState() {
   inFlight = null
   inFlightBase = null
   targetIp = null
+  lastProfileCount = 0
   store = { ...standaloneMiraServerState(), checking: false }
 }
 
@@ -162,6 +207,11 @@ export function __resetMiraServerState() {
 // `ip` pings the Pi at an explicit address — the settings UI passes the
 // ip of the profile it is showing (the active profile, or the ticket
 // defaults while no profile exists yet).
+// ticket10-7 KR4: allowed while hybridDisabled is set — it is a deliberate
+// user action — and its result is published to the shared store like any
+// manual check. The capability poll stays stopped either way: targetIp (and
+// thus the poll) is untouched, and the next settings change retargets back
+// to standalone while the flag is set.
 export function checkMiraServer(ip: string): Promise<void> {
   return check(ip, true)
 }
