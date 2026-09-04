@@ -148,13 +148,17 @@ type SetupState = {
 
 const SETUP_IDLE: SetupState = { phase: 'idle', logTail: [] }
 
-// ticket10-5C: the dial-focus items of the view, in visual order — the
-// profile rows first, then the action buttons. ONE useOverlayListFocus
-// entry (bug31/bug46 pattern) routes wheel/Enter/Back over the whole list;
-// Back closes the view (the delete confirmation and the keyboard push their
-// own entries on top, so they close first — the ticket's back hierarchy).
+// ticket10-5C + Bug10-2: the dial-focus items of the view, in visual order —
+// the profile rows, the credential fields of the ACTIVE profile (label / ip /
+// user / password; Bug10-2: they join the dial chain between the rows and the
+// buttons, in the same order the layout renders them), then the action
+// buttons. ONE useOverlayListFocus entry (bug31/bug46 pattern) routes
+// wheel/Enter/Back over the whole list; Back closes the view (the delete
+// confirmation and the keyboard push their own entries on top, so they close
+// first — the ticket's back hierarchy).
 type FocusItem =
   | { kind: 'profile'; id: string }
+  | { kind: 'field'; field: PiKeyboardField }
   | { kind: 'add' }
   | { kind: 'delete' }
   | { kind: 'test' }
@@ -555,9 +559,15 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     updateSettings({ activePiId: id })
   }
 
-  // ticket10-5C: the focus list in visual order + the single dial entry
+  // ticket10-5C: the focus list in visual order + the single dial entry.
+  // Bug10-2: the credential fields sit between the profile rows and the
+  // buttons (their layout position) — Enter on a field opens the keyboard.
   const focusItems: FocusItem[] = [
     ...profiles.map((p): FocusItem => ({ kind: 'profile', id: p.id })),
+    { kind: 'field', field: 'label' },
+    { kind: 'field', field: 'ip' },
+    { kind: 'field', field: 'user' },
+    { kind: 'field', field: 'password' },
     { kind: 'add' },
     { kind: 'delete' },
     { kind: 'test' },
@@ -568,6 +578,12 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     if (!item) return
     if (item.kind === 'profile') {
       handleSelectProfile(item.id)
+    } else if (item.kind === 'field') {
+      // Bug10-2: confirm on a focused credential field opens the on-screen
+      // keyboard for exactly that field (the overlay pushes its own focus
+      // entry, so Back closes the keyboard first and the dial focus stays
+      // on the field in the meantime)
+      onOpenKeyboard(item.field)
     } else if (item.kind === 'add') {
       handleAddProfile()
     } else if (item.kind === 'delete') {
@@ -585,10 +601,16 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     onBack: onClose,
   })
 
-  const idxAdd = profiles.length
-  const idxDelete = profiles.length + 1
-  const idxTest = profiles.length + 2
-  const idxSetup = profiles.length + 3
+  // Bug10-2: the four credential fields occupy the slots after the profile
+  // rows (see focusItems above), the buttons follow them
+  const idxLabel = profiles.length
+  const idxIp = profiles.length + 1
+  const idxUser = profiles.length + 2
+  const idxPassword = profiles.length + 3
+  const idxAdd = profiles.length + 4
+  const idxDelete = profiles.length + 5
+  const idxTest = profiles.length + 6
+  const idxSetup = profiles.length + 7
 
   const statusLine = statusLineFor(miraServer.mode, piInfo?.model ?? null)
   const testBusy = test.phase === 'checking' || setup.phase === 'starting' || setup.phase === 'running'
@@ -724,50 +746,68 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Profil-Name</span>
           {/* ticket10-2/10-5C: tapping/focusing a profile field opens the
-              on-screen keyboard for the ACTIVE profile */}
+              on-screen keyboard for the ACTIVE profile. Bug10-2: the field
+              is part of the dial focus chain — the .focused class (same
+              pattern as the rows/buttons) highlights it, and the hook's
+              setFocusRef scrolls it into the .content scroll container */}
           <input
-            className={styles.input}
+            className={`${styles.input} ${focusedIndex === idxLabel ? styles.focused : ''}`}
             type="text"
             value={profile.label}
             onChange={(e) => setField('label', e.target.value)}
+            onClick={() => tapItem(idxLabel)}
             onFocus={() => onOpenKeyboard('label')}
+            ref={focusedIndex === idxLabel ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxLabel ? 0 : -1}
           />
         </label>
 
         <label className={styles.field}>
           <span className={styles.fieldLabel}>IP-Adresse</span>
-          {/* ticket10-2: tapping/focusing a credential field opens the on-screen keyboard */}
+          {/* ticket10-2: tapping/focusing a credential field opens the on-screen
+              keyboard; Bug10-2: dial focus chain, see the label field above */}
           <input
-            className={styles.input}
+            className={`${styles.input} ${focusedIndex === idxIp ? styles.focused : ''}`}
             type="text"
             inputMode="decimal"
             value={profile.ip}
             onChange={(e) => setField('ip', e.target.value)}
+            onClick={() => tapItem(idxIp)}
             onFocus={() => onOpenKeyboard('ip')}
+            ref={focusedIndex === idxIp ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxIp ? 0 : -1}
           />
         </label>
 
         <label className={styles.field}>
           <span className={styles.fieldLabel}>SSH Benutzer</span>
+          {/* Bug10-2: dial focus chain, see the label field above */}
           <input
-            className={styles.input}
+            className={`${styles.input} ${focusedIndex === idxUser ? styles.focused : ''}`}
             type="text"
             value={profile.user}
             onChange={(e) => setField('user', e.target.value)}
+            onClick={() => tapItem(idxUser)}
             onFocus={() => onOpenKeyboard('user')}
+            ref={focusedIndex === idxUser ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxUser ? 0 : -1}
           />
         </label>
 
         <label className={styles.field}>
           <span className={styles.fieldLabel}>SSH Passwort</span>
           {/* security: stored in the plain settings store (localStorage +
-              daemon blob) — open point, no encryption in this version */}
+              daemon blob) — open point, no encryption in this version.
+              Bug10-2: dial focus chain, see the label field above */}
           <input
-            className={styles.input}
+            className={`${styles.input} ${focusedIndex === idxPassword ? styles.focused : ''}`}
             type="password"
             value={profile.password}
             onChange={(e) => setField('password', e.target.value)}
+            onClick={() => tapItem(idxPassword)}
             onFocus={() => onOpenKeyboard('password')}
+            ref={focusedIndex === idxPassword ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxPassword ? 0 : -1}
           />
         </label>
 
