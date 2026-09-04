@@ -4,9 +4,12 @@ import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
 import {
   MIRA_SERVER_POLL_MS,
+  __onMiraServerEmit,
   __resetMiraServerState,
   checkMiraServer,
+  getMiraServerState,
   useMiraServer,
+  type MiraServerView,
 } from '../useMiraServer'
 import {
   fetchMiraServerCapabilities,
@@ -159,7 +162,10 @@ describe('useMiraServer', () => {
     // the default MSW handler makes the capabilities request fail
     setActiveProfile()
     const { result } = renderHook(() => useMiraServer())
-    await waitFor(() => expect(result.current.checking).toBe(false))
+    // G1: an unchanged result (standalone→standalone) settles silently —
+    // no emit — so the settle is observed via the live store read, not the
+    // rendered checking flag
+    await waitFor(() => expect(getMiraServerState().checking).toBe(false))
     expect(result.current.mode).toBe('standalone')
     expect(result.current.features).toEqual(STANDBY.features)
   })
@@ -177,7 +183,7 @@ describe('useMiraServer', () => {
     )
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { result } = renderHook(() => useMiraServer())
-    await waitFor(() => expect(result.current.checking).toBe(false))
+    await waitFor(() => expect(getMiraServerState().checking).toBe(false)) // G1: silent settle
     expect(result.current.mode).toBe('standalone')
     warn.mockRestore()
   })
@@ -191,7 +197,7 @@ describe('useMiraServer', () => {
     )
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { result } = renderHook(() => useMiraServer())
-    await waitFor(() => expect(result.current.checking).toBe(false))
+    await waitFor(() => expect(getMiraServerState().checking).toBe(false)) // G1: silent settle
     expect(result.current.mode).toBe('standalone')
     warn.mockRestore()
   })
@@ -208,7 +214,9 @@ describe('useMiraServer', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(MIRA_SERVER_TIMEOUT_MS)
     })
-    expect(result.current.checking).toBe(false)
+    // G1: the timeout settle (standalone→standalone) is silent — the
+    // rendered checking flag is not re-published, the live store read is
+    expect(getMiraServerState().checking).toBe(false)
     expect(result.current.mode).toBe('standalone')
     expect(result.current.features).toEqual(STANDBY.features)
     unmount()
@@ -263,7 +271,7 @@ describe('useMiraServer', () => {
     setActiveProfile()
     // offline first (default handler)
     const { result } = renderHook(() => useMiraServer())
-    await waitFor(() => expect(result.current.checking).toBe(false))
+    await waitFor(() => expect(getMiraServerState().checking).toBe(false)) // G1: silent settle
     expect(result.current.mode).toBe('standalone')
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     await act(async () => {
@@ -359,8 +367,8 @@ describe('useMiraServer', () => {
     setActiveProfile()
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
     const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
-    const { result, unmount } = renderHook(() => useMiraServer())
-    await waitFor(() => expect(result.current.checking).toBe(false))
+    const { unmount } = renderHook(() => useMiraServer())
+    await waitFor(() => expect(getMiraServerState().checking).toBe(false)) // G1: silent settle
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), MIRA_SERVER_POLL_MS)
     unmount()
     expect(clearIntervalSpy).toHaveBeenCalled()
@@ -698,6 +706,155 @@ describe('useMiraServer: hybridDisabled (ticket10-7 KR4)', () => {
     })
     expect(hits).toBe(1)
     unmount()
+    vi.useRealTimers()
+  })
+})
+
+describe('useMiraServer: emit guard (ticket10-7 G1)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    __resetSettings()
+    __resetMiraServerState()
+  })
+
+  // The store is subscribed at the root of the App (usePrefetch), so every
+  // raw store emission re-renders the whole app tree. There is no app-level
+  // re-render test (too large) — the emit count below is the proxy
+  // assertion for the G1 goal: with a profile and a dead Pi exactly ONE
+  // emission per 30 s poll tick (the checking:true flip), not two.
+  // __onMiraServerEmit observes the raw emissions (listener set) without
+  // the refcount/poll side effects of a hook subscription.
+
+  it('publishes exactly once per poll cycle while the Pi is dead (checking flip only)', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    setActiveProfile() // dead Pi: the default MSW handler fails the request
+    const emitted: MiraServerView[] = []
+    const unsubscribe = __onMiraServerEmit(() => {
+      emitted.push({ ...getMiraServerState() })
+    })
+    const { unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // mount: one publish — the checking:true flip; the dead-Pi settle
+    // (standalone→standalone) is suppressed
+    expect(emitted).toEqual([
+      { mode: 'standalone', features: STANDBY.features, checking: true },
+    ])
+    // three full poll cycles — exactly one publish per cycle (was 2 before G1)
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+    }
+    expect(emitted.length).toBe(4) // mount flip + exactly one per cycle
+    for (const view of emitted) {
+      expect(view.checking).toBe(true) // the flip is the only published state
+      expect(view.mode).toBe('standalone')
+    }
+    unmount()
+    unsubscribe()
+    vi.useRealTimers()
+  })
+
+  it('still publishes a mode change as soon as the Pi answers (result carries the checking reset)', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    setActiveProfile()
+    const emitted: MiraServerView[] = []
+    const unsubscribe = __onMiraServerEmit(() => {
+      emitted.push({ ...getMiraServerState() })
+    })
+    const { unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(emitted.length).toBe(1) // mount flip; the dead settle is suppressed
+    // the Pi is plugged in before the next poll tick
+    server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // the change-carrying result is published (flip + result = one more each)
+    expect(emitted.length).toBe(3)
+    expect(emitted[emitted.length - 1]).toEqual({
+      mode: 'compute',
+      features: { diskCache: true, remoteColors: true, remoteBlur: true },
+      checking: false,
+    })
+    unmount()
+    unsubscribe()
+    vi.useRealTimers()
+  })
+
+  it('the checking flip is visible in the published state, once per cycle', async () => {
+    vi.useFakeTimers(FAKE_CLOCK)
+    setActiveProfile()
+    let flipEmits = 0
+    const unsubscribe = __onMiraServerEmit(() => {
+      if (getMiraServerState().checking) flipEmits += 1
+    })
+    const { unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(flipEmits).toBe(1) // the mount check's flip
+    for (let i = 0; i < 3; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(flipEmits).toBe(i + 2) // exactly one new flip publish per cycle
+    }
+    unmount()
+    unsubscribe()
+    vi.useRealTimers()
+  })
+
+  it('a manual check with an unchanged result updates the store but publishes only the flip', async () => {
+    // documented decision (ticket10-7 D.1): checkMiraServer always WRITES
+    // its result to the shared store (getMiraServerState after the await —
+    // the settings UI reads it synchronously), but the listener
+    // notification is gated like every other emit (G1). A changeless manual
+    // result (dead Pi, standalone→standalone) publishes nothing beyond the
+    // checking flip — consistent with the 10-5A "manual results reach the
+    // shared store" contract and audit G12 (no visible deviation in the
+    // usual case).
+    vi.useFakeTimers(FAKE_CLOCK)
+    setActiveProfile()
+    const emitted: MiraServerView[] = []
+    const unsubscribe = __onMiraServerEmit(() => {
+      emitted.push({ ...getMiraServerState() })
+    })
+    const { unmount } = renderHook(() => useMiraServer())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(emitted.length).toBe(1) // mount flip; the dead settle is suppressed
+    // "Verbindung testen" against the same dead Pi
+    await act(async () => {
+      await checkMiraServer(DEFAULT_PROFILE_IP)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(emitted.length).toBe(2) // the manual check's flip — no result publish
+    expect(emitted[1].checking).toBe(true)
+    // the store itself carries the settled result for synchronous readers
+    expect(getMiraServerState()).toEqual({
+      mode: 'standalone',
+      features: STANDBY.features,
+      checking: false,
+    })
+    unmount()
+    unsubscribe()
     vi.useRealTimers()
   })
 })
