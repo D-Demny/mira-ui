@@ -35,6 +35,11 @@ export interface Settings {
   defaultDeviceId: string | null
   piProfiles: PiProfile[]
   activePiId: string | null
+  // ticket10-7 KR4: the hybrid operation is strictly optional — the
+  // "Deaktivieren" action (10-7C.3) sets this, which stops the ambient 30 s
+  // capability poll (the only ambient Pi activity). Creating a new profile
+  // clears it again (explicit re-opt-in — see useMiraServer.retarget).
+  hybridDisabled: boolean
 }
 
 export const VOLUME_STEP_MIN = 1
@@ -82,6 +87,7 @@ const DEFAULTS: Settings = {
   defaultDeviceId: null,
   piProfiles: [],
   activePiId: null,
+  hybridDisabled: false,
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -213,6 +219,12 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     defaultDeviceId: partial?.defaultDeviceId ?? DEFAULTS.defaultDeviceId,
     piProfiles,
     activePiId: coerceActivePiId(piProfiles, partial?.activePiId),
+    // ticket10-7 KR4: strict like keyInstalled — a hand-edited blob holding
+    // "true" or 1 must not stop the poll. Blobs predating this field coerce
+    // to false, so the migration is the coercion itself (idempotent, no
+    // separate step; no schema version bump — additive field, old builds
+    // ignore unknown keys).
+    hybridDisabled: partial?.hybridDisabled === true,
   }
 }
 
