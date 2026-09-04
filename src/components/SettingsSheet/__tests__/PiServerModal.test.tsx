@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { PiServerModal } from '../PiServerModal'
+import { PiKeyboardOverlay, type PiKeyboardField } from '../PiKeyboardOverlay'
 import { __resetMiraServerState, checkMiraServer, getMiraServerState } from '@/hooks/useMiraServer'
 import type { MiraServerCapabilities } from '@/api/miraServer'
 import {
@@ -547,6 +549,185 @@ describe('PiServerModal: on-screen keyboard (ticket10-2)', () => {
   })
 })
 
+// Bug10-2: the credential fields (label / ip / user / password) are part of
+// the dial focus chain — dial movement highlights them, Enter opens the
+// on-screen keyboard for the focused field, Back closes the keyboard before
+// the view, and the focused field is scrolled into the .content container
+describe('PiServerModal: dial focus on credential fields (Bug10-2)', () => {
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+  })
+
+  // mirrors the App wiring: the modal's onOpenKeyboard opens the keyboard
+  // overlay above it; the modal's onClose closes the keyboard together with
+  // the view (App-level back)
+  function ModalWithKeyboard({
+    onBack,
+    onOpenKeyboard,
+  }: {
+    onBack: () => void
+    onOpenKeyboard: (field: PiKeyboardField) => void
+  }) {
+    const [field, setField] = useState<PiKeyboardField | null>(null)
+    return (
+      <>
+        <PiServerModal
+          onClose={() => {
+            setField(null)
+            onBack()
+          }}
+          onOpenKeyboard={(f) => {
+            onOpenKeyboard(f)
+            setField(f)
+          }}
+        />
+        {field !== null ? <PiKeyboardOverlay field={field} onClose={() => setField(null)} /> : null}
+      </>
+    )
+  }
+
+  const wheel = (deltaX: number) => {
+    act(() => {
+      ListFocusContext.entry.onWheel({ deltaX, preventDefault: vi.fn() } as unknown as WheelEvent)
+    })
+  }
+
+  const confirm = () => {
+    act(() => {
+      ListFocusContext.entry.onConfirm?.()
+    })
+  }
+
+  const back = () => {
+    let consumed: boolean | undefined
+    act(() => {
+      consumed = ListFocusContext.entry.onBack?.()
+    })
+    return consumed
+  }
+
+  it('with no profiles the dial starts on the label field and walks label → ip → user → password → buttons', () => {
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+
+    // fresh install: no profile rows, the first focus item is the label field
+    expect(screen.getByRole('textbox', { name: 'Profil-Name' })).toHaveClass('focused')
+
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveClass('focused')
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'SSH Benutzer' })).toHaveClass('focused')
+    wheel(-40)
+    expect(screen.getByLabelText('SSH Passwort')).toHaveClass('focused')
+    wheel(-40) // the buttons follow the fields in layout order
+    expect(screen.getByRole('button', { name: 'Profil hinzufügen' })).toHaveClass('focused')
+  })
+
+  it('the fields sit between the profile rows and the buttons (layout order with profiles)', () => {
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+      ],
+      activePiId: 'pi-1',
+    })
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+
+    // initial focus: the single profile row
+    expect(screen.getByRole('button', { name: /Pi 1.*192\.168\.7\.1/ })).toHaveClass('focused')
+
+    wheel(-40) // → the fields start after the rows
+    expect(screen.getByRole('textbox', { name: 'Profil-Name' })).toHaveClass('focused')
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveClass('focused')
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'SSH Benutzer' })).toHaveClass('focused')
+    wheel(-40)
+    expect(screen.getByLabelText('SSH Passwort')).toHaveClass('focused')
+    wheel(-40) // → the buttons
+    expect(screen.getByRole('button', { name: 'Profil hinzufügen' })).toHaveClass('focused')
+  })
+
+  it('Enter on a focused field opens the on-screen keyboard for exactly that field', () => {
+    const onOpenKeyboard = vi.fn()
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={onOpenKeyboard} />)
+
+    // fresh install: label (0) → ip (1)
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveClass('focused')
+    confirm()
+    expect(onOpenKeyboard).toHaveBeenCalledTimes(1)
+    expect(onOpenKeyboard).toHaveBeenLastCalledWith('ip')
+
+    // dial on (the view's entry is still on top — no keyboard in this harness)
+    // → user (2), confirm again
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'SSH Benutzer' })).toHaveClass('focused')
+    confirm()
+    expect(onOpenKeyboard).toHaveBeenCalledTimes(2)
+    expect(onOpenKeyboard).toHaveBeenLastCalledWith('user')
+  })
+
+  it('Back closes the keyboard first and the view second; the dial focus stays on the field', () => {
+    const onBack = vi.fn()
+    const onOpenKeyboard = vi.fn()
+    render(<ModalWithKeyboard onBack={onBack} onOpenKeyboard={onOpenKeyboard} />)
+
+    // fresh install: label (0) → ip (1)
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveClass('focused')
+
+    // Enter opens the keyboard for the ip field — its focus entry lands on
+    // top of the modal's (bug31 pattern)
+    confirm()
+    expect(onOpenKeyboard).toHaveBeenLastCalledWith('ip')
+    expect(screen.getByRole('dialog', { name: 'IP-Adresse' })).toBeInTheDocument()
+
+    // Back #1: consumed by the keyboard's entry — only the keyboard closes
+    expect(back()).toBe(true)
+    expect(screen.queryByRole('dialog', { name: 'IP-Adresse' })).not.toBeInTheDocument()
+    expect(onBack).not.toHaveBeenCalled()
+
+    // the modal's dial focus is untouched: still on the ip field
+    expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveClass('focused')
+
+    // Back #2: the modal's entry closes the view (App-level back)
+    expect(back()).toBe(true)
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('scrolls the focused field into view inside the .content scroll container', () => {
+    const scrollSpy = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => {})
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    scrollSpy.mockClear()
+
+    // fresh install: label (0, scrolled on mount) → ip (1)
+    wheel(-40)
+    expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveClass('focused')
+
+    // the focused element (the input itself) is scrolled into view —
+    // its nearest scrollable ancestor is the .content container
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
+    expect(scrollSpy.mock.instances.at(-1)).toBe(
+      screen.getByRole('textbox', { name: 'IP-Adresse' }),
+    )
+    expect((screen.getByRole('textbox', { name: 'IP-Adresse' }) as HTMLElement).closest('.content')).not.toBeNull()
+    scrollSpy.mockRestore()
+  })
+
+  it('tapping a field sets the dial focus on it (touch path unchanged)', () => {
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+
+    // fresh install: the initial dial focus is the label field — tapping the
+    // ip field moves the dial focus to it (the keyboard opens via the focus
+    // event, covered in the ticket10-2 tests)
+    const ipField = screen.getByRole('textbox', { name: 'IP-Adresse' })
+    fireEvent.click(ipField)
+    expect(ipField).toHaveClass('focused')
+    expect(screen.getByRole('textbox', { name: 'Profil-Name' })).not.toHaveClass('focused')
+  })
+})
+
 // ticket10-5C: the multi-profile list — render, add, switch, delete
 describe('PiServerModal: profile list (ticket10-5C)', () => {
   afterEach(() => {
@@ -919,7 +1100,7 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     expect(ListFocusContext.entry).toBe(parent)
   })
 
-  it('dial navigation walks the rows and the action buttons in visual order', () => {
+  it('dial navigation walks the rows, the credential fields and the action buttons in visual order', () => {
     twoProfiles()
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
 
@@ -935,6 +1116,19 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
 
     wheel(-40) // → second row
     expect(screen.getByRole('button', { name: /Büro.*10\.0\.0\.9/ })).toHaveClass('focused')
+
+    // Bug10-2: the credential fields join the chain after the rows
+    wheel(-40) // → "Profil-Name" (label field)
+    expect(screen.getByRole('textbox', { name: 'Profil-Name' })).toHaveClass('focused')
+
+    wheel(-40) // → "IP-Adresse"
+    expect(screen.getByRole('textbox', { name: 'IP-Adresse' })).toHaveClass('focused')
+
+    wheel(-40) // → "SSH Benutzer"
+    expect(screen.getByRole('textbox', { name: 'SSH Benutzer' })).toHaveClass('focused')
+
+    wheel(-40) // → "SSH Passwort"
+    expect(screen.getByLabelText('SSH Passwort')).toHaveClass('focused')
 
     wheel(-40) // → "Profil hinzufügen"
     expect(screen.getByRole('button', { name: 'Profil hinzufügen' })).toHaveClass('focused')
@@ -956,6 +1150,12 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
 
     wheel(40) // …and on to the "Profil entfernen" button
     expect(screen.getByRole('button', { name: 'Profil entfernen' })).toHaveClass('focused')
+
+    wheel(40) // …and back into the chain: the "Profil hinzufügen" button
+    expect(screen.getByRole('button', { name: 'Profil hinzufügen' })).toHaveClass('focused')
+
+    wheel(40) // …then the last credential field
+    expect(screen.getByLabelText('SSH Passwort')).toHaveClass('focused')
   })
 })
 

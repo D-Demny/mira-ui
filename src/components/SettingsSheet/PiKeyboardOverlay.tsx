@@ -26,9 +26,11 @@ import styles from './PiKeyboardOverlay.module.scss'
 //   (touch-only; for the dial, Back already closes the keyboard). '-' and '_'
 //   are out of scope (default user is 'root'; plain usernames are the norm).
 // - Back hierarchy: the overlay pushes a ListFocusContext entry (bug31/bug46
-//   pattern), so Back/Escape is consumed while it is open and only the
-//   keyboard closes. The PiServerModal (which has no entry of its own) closes
-//   on the NEXT Back via the App-level goBack.
+//   pattern) ON TOP of the PiServerModal's own entry, so Back/Escape is
+//   consumed while it is open and only the keyboard closes. The NEXT Back
+//   reaches the modal's entry, which closes the view (and the App clears the
+//   keyboard state with it). The modal's dial focus stays on the field that
+//   was edited (Bug10-2).
 // - Field routing: every key action reads the latest value from the settings
 //   store (getSettings) and writes it back (updateSettings) — the same
 //   pattern as PiServerModal's setField. No local value state, so the modal's
