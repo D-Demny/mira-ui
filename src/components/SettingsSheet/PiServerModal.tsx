@@ -596,6 +596,13 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   return (
     <div className={styles.backdrop} onClick={onClose}>
       <div className={styles.card} onClick={(e) => e.stopPropagation()}>
+        {/* Bug10-1: the card above is the fixed shell; this block is the
+            vertical scroll container (overflow-y: auto) — the header,
+            profile list, credential fields and buttons all live in normal
+            document flow inside it, so the blocks can never render at
+            fixed offsets on top of each other when the content exceeds
+            the display height (800x480 device). */}
+        <div className={styles.content}>
         <div className={styles.header}>
           <div className={styles.titleRow}>
             <span className={styles.title}>Raspberry Pi</span>
@@ -858,6 +865,7 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
             {setup.logTail.join('\n')}
           </pre>
         )}
+        </div>
       </div>
 
       {/* ticket10-5C: the deletion confirmation (its own focus entry —
