@@ -958,3 +958,49 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     expect(screen.getByRole('button', { name: 'Profil entfernen' })).toHaveClass('focused')
   })
 })
+
+describe('PiServerModal: layout (Bug10-1)', () => {
+  it('wraps the whole menu in a vertical scroll container (fixed card shell + overflow-y: auto content)', () => {
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    // the card is the fixed shell; .content (overflow-y: auto in
+    // PiServerModal.module.scss) is the single vertical scroll container —
+    // the established SettingsList pattern. jsdom does not compute class
+    // styles, so the scroll role is asserted via the dedicated class.
+    const card = document.querySelector('.card')
+    const content = document.querySelector('.content')
+    expect(card).not.toBeNull()
+    expect(content).not.toBeNull()
+    expect(content?.parentElement).toBe(card)
+    // the scroll container holds the ENTIRE menu: header (status lines),
+    // profile list, credential fields and the action buttons
+    expect(content?.textContent).toContain('Raspberry Pi')
+    expect(content?.textContent).toContain('SSH Passwort')
+    expect(content?.textContent).toContain('Profil hinzufügen')
+    expect(content?.textContent).toContain('Profil entfernen')
+    expect(content?.textContent).toContain('Pi automatisch einrichten')
+  })
+
+  it('keeps header, credential fields and buttons in document-flow order inside the scroll container (no overlap structure)', () => {
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    const content = document.querySelector('.content')
+    expect(content).not.toBeNull()
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING
+    const header = content!.querySelector('.header')
+    const passwordField = screen.getByLabelText('SSH Passwort').closest('label')
+    const addBtn = screen.getByRole('button', { name: 'Profil hinzufügen' })
+    const deleteBtn = screen.getByRole('button', { name: 'Profil entfernen' })
+    const setupBtn = screen.getByRole('button', { name: 'Pi automatisch einrichten' })
+    // header (status lines) → credential fields → buttons: everything is in
+    // normal document flow inside the scroll container, so the blocks can
+    // never render at fixed offsets on top of each other
+    expect(header?.compareDocumentPosition(passwordField!) & FOLLOWING).toBeTruthy()
+    expect(passwordField?.compareDocumentPosition(addBtn) & FOLLOWING).toBeTruthy()
+    expect(addBtn.compareDocumentPosition(deleteBtn) & FOLLOWING).toBeTruthy()
+    expect(deleteBtn.compareDocumentPosition(setupBtn) & FOLLOWING).toBeTruthy()
+    // no button block or field is outside the scroll container (nothing is
+    // absolutely positioned above the menu anymore)
+    for (const el of [header!, passwordField!, addBtn, deleteBtn, setupBtn]) {
+      expect(content!.contains(el)).toBe(true)
+    }
+  })
+})

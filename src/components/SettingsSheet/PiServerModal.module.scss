@@ -17,19 +17,36 @@
   }
 }
 
+// Bug10-1: the card is the FIXED SHELL of the modal (size, background,
+// border, shadow). It no longer scrolls itself — the .content block below
+// is the vertical scroll container (the established SettingsList pattern:
+// fixed container + overflow-y: auto content block).
 .card {
   width: 540px;
   max-width: calc(100% - #{$s-6});
   max-height: calc(100% - #{$s-6});
-  overflow-y: auto;
-  @include hide-scrollbar;
   @include column;
-  @include flex-gap-y($s-4);
   padding: $s-5;
   background: $bg;
   border-radius: $r-2xl;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
   animation: slideIn $dur-base $ease-emphasized both;
+}
+
+// Bug10-1: the vertical scroll container of the Pi menu — the card shell
+// above stays fixed, only this block scrolls when the content (header +
+// profile list + credential fields + buttons) exceeds the display height.
+// flex: 1 1 auto + min-height: 0 let the block shrink below its content
+// height inside the max-height-capped card, which is what triggers the
+// overflow. CR69/Bug49: no flex gap — the block spacing comes from the
+// margin-based flex-gap-y mixin (Chromium 69 ignores flex `gap`, Chrome 84+).
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  @include hide-scrollbar;
+  @include column;
+  @include flex-gap-y($s-4);
 }
 
 @keyframes slideIn {
@@ -135,10 +152,11 @@
   color: $text-tertiary;
 }
 
+// Bug10-1/CR69: raw flex `gap` (Chrome 84+) is ignored by Chromium 69 —
+// the label/input spacing is margin-based via the flex-gap-y mixin
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: $s-2;
+  @include column;
+  @include flex-gap-y($s-2);
 }
 
 .fieldLabel {
@@ -163,10 +181,12 @@
   }
 }
 
+// Bug10-1/CR69: raw flex `gap` (Chrome 84+) is ignored by Chromium 69 —
+// the button/result spacing is margin-based via the flex-gap-x mixin
 .actions {
   display: flex;
   align-items: center;
-  gap: $s-3;
+  @include flex-gap-x($s-3);
 }
 
 .btn {
