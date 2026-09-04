@@ -51,13 +51,50 @@ function emit() {
   for (const listener of listeners) listener()
 }
 
+// ticket10-7 G1 (audit layer 1): the store is subscribed at the root of the
+// App (via usePrefetch), so every emit() re-renders the whole app tree. The
+// publish is therefore gated: the store object is replaced — and the
+// listeners notified — only when mode/features/checking have actually
+// changed; otherwise the stable store object is kept (no new reference, no
+// emit). Deliberate exception: a capabilities check that settles WITHOUT
+// changing mode/features (the typical dead-Pi tick: standalone→standalone)
+// resets checking: false in the store SILENTLY — publishing it would be the
+// second of the two 30 s emits without any content change. The checking:true
+// flip (a check starts) is the tick's only notification: with a profile and
+// a dead Pi the app re-renders 1×/30 s instead of 2×. The store itself is
+// always current (getMiraServerState reads it live), so manual checks keep
+// working: checkMiraServer's result is always written here and readable
+// after the await — only the listener notification is gated on the change.
+function sameModeAndFeatures(a: MiraServerState, b: MiraServerState): boolean {
+  return (
+    a.mode === b.mode &&
+    a.features.diskCache === b.features.diskCache &&
+    a.features.remoteColors === b.features.remoteColors &&
+    a.features.remoteBlur === b.features.remoteBlur
+  )
+}
+
+function publish(next: MiraServerView, checkResult: boolean): void {
+  if (sameModeAndFeatures(next, store) && next.checking === store.checking) {
+    return // no change at all — keep the stable store object, no emit
+  }
+  if (checkResult && !next.checking && sameModeAndFeatures(next, store)) {
+    store = next // silent checking reset — no content change, no emit
+    return
+  }
+  store = next
+  emit()
+}
+
 // One capabilities check. Concurrent callers (poll tick + manual re-check)
 // share the in-flight request when they target the same address. Keeps the
 // last known mode while the request is in flight so a slow re-poll never
 // flashes the UI back to standalone.
 // `manual` (ticket10-5A) marks the explicit re-check from the settings UI
-// (checkMiraServer): it always publishes its result, even if the active
-// profile moved in the meantime. Background checks only publish while their
+// (checkMiraServer): its result is always written to the shared store, even
+// if the active profile moved in the meantime (readable via
+// getMiraServerState after the await); the listener notification is gated
+// on the change (ticket10-7 G1). Background checks only settle while their
 // ip is still the current target.
 async function check(ip: string, manual: boolean): Promise<void> {
   const base = capabilitiesBaseUrl(ip)
@@ -68,8 +105,10 @@ async function check(ip: string, manual: boolean): Promise<void> {
   }
   inFlightBase = base
   inFlight = (async () => {
-    store = { ...store, checking: true }
-    emit()
+    // a check starts: checking was reset by the previous settle, so the
+    // flip is always a change and the tick's only publish while
+    // mode/features stay the same (G1)
+    publish({ ...store, checking: true }, false)
     let state: MiraServerState
     try {
       state = await fetchMiraServerCapabilities(ip)
@@ -82,8 +121,8 @@ async function check(ip: string, manual: boolean): Promise<void> {
     inFlight = null
     inFlightBase = null
     const stale = !manual && targetIp !== ip
-    store = stale ? { ...store, checking: false } : { ...state, checking: false }
-    emit()
+    // a result without a mode/features change resets checking silently (G1)
+    publish(stale ? { ...store, checking: false } : { ...state, checking: false }, true)
   })()
   return inFlight
 }
@@ -128,8 +167,7 @@ function retarget(): void {
     if (targetIp !== null) {
       targetIp = null
       stopPolling()
-      store = { ...standaloneMiraServerState(), checking: false }
-      emit()
+      publish({ ...standaloneMiraServerState(), checking: false }, false)
     }
     lastProfileCount = profileCount
     return
@@ -140,8 +178,7 @@ function retarget(): void {
     targetIp = ip
     if (ip === null) {
       stopPolling()
-      store = { ...standaloneMiraServerState(), checking: false }
-      emit()
+      publish({ ...standaloneMiraServerState(), checking: false }, false)
     } else {
       startPolling()
       void check(ip, false)
@@ -187,6 +224,16 @@ function subscribe(listener: () => void): () => void {
   }
 }
 
+// Test hook (ticket10-7 G1): observe raw store emissions without the
+// subscription side effects (refcount / poll start) — the emit-count
+// assertions subscribe a plain listener to the shared listener set.
+export function __onMiraServerEmit(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
 // Test isolation — resets the shared store (fresh module state per test)
 export function __resetMiraServerState() {
   stopPolling()
@@ -208,8 +255,9 @@ export function __resetMiraServerState() {
 // ip of the profile it is showing (the active profile, or the ticket
 // defaults while no profile exists yet).
 // ticket10-7 KR4: allowed while hybridDisabled is set — it is a deliberate
-// user action — and its result is published to the shared store like any
-// manual check. The capability poll stays stopped either way: targetIp (and
+// user action — and its result is written to the shared store like any
+// manual check (listeners are only notified on a change, ticket10-7 G1).
+// The capability poll stays stopped either way: targetIp (and
 // thus the poll) is untouched, and the next settings change retargets back
 // to standalone while the flag is set.
 export function checkMiraServer(ip: string): Promise<void> {
