@@ -372,6 +372,19 @@
   }
 }
 
+// ticket10-7 KR4: the deactivation danger action below the setup button —
+// full width like .btnPrimary (the .btn base is auto-width)
+.btnDangerFull {
+  width: 100%;
+}
+
+// ticket10-7 KR4: the hint line under the status line while the hybrid
+// operation is deactivated — the deliberate end state, not an error
+.disabledHint {
+  font-size: $fs-sm;
+  color: $text-tertiary;
+}
+
 // ticket10-5C: the deletion confirmation overlay (above the card, same
 // z-level — later in the DOM)
 .confirmBackdrop {
