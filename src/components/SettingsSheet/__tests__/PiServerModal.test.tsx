@@ -278,6 +278,24 @@ describe('PiServerModal: Verbindung testen', () => {
     await waitFor(() => expect(screen.getByText('Test: Getrennt')).toBeInTheDocument())
     expect(getMiraServerState().mode).toBe('standalone')
   })
+
+  it('a successful test WITHOUT a profile shows the result locally but keeps the shared store standalone (ticket10-7 G12)', async () => {
+    // fresh install: no profile configured. A successful test must show its
+    // result in the modal's own test line (from the return value) but must
+    // NOT publish into the shared store — nothing would re-target it (no
+    // ambient poll), so the "Raspberry Pi" menu row would keep showing a
+    // connected mode until the next settings write or restart
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await settleMountCheck()
+    expect(getMiraServerState().mode).toBe('standalone')
+    server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
+    fireEvent.click(screen.getByRole('button', { name: 'Verbindung testen' }))
+    await waitFor(() =>
+      expect(screen.getByText('Test: Verbunden (Compute Mode)')).toBeInTheDocument(),
+    )
+    // the modal shows the success, the shared store stays standalone
+    expect(getMiraServerState().mode).toBe('standalone')
+  })
 })
 
 describe('PiServerModal: persistent credentials', () => {

@@ -1,9 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import {
-  checkMiraServer,
-  getMiraServerState,
-  useMiraServer,
-} from '@/hooks/useMiraServer'
+import { checkMiraServer, useMiraServer } from '@/hooks/useMiraServer'
+import type { MiraServerState } from '@/api/miraServer'
 import {
   activePiProfile,
   defaultPiProfile,
@@ -361,17 +358,20 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
 
   // "Verbindung testen": pings the capabilities endpoint of the shown ip
   // (the active profile, or the ticket defaults while none exists yet).
-  // checkMiraServer never throws (it degrades to standalone internally), so
-  // the result is read from the shared state.
+  // checkMiraServer never throws (it degrades to standalone internally).
+  // ticket10-7 G12: the result comes from the RETURN VALUE, not the shared
+  // store — a manual check without an active profile does not publish to
+  // the store (nothing would ever correct it there), so a store read would
+  // show 'standalone' even for a successful test.
   const handleTest = async () => {
     if (test.phase === 'checking') return
     setTest({ phase: 'checking' })
+    let mode: MiraServerState['mode'] = 'standalone'
     try {
-      await checkMiraServer(profile.ip)
+      mode = (await checkMiraServer(profile.ip)).mode
     } catch {
       // unreachable in theory — treat as a failed test
     }
-    const mode = getMiraServerState().mode
     setTest({ phase: 'done', ok: mode !== 'standalone', mode })
   }
 
