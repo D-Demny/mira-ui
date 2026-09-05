@@ -38,6 +38,14 @@ export const SETUP_PI_POLL_MS = 2000
 // script at 30 minutes, the UI only stops watching earlier than that
 export const SETUP_PI_UI_CAP_MS = 5 * 60 * 1000
 
+// ticket10-7 G13: the number of CONSECUTIVE job-status fetch failures after
+// which the UI gives up on the run early — a continuously unreachable daemon
+// (crash/restart) has lost its in-memory job, so the run cannot finish; at
+// the 2 s poll rhythm 15 failures = 30 s of a dead daemon. The wall-time cap
+// above is additionally evaluated on every tick BEFORE the fetch, so it
+// holds even in the error path.
+export const SETUP_PI_FETCH_FAIL_LIMIT = 15
+
 export interface SetupPiCredentials {
   ip: string
   user: string

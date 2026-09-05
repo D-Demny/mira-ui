@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getPiSetupStatus,
+  SETUP_PI_FETCH_FAIL_LIMIT,
   SETUP_PI_POLL_MS,
   SETUP_PI_UI_CAP_MS,
   startPiSetup,
@@ -9,6 +10,7 @@ import {
 import {
   getPiTetheringStatus,
   startPiTethering,
+  TETHERING_FETCH_FAIL_LIMIT,
   TETHERING_POLL_MS,
   TETHERING_UI_CAP_MS,
   type TetheringUplink,
@@ -171,6 +173,13 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const setupStartedAtRef = useRef<number | null>(null)
   const tetherStartedAtRef = useRef<number | null>(null)
+  // ticket10-7 G13: consecutive job-status fetch failures per running step
+  // — a continuously unreachable daemon has lost its in-memory job, so the
+  // run cannot finish; each run gives up after its FETCH_FAIL_LIMIT
+  // (15 × 2 s = 30 s) instead of polling until the wall-time cap. The steps
+  // stay decoupled (only one is ever active), hence one counter each
+  const setupFetchFailsRef = useRef(0)
+  const tetherFetchFailsRef = useRef(0)
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // the keyboard hand-off is EDGE-triggered (open→closed), not level
   // triggered: prevKb remembers the previous keyboardField, the opened*
@@ -219,12 +228,10 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
   // leaving a running step), so the tick never sees a stale step
   const pollTick = useCallback(async (step: 'setup-running' | 'tether-running') => {
     if (step === 'setup-running') {
-      let status: SetupPiStatus
-      try {
-        status = await getPiSetupStatus()
-      } catch {
-        return // daemon unreachable for a moment — the next tick retries
-      }
+      // ticket10-7 G13: the wall-time cap is evaluated BEFORE the status
+      // fetch (before: after it) — with a dead daemon the fetch fails every
+      // tick and a cap behind it would never run (the run would show "läuft"
+      // forever on top of one failing request per 2 s)
       const startedAt = setupStartedAtRef.current
       if (startedAt !== null && Date.now() - startedAt > SETUP_PI_UI_CAP_MS) {
         stopPolling()
@@ -232,6 +239,23 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
         setPhase('setup-failed')
         return
       }
+      let status: SetupPiStatus
+      try {
+        status = await getPiSetupStatus()
+      } catch {
+        // ticket10-7 G13: a continuously unreachable daemon has lost its
+        // in-memory job — give up after SETUP_PI_FETCH_FAIL_LIMIT consecutive
+        // failures (15 × 2 s = 30 s) instead of polling until the cap. A
+        // momentary blip never accumulates (a success resets the count)
+        setupFetchFailsRef.current += 1
+        if (setupFetchFailsRef.current >= SETUP_PI_FETCH_FAIL_LIMIT) {
+          stopPolling()
+          setSetupError('Daemon unreachable — the setup run cannot be tracked')
+          setPhase('setup-failed')
+        }
+        return
+      }
+      setupFetchFailsRef.current = 0
       if (status.state === 'running') {
         setSetupLog((prev) => (prev === status.logTail ? prev : status.logTail))
         return
@@ -274,19 +298,37 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
         setPhase('setup-banner')
       }
     } else {
+      // ticket10-7 G13: the wall-time cap is evaluated BEFORE the status
+      // fetch (before: after it) — with a dead daemon the fetch fails every
+      // tick and a cap behind it would never run (the run would show "läuft"
+      // forever on top of one failing request per 2 s). The cap path has no
+      // fresh status: uplink stays undefined (the failure screen renders no
+      // uplink line; only a detected 'none' uplink adds one) and both
+      // achievement flags are false (the run's outcome is unknown)
+      const startedAt = tetherStartedAtRef.current
+      if (startedAt !== null && Date.now() - startedAt > TETHERING_UI_CAP_MS) {
+        stopPolling()
+        setTetherResult({ ok: false, error: 'Tethering took longer than 10 minutes — give up', uplink: undefined, tetheringOk: false, internetOk: false })
+        setPhase('tether-done')
+        return
+      }
       let status
       try {
         status = await getPiTetheringStatus()
       } catch {
+        // ticket10-7 G13: a continuously unreachable daemon has lost its
+        // in-memory job — give up after TETHERING_FETCH_FAIL_LIMIT
+        // consecutive failures (15 × 2 s = 30 s) instead of polling until
+        // the cap. A momentary blip never accumulates (a success resets it)
+        tetherFetchFailsRef.current += 1
+        if (tetherFetchFailsRef.current >= TETHERING_FETCH_FAIL_LIMIT) {
+          stopPolling()
+          setTetherResult({ ok: false, error: 'Daemon unreachable — the tethering run cannot be tracked', uplink: undefined, tetheringOk: false, internetOk: false })
+          setPhase('tether-done')
+        }
         return
       }
-      const startedAt = tetherStartedAtRef.current
-      if (startedAt !== null && Date.now() - startedAt > TETHERING_UI_CAP_MS) {
-        stopPolling()
-        setTetherResult({ ok: false, error: 'Tethering took longer than 10 minutes — give up', uplink: status.uplink, tetheringOk: status.tetheringOk, internetOk: status.internetOk })
-        setPhase('tether-done')
-        return
-      }
+      tetherFetchFailsRef.current = 0
       if (status.state === 'running') {
         setTetherLog((prev) => (prev === status.logTail ? prev : status.logTail))
         if (status.uplink) setTetherUplink(status.uplink)
@@ -331,6 +373,9 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
       return
     }
     setupStartedAtRef.current = Date.now()
+    // ticket10-7 G13: a fresh run gets a fresh failure budget (a give-up on
+    // a previous run must not instantly fail this one)
+    setupFetchFailsRef.current = 0
     pollRef.current = setInterval(() => {
       void pollTick('setup-running')
     }, SETUP_PI_POLL_MS)
@@ -357,6 +402,9 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
       return
     }
     tetherStartedAtRef.current = Date.now()
+    // ticket10-7 G13: a fresh run gets a fresh failure budget (a give-up on
+    // a previous run must not instantly fail this one)
+    tetherFetchFailsRef.current = 0
     pollRef.current = setInterval(() => {
       void pollTick('tether-running')
     }, TETHERING_POLL_MS)

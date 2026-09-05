@@ -13,6 +13,7 @@ import {
 } from '@/settings'
 import {
   getPiSetupStatus,
+  SETUP_PI_FETCH_FAIL_LIMIT,
   SETUP_PI_POLL_MS,
   SETUP_PI_UI_CAP_MS,
   startPiSetup,
@@ -339,6 +340,11 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // ticket10-4: wall-time start of the active provisioning run (null =
   // idle) — the shared 2 s interval serves the run only while this is set
   const runStartedAtRef = useRef<number | null>(null)
+  // ticket10-7 G13: consecutive job-status fetch failures of the active
+  // run — a continuously unreachable daemon has lost its in-memory job, so
+  // the run cannot finish; the run gives up after SETUP_PI_FETCH_FAIL_LIMIT
+  // (15 × 2 s = 30 s) instead of polling until the wall-time cap
+  const setupFetchFailsRef = useRef(0)
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -400,21 +406,41 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     // (2) the wizard job status — only while a run is active
     const startedAt = runStartedAtRef.current
     if (startedAt === null) return
+    // ticket10-7 G13: the wall-time cap is evaluated BEFORE the job status
+    // fetch (before: after it) — with a dead daemon the fetch fails every
+    // tick and a cap behind it would never run (the run would show "läuft"
+    // forever on top of one failing request per 2 s). The last known log
+    // tail stays in the failed state (cur.logTail = the running branch's
+    // last update, same content the old post-fetch cap used to carry).
+    if (Date.now() - startedAt > SETUP_PI_UI_CAP_MS) {
+      runStartedAtRef.current = null
+      setSetup((cur) => ({
+        phase: 'failed',
+        error: 'Setup took longer than 5 minutes — give up',
+        logTail: cur.logTail,
+      }))
+      return
+    }
     let status: SetupPiStatus
     try {
       status = await getPiSetupStatus()
     } catch {
-      return // daemon unreachable for a moment — the next tick retries
-    }
-    if (Date.now() - startedAt > SETUP_PI_UI_CAP_MS) {
-      runStartedAtRef.current = null
-      setSetup({
-        phase: 'failed',
-        error: 'Setup took longer than 5 minutes — give up',
-        logTail: status.logTail,
-      })
+      // ticket10-7 G13: a continuously unreachable daemon has lost its
+      // in-memory job — give up after SETUP_PI_FETCH_FAIL_LIMIT consecutive
+      // failures (15 × 2 s = 30 s) instead of polling until the wall-time
+      // cap. A momentary blip never accumulates (a success resets the count)
+      setupFetchFailsRef.current += 1
+      if (setupFetchFailsRef.current >= SETUP_PI_FETCH_FAIL_LIMIT) {
+        runStartedAtRef.current = null
+        setSetup((cur) => ({
+          phase: 'failed',
+          error: 'Daemon unreachable — the setup run cannot be tracked',
+          logTail: cur.logTail,
+        }))
+      }
       return
     }
+    setupFetchFailsRef.current = 0
     if (status.state === 'running') {
       setSetup((cur) => (cur.logTail === status.logTail ? cur : { ...cur, logTail: status.logTail }))
       return
@@ -497,6 +523,9 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
     }
     setSetup({ phase: 'running', logTail: [] })
     runStartedAtRef.current = Date.now()
+    // ticket10-7 G13: a fresh run gets a fresh failure budget (a give-up on
+    // the previous run must not instantly fail this one)
+    setupFetchFailsRef.current = 0
     void pollTick()
   }
 
