@@ -359,40 +359,6 @@ export default function App() {
   const [updateCardOpen, setUpdateCardOpen] = useState(false)
   const updateRemindAtRef = useRef(0)
 
-  // auto screensaver: opens immediately when playback stops (nothing playing),
-  // acting as a clock screensaver. any user input wakes it up. Not a setting on purpose.
-  const SCREENSAVER_DELAY_MS = 3000
-  const screensaverAutoEligible =
-    !screensaverOpen &&
-    !forced &&
-    !loading &&
-    !auth.required &&
-    !reconnecting &&
-    realStatus != null &&
-    realStatus.active !== true &&
-    realStatus.setting_up !== true &&
-    !menuOpen &&
-    !powerMenuOpen &&
-    !btMenuOpen &&
-    !settingsOpen &&
-    !deviceMenuOpen &&
-    !defaultDeviceModalOpen &&
-    !piServerModalOpen &&
-    !piKeyboardField &&
-    !debugOpen &&
-    !updateCardOpen &&
-    !reportId &&
-    !pairing
-  useEffect(() => {
-    if (!screensaverAutoEligible) return
-    const open = () => {
-      setScreensaverBy('auto')
-      setScreensaverOpen(true)
-    }
-    const t = window.setTimeout(open, SCREENSAVER_DELAY_MS)
-    return () => window.clearTimeout(t)
-  }, [screensaverAutoEligible, SCREENSAVER_DELAY_MS])
-
   // an auto-opened saver yields to real playback; a manual one stays (desk
   // mode) and cross-fades its art instead
   useEffect(() => {
@@ -441,6 +407,47 @@ export default function App() {
       offlineScreen = offlineMethod
     }
   }
+
+  // auto screensaver: opens immediately when playback stops (nothing playing),
+  // acting as a clock screensaver. any user input wakes it up. Not a setting on purpose.
+  // (evaluated below the offlineScreen computation so the onboarding wizard can
+  // be excluded from eligibility)
+  const SCREENSAVER_DELAY_MS = 3000
+  const screensaverAutoEligible =
+    !screensaverOpen &&
+    !forced &&
+    !loading &&
+    !auth.required &&
+    !reconnecting &&
+    realStatus != null &&
+    realStatus.active !== true &&
+    realStatus.setting_up !== true &&
+    !menuOpen &&
+    !powerMenuOpen &&
+    !btMenuOpen &&
+    !settingsOpen &&
+    !deviceMenuOpen &&
+    !defaultDeviceModalOpen &&
+    !piServerModalOpen &&
+    !piKeyboardField &&
+    !debugOpen &&
+    !updateCardOpen &&
+    !reportId &&
+    !pairing &&
+    // ticket10-7 G15: the USB-tethering onboarding wizard is a guided flow —
+    // the saver must not cover it (any input would wake it, losing the flow's
+    // place in the UI). The chooser and the reconnecting screens keep the
+    // pre-Epic-10 behavior: the saver covers them, any input wakes it.
+    offlineScreen !== 'tethering-onboarding'
+  useEffect(() => {
+    if (!screensaverAutoEligible) return
+    const open = () => {
+      setScreensaverBy('auto')
+      setScreensaverOpen(true)
+    }
+    const t = window.setTimeout(open, SCREENSAVER_DELAY_MS)
+    return () => window.clearTimeout(t)
+  }, [screensaverAutoEligible, SCREENSAVER_DELAY_MS])
 
   // discoverable while the Bluetooth pairing screen is up
   const pairingScreenShown = forced === 'needs-network' || offlineScreen === 'bluetooth'
