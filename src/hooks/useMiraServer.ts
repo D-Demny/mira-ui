@@ -34,7 +34,7 @@ export interface MiraServerView extends MiraServerState {
 // targetIp staleness guard below).
 const listeners = new Set<() => void>()
 let store: MiraServerView = { ...standaloneMiraServerState(), checking: false }
-let inFlight: Promise<void> | null = null
+let inFlight: Promise<MiraServerState> | null = null
 // the base url the in-flight request targets — a manual re-check for a
 // different address must not join it (epic10 task 4), or the settings UI
 // would report the default address' result for the entered ip
@@ -61,10 +61,13 @@ function emit() {
 // resets checking: false in the store SILENTLY — publishing it would be the
 // second of the two 30 s emits without any content change. The checking:true
 // flip (a check starts) is the tick's only notification: with a profile and
-// a dead Pi the app re-renders 1×/30 s instead of 2×. The store itself is
-// always current (getMiraServerState reads it live), so manual checks keep
-// working: checkMiraServer's result is always written here and readable
-// after the await — only the listener notification is gated on the change.
+// a dead Pi the app re-renders 1×/30 s instead of 2×. A manual check
+// (checkMiraServer) additionally publishes its result to the store only
+// while an active profile exists (ticket10-7 G12: without a profile nothing
+// would ever re-target the store again, so a successful test would leave the
+// "Raspberry Pi" menu row in a connected mode until the next settings write
+// or restart) — the result is always RETURNED to the caller, who shows it in
+// its own local state.
 function sameModeAndFeatures(a: MiraServerState, b: MiraServerState): boolean {
   return (
     a.mode === b.mode &&
@@ -89,26 +92,50 @@ function publish(next: MiraServerView, checkResult: boolean): void {
 // One capabilities check. Concurrent callers (poll tick + manual re-check)
 // share the in-flight request when they target the same address. Keeps the
 // last known mode while the request is in flight so a slow re-poll never
-// flashes the UI back to standalone.
+// flashes the UI back to standalone. Returns the check's result state —
+// ticket10-7 G12: the settings UI shows the manual result from this return
+// value, not from the shared store (a manual check without an active profile
+// does not publish, so a store read would report the uncorrected state).
 // `manual` (ticket10-5A) marks the explicit re-check from the settings UI
-// (checkMiraServer): its result is always written to the shared store, even
-// if the active profile moved in the meantime (readable via
-// getMiraServerState after the await); the listener notification is gated
-// on the change (ticket10-7 G1). Background checks only settle while their
-// ip is still the current target.
-async function check(ip: string, manual: boolean): Promise<void> {
+// (checkMiraServer). Its result is published to the shared store only while
+// an active profile exists (decided from the settings state, see
+// publishState below): with a profile the next ambient tick or retarget
+// keeps the state current, but without one nothing would ever re-target the
+// store again (no ambient poll) and a published result would stick —
+// ticket10-7 G12. The listener notification is gated on the change
+// (ticket10-7 G1). Background checks only settle while their ip is still
+// the current target.
+async function check(ip: string, manual: boolean): Promise<MiraServerState> {
   const base = capabilitiesBaseUrl(ip)
   if (inFlight) {
+    const shared = inFlight
     const joins = inFlightBase === base
-    await inFlight
-    if (joins) return
+    await shared
+    if (joins) return shared
   }
   inFlightBase = base
   inFlight = (async () => {
-    // a check starts: checking was reset by the previous settle, so the
-    // flip is always a change and the tick's only publish while
-    // mode/features stay the same (G1)
-    publish({ ...store, checking: true }, false)
+    // ticket10-7 G12: a manual check while the app state has NO active
+    // profile (fresh install, all profiles removed, or hybrid deactivated)
+    // leaves the shared store completely untouched — no flip publish, no
+    // result publish. There is no ambient poll that would ever correct a
+    // published result (the retarget on every settings change and on
+    // (re)subscribe drops to standalone), so a successful test would keep
+    // the "Raspberry Pi" menu row in a connected mode until the next
+    // settings write or app restart. The result is always returned to the
+    // caller. Decided here (check start) from the SETTINGS state — not from
+    // targetIp, which only tracks the active subscriber's target and is
+    // null while no subscriber is mounted — so the flip and the settle
+    // agree.
+    const publishState = manual
+      ? !getSettings().hybridDisabled && activePiProfile(getSettings()) !== null
+      : true
+    if (publishState) {
+      // a check starts: checking was reset by the previous settle, so the
+      // flip is always a change and the tick's only publish while
+      // mode/features stay the same (G1)
+      publish({ ...store, checking: true }, false)
+    }
     let state: MiraServerState
     try {
       state = await fetchMiraServerCapabilities(ip)
@@ -121,8 +148,11 @@ async function check(ip: string, manual: boolean): Promise<void> {
     inFlight = null
     inFlightBase = null
     const stale = !manual && targetIp !== ip
-    // a result without a mode/features change resets checking silently (G1)
-    publish(stale ? { ...store, checking: false } : { ...state, checking: false }, true)
+    if (publishState) {
+      // a result without a mode/features change resets checking silently (G1)
+      publish(stale ? { ...store, checking: false } : { ...state, checking: false }, true)
+    }
+    return state
   })()
   return inFlight
 }
@@ -255,17 +285,20 @@ export function __resetMiraServerState() {
 // ip of the profile it is showing (the active profile, or the ticket
 // defaults while no profile exists yet).
 // ticket10-7 KR4: allowed while hybridDisabled is set — it is a deliberate
-// user action — and its result is written to the shared store like any
-// manual check (listeners are only notified on a change, ticket10-7 G1).
-// The capability poll stays stopped either way: targetIp (and
+// user action. The capability poll stays stopped either way: targetIp (and
 // thus the poll) is untouched, and the next settings change retargets back
 // to standalone while the flag is set.
-export function checkMiraServer(ip: string): Promise<void> {
+// ticket10-7 G12: the result is published to the shared store only while an
+// active profile exists (with a profile the next ambient tick or retarget
+// corrects the state again; without one nothing would, and a successful
+// test would leave the "Raspberry Pi" menu row in a connected mode until
+// the next settings write or restart). The RESULT is always returned — the
+// settings UI shows it in its own local test state.
+export function checkMiraServer(ip: string): Promise<MiraServerState> {
   return check(ip, true)
 }
 
-// Synchronous read of the shared state (e.g. the settings UI shows the
-// result of a just-finished re-check; the hook covers reactive consumers)
+// Synchronous read of the shared state (the hook covers reactive consumers)
 export function getMiraServerState(): MiraServerView {
   return { mode: store.mode, features: store.features, checking: store.checking }
 }

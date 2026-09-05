@@ -1999,6 +1999,23 @@ describe('MainMenuView', () => {
           HttpResponse.json({ tier: 'compute', disk_cache: true, remote_colors: true, remote_blur: true }),
         ),
       )
+      // ticket10-7 G12: this manual check has NO active profile, so its
+      // successful result is NOT published to the shared store — the row
+      // must stay Standalone (a successful test without a profile must not
+      // make the app look connected until the next settings write/restart)
+      await act(async () => {
+        await checkMiraServer('192.168.7.1')
+      })
+      expect(row?.textContent).toContain('Standalone')
+
+      // configuring a profile activates the ambient path (retarget check)
+      // — the row mirrors the live mode again
+      updateSettings({
+        piProfiles: [
+          { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        ],
+        activePiId: 'pi-1',
+      })
       await act(async () => {
         await checkMiraServer('192.168.7.1')
       })

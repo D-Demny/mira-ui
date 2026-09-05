@@ -17,6 +17,7 @@ import {
   standaloneMiraServerState,
   toMiraServerState,
   type MiraServerCapabilities,
+  type MiraServerState,
 } from '@/api/miraServer'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 
@@ -677,7 +678,7 @@ describe('useMiraServer: hybridDisabled (ticket10-7 KR4)', () => {
     vi.useRealTimers()
   })
 
-  it('a manual check while disabled is published, but the poll stays stopped', async () => {
+  it('a manual check while disabled (no profile) is returned but NOT published; the poll stays stopped', async () => {
     vi.useFakeTimers(FAKE_CLOCK)
     let hits = 0
     server.use(
@@ -686,18 +687,28 @@ describe('useMiraServer: hybridDisabled (ticket10-7 KR4)', () => {
         return HttpResponse.json(COMPUTE)
       }),
     )
+    // the Deaktivieren end state: flag set, no profile — behaviorally
+    // identical to "no profile" (targetIp null, no poll target)
     updateSettings({ hybridDisabled: true })
     const { result, unmount } = renderHook(() => useMiraServer())
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     // "Verbindung testen" — a deliberate user action, allowed while disabled
+    // (KR4) — ticket10-7 G12: without an active profile the result is
+    // RETURNED to the caller but NOT published to the shared store, so the
+    // disabled end state stays a stable standalone
+    let state: MiraServerState | null = null
     await act(async () => {
-      await checkMiraServer(DEFAULT_PROFILE_IP)
+      state = await checkMiraServer(DEFAULT_PROFILE_IP)
     })
-    // the result is published to the shared store...
-    expect(result.current.mode).toBe('compute')
-    // ...but the ambient poll never started: a full tick later, no request
+    expect(state).toEqual({
+      mode: 'compute',
+      features: { diskCache: true, remoteColors: true, remoteBlur: true },
+    })
+    expect(getMiraServerState().mode).toBe('standalone')
+    expect(result.current.mode).toBe('standalone')
+    // the ambient poll never started: a full tick later, no request
     await act(async () => {
       await vi.advanceTimersByTimeAsync(MIRA_SERVER_POLL_MS)
     })
@@ -856,5 +867,92 @@ describe('useMiraServer: emit guard (ticket10-7 G1)', () => {
     unmount()
     unsubscribe()
     vi.useRealTimers()
+  })
+})
+
+describe('useMiraServer: manual check without profile (ticket10-7 G12)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    __resetSettings()
+    __resetMiraServerState()
+  })
+
+  it('a successful manual check WITHOUT a profile does not publish to the shared store', async () => {
+    // the audit scenario: a Pi answers at the default ip while no profile is
+    // configured. Without a profile there is no ambient poll and no
+    // retarget that would correct the state again, so the result must NOT
+    // reach the shared store — the "Raspberry Pi" menu row would otherwise
+    // keep showing a connected mode until the next settings write or app
+    // restart. The result is returned to the caller instead.
+    server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
+    const emitted: MiraServerView[] = []
+    const unsubscribe = __onMiraServerEmit(() => {
+      emitted.push({ ...getMiraServerState() })
+    })
+    const { result, unmount } = renderHook(() => useMiraServer())
+    let state: MiraServerState | null = null
+    await act(async () => {
+      state = await checkMiraServer(DEFAULT_PROFILE_IP)
+    })
+    // the result is the compute state (the modal shows it locally)...
+    expect(state).toEqual({
+      mode: 'compute',
+      features: { diskCache: true, remoteColors: true, remoteBlur: true },
+    })
+    // ...but the shared store is completely untouched: standalone, no
+    // checking flip, zero emissions (no re-render at all)
+    expect(getMiraServerState()).toEqual({
+      mode: 'standalone',
+      features: STANDBY.features,
+      checking: false,
+    })
+    expect(result.current.mode).toBe('standalone')
+    expect(emitted).toEqual([])
+    unmount()
+    unsubscribe()
+  })
+
+  it('a failed manual check without a profile returns standalone and keeps the store untouched', async () => {
+    // the default handler answers an error — the check degrades to
+    // standalone, which is also the store's state (the visible difference
+    // to the success case above is only the returned state)
+    const { result, unmount } = renderHook(() => useMiraServer())
+    let state: MiraServerState | null = null
+    await act(async () => {
+      state = await checkMiraServer(DEFAULT_PROFILE_IP)
+    })
+    expect(state).toEqual(STANDBY)
+    expect(getMiraServerState()).toEqual({
+      mode: 'standalone',
+      features: STANDBY.features,
+      checking: false,
+    })
+    expect(result.current.mode).toBe('standalone')
+    unmount()
+  })
+
+  it('a manual check WITH an active profile still publishes to the store and returns the result', async () => {
+    // behavior unchanged (10-5A contract): with a profile the manual result
+    // reaches the shared store (the next ambient tick / retarget keeps it
+    // current) AND is returned to the caller
+    setActiveProfile()
+    server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
+    const { result, unmount } = renderHook(() => useMiraServer())
+    let state: MiraServerState | null = null
+    await act(async () => {
+      state = await checkMiraServer(DEFAULT_PROFILE_IP)
+    })
+    expect(state).toEqual({
+      mode: 'compute',
+      features: { diskCache: true, remoteColors: true, remoteBlur: true },
+    })
+    expect(getMiraServerState().mode).toBe('compute')
+    expect(result.current.mode).toBe('compute')
+    expect(result.current.features).toEqual({
+      diskCache: true,
+      remoteColors: true,
+      remoteBlur: true,
+    })
+    unmount()
   })
 })
