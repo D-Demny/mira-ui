@@ -15,7 +15,11 @@ import {
   getSettings,
   updateSettings,
 } from '@/settings'
-import { SETUP_PI_POLL_MS, SETUP_PI_UI_CAP_MS } from '@/api/piServer'
+import {
+  SETUP_PI_FETCH_FAIL_LIMIT,
+  SETUP_PI_POLL_MS,
+  SETUP_PI_UI_CAP_MS,
+} from '@/api/piServer'
 import { server } from '@/__tests__/msw-server'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import type { ListFocusEntry } from '@/navigation/listFocusContext'
@@ -529,6 +533,100 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
       await vi.advanceTimersByTimeAsync(SETUP_PI_UI_CAP_MS + SETUP_PI_POLL_MS)
     })
     expect(screen.getByText('Setup took longer than 5 minutes — give up')).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('gives up when the daemon dies mid-run and the run poll stops (ticket10-7 G13)', async () => {
+    vi.useFakeTimers()
+    let statusCalls = 0
+    server.use(
+      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job-5' }, { status: 202 })),
+      // the daemon is dead (crash): every status fetch rejects
+      http.get('*/api/setup-pi/status', () => {
+        statusCalls += 1
+        return HttpResponse.error()
+      }),
+    )
+    const { unmount } = render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // the mount probe already hit the dead daemon once (its own catch);
+    // start the wizard (POST 202 — the run is tracked via the status poll)
+    fireEvent.click(screen.getByRole('button', { name: 'Pi automatisch einrichten' }))
+    // drains: the POST settles (202), then the immediate tick fails against
+    // the dead daemon (consecutive-failure counter = 1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByRole('button', { name: 'Einrichtung läuft…' })).toBeInTheDocument()
+    // SETUP_PI_FETCH_FAIL_LIMIT consecutive failures (15 × 2 s = 30 s of a
+    // dead daemon) give up the run — the daemon's in-memory job is gone
+    // with the process, so waiting for the wall-time cap would be pointless
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETUP_PI_POLL_MS * (SETUP_PI_FETCH_FAIL_LIMIT - 1))
+    })
+    expect(
+      screen.getByText('Daemon unreachable — the setup run cannot be tracked'),
+    ).toBeInTheDocument()
+    // the RUN poll is STOPPED: no job-status request follows the give-up
+    // (the shared 2 s session-status rhythm keeps running, as in every
+    // other terminal path — only the job branch is gone)
+    const callsAfterGiveUp = statusCalls
+    expect(callsAfterGiveUp).toBeGreaterThan(0)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETUP_PI_POLL_MS * 10)
+    })
+    expect(statusCalls).toBe(callsAfterGiveUp)
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('evaluates the 5 minute cap even when the tick\'s own fetch fails (ticket10-7 G13: cap before the fetch)', async () => {
+    vi.useFakeTimers()
+    let statusCalls = 0
+    server.use(
+      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job-6' }, { status: 202 })),
+      // a flaky daemon: every ODD-numbered fetch fails. The failure budget
+      // (15 consecutive) is never reached — each success resets the counter
+      // — so only the wall-time cap can end the run. The cap tick is call
+      // #153 (mount probe #1 + immediate tick #2 + 150 interval ticks) =
+      // odd = would FAIL: the cap fires even though the tick's own fetch
+      // never settles, proving it is evaluated BEFORE the fetch
+      http.get('*/api/setup-pi/status', () => {
+        statusCalls += 1
+        if (statusCalls % 2 === 1) return HttpResponse.error()
+        return HttpResponse.json({ state: 'running', log_tail: ['hanging...'] })
+      }),
+    )
+    const { unmount } = render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Pi automatisch einrichten' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // one tick past the cap — the elapsed check is strictly greater than
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETUP_PI_UI_CAP_MS + SETUP_PI_POLL_MS)
+    })
+    expect(screen.getByText('Setup took longer than 5 minutes — give up')).toBeInTheDocument()
+    const callsAfterCap = statusCalls
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETUP_PI_POLL_MS * 10)
+    })
+    expect(statusCalls).toBe(callsAfterCap)
+    unmount()
     vi.useRealTimers()
   })
 

@@ -44,6 +44,14 @@ export const TETHERING_POLL_MS = 2000
 // cap check runs on the polling rhythm)
 export const TETHERING_UI_CAP_MS = 10 * 60 * 1000
 
+// ticket10-7 G13: the number of CONSECUTIVE job-status fetch failures after
+// which the UI gives up on the run early — a continuously unreachable daemon
+// (crash/restart) has lost its in-memory job, so the run cannot finish; at
+// the 2 s poll rhythm 15 failures = 30 s of a dead daemon. The wall-time cap
+// above is additionally evaluated on every tick BEFORE the fetch, so it
+// holds even in the error path.
+export const TETHERING_FETCH_FAIL_LIMIT = 15
+
 export type TetheringState = 'idle' | 'running' | 'success' | 'failed'
 
 // the RPi's upstream as detected by the script (alphabetically-first UP

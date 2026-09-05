@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { TetheringWizard } from '../TetheringWizard'
-import { SETUP_PI_POLL_MS } from '@/api/piServer'
+import { SETUP_PI_FETCH_FAIL_LIMIT, SETUP_PI_POLL_MS } from '@/api/piServer'
 import {
   __resetSettings,
   getSettings,
@@ -10,6 +10,7 @@ import {
   updateSettings,
   type PiProfile,
 } from '@/settings'
+import { TETHERING_FETCH_FAIL_LIMIT, TETHERING_POLL_MS } from '@/api/piTethering'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import type { PiKeyboardField } from '@/components/SettingsSheet/PiKeyboardOverlay'
 import { server } from '@/__tests__/msw-server'
@@ -539,4 +540,142 @@ describe('TetheringWizard: UI give-up cap (Date.now spy, no fake timers)', () =>
     expect(screen.getByText('Verbindung fehlgeschlagen')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeInTheDocument()
   }, 12000)
+})
+
+describe('TetheringWizard: dead daemon during a run (ticket10-7 G13)', () => {
+  // the daemon dies (crash/restart) while a run is in flight: every status
+  // fetch rejects. The run must not poll forever — after 15 consecutive
+  // fetch failures (15 × 2 s = 30 s) it gives up on the failure screen.
+  //
+  // FAKE TIMERS (like the PiServerModal run tests): useFakeTimers() BEFORE
+  // render/Start, 0-drain hops in act after advanceTimersByTimeAsync. The
+  // keyboard edges are driven with setField + act drains and SYNCHRONOUS
+  // getBy* (findBy* hangs under fake timers — MEMORY lesson), so driveToLogin
+  // is not usable here.
+  it('setup run: a dead daemon ends the poll after 15 consecutive fetch failures', async () => {
+    vi.useFakeTimers()
+    let statusCalls = 0
+    server.use(
+      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job' }, { status: 202 })),
+      // the daemon is dead (crash): every status fetch rejects
+      http.get('*/api/setup-pi/status', () => {
+        statusCalls += 1
+        return HttpResponse.error()
+      }),
+    )
+    const { setField, unmount } = renderWizard()
+    // drive both keyboard edges to the automatic setup start
+    updateActivePiProfileField('user', 'dietpi')
+    setField('user')
+    setField(null)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('Schritt 2 von 4 · SSH-Passwort')).toBeInTheDocument()
+    updateActivePiProfileField('password', 'dietpi')
+    setField('password')
+    setField(null)
+    // drains: the hand-off microtask starts the run, the POST settles (202),
+    // then the immediate tick fails against the dead daemon (counter = 1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('Verbinde…')).toBeInTheDocument()
+    // 15 consecutive fetch failures (15 × 2 s = 30 s of a dead daemon) give
+    // up the run — the daemon's in-memory job is gone with the process
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETUP_PI_POLL_MS * (SETUP_PI_FETCH_FAIL_LIMIT - 1))
+    })
+    expect(screen.getByText('Verbindung fehlgeschlagen')).toBeInTheDocument()
+    expect(
+      screen.getByText('Daemon unreachable — the setup run cannot be tracked'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeInTheDocument()
+    // the poll is STOPPED: no status request follows the give-up
+    const callsAfterGiveUp = statusCalls
+    expect(callsAfterGiveUp).toBeGreaterThan(0)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETUP_PI_POLL_MS * 10)
+    })
+    expect(statusCalls).toBe(callsAfterGiveUp)
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('tethering run: a dead daemon ends the poll after 15 consecutive fetch failures', async () => {
+    vi.useFakeTimers()
+    let tetherStatusCalls = 0
+    server.use(
+      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job' }, { status: 202 })),
+      http.get('*/api/setup-pi/status', () =>
+        HttpResponse.json({ state: 'success', key_installed: true }),
+      ),
+      http.post('*/api/pi/tethering', () => HttpResponse.json({ job_id: 'job-t' }, { status: 202 })),
+      // the daemon is dead (crash): every tethering status fetch rejects
+      http.get('*/api/pi/tethering/status', () => {
+        tetherStatusCalls += 1
+        return HttpResponse.error()
+      }),
+    )
+    const { setField, unmount } = renderWizard()
+    updateActivePiProfileField('user', 'dietpi')
+    setField('user')
+    setField(null)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    updateActivePiProfileField('password', 'dietpi')
+    setField('password')
+    setField(null)
+    // drains: the setup run starts and its immediate tick sees SUCCESS →
+    // the 3 s result banner
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('SSH-Login erfolgreich')).toBeInTheDocument()
+    // the banner auto-advances to the tethering run (the 3 s timer, fake)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000)
+    })
+    // drains: the tethering POST settles (202), then the immediate tick
+    // fails against the dead daemon (counter = 1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('Richte USB-Tethering ein…')).toBeInTheDocument()
+    // 15 consecutive fetch failures (15 × 2 s = 30 s of a dead daemon) give
+    // up the run
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TETHERING_POLL_MS * (TETHERING_FETCH_FAIL_LIMIT - 1))
+    })
+    expect(screen.getByText('Tethering fehlgeschlagen')).toBeInTheDocument()
+    expect(
+      screen.getByText('Daemon unreachable — the tethering run cannot be tracked'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Wiederholen' })).toBeInTheDocument()
+    // the poll is STOPPED: no status request follows the give-up
+    const callsAfterGiveUp = tetherStatusCalls
+    expect(callsAfterGiveUp).toBeGreaterThan(0)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TETHERING_POLL_MS * 10)
+    })
+    expect(tetherStatusCalls).toBe(callsAfterGiveUp)
+    unmount()
+    vi.useRealTimers()
+  })
 })
