@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { fetchHaEntityState, toggleHaEntity } from '@/api/homeassistant'
-import type { HaEntityState } from '@/api/homeassistant'
+import { fetchHaEntityState, lightCapabilities, toggleHaEntity } from '@/api/homeassistant'
 
 export interface HomeLight {
   entityId: string
@@ -51,45 +50,8 @@ export interface HomeLightView extends HomeLight {
   refetch: () => void
 }
 
-// HA's SUPPORT_BRIGHTNESS feature flag (bit 0 of the supported_features
-// bitmask) — the pre-color-modes way of advertising dimmability
-const SUPPORT_BRIGHTNESS = 1
-
-// bug46: derive dimmability + the 0–100 brightness level from the state
-// attributes. Ticket rule (primary path): a light is dimmable when
-// supported_color_modes contains 'brightness' or 'color_temp' (all 9
-// configured lights report ["color_temp", "xy"], so all of them are
-// dimmable). The legacy supported_features bit 0 (SUPPORT_BRIGHTNESS) counts
-// additionally as a strict union: integrations that predate color modes may
-// only advertise dimmability there, and any light reporting it must get the
-// popup. Either check alone is sufficient (the ticket rule stays at least
-// equally powerful — the union can only add lights, never remove them);
-// switches and non-dimmable lights report neither and stay direct toggles.
-// The brightness attribute is 0–255, or null while the light is off.
-function lightCapabilities(
-  entity: HaEntityState,
-): { dimmable: boolean; brightnessPct: number | null } {
-  const attrs = entity.attributes ?? {}
-  const rawModes = attrs.supported_color_modes
-  const modes = Array.isArray(rawModes)
-    ? rawModes.filter((mode): mode is string => typeof mode === 'string')
-    : []
-  const rawFeatures = attrs.supported_features
-  const supportedFeatures =
-    typeof rawFeatures === 'number' && Number.isFinite(rawFeatures) ? rawFeatures : 0
-  const dimmable =
-    modes.includes('brightness') ||
-    modes.includes('color_temp') ||
-    (supportedFeatures & SUPPORT_BRIGHTNESS) !== 0
-  const rawBrightness = attrs.brightness
-  const brightnessPct =
-    typeof rawBrightness === 'number' &&
-    Number.isFinite(rawBrightness) &&
-    rawBrightness > 0
-      ? Math.round((rawBrightness / 255) * 100)
-      : null
-  return { dimmable, brightnessPct }
-}
+// ticket 9.3: lightCapabilities now lives in src/api/homeassistant.ts
+// (pure HaEntityState knowledge — imported above)
 
 // MainMenuView and HomeMenuView both render lights. A module-level store keyed
 // by entity (same pattern as the usePlaylists/useRecent caches) keeps every

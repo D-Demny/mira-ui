@@ -1,5 +1,58 @@
 import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
+import { HOME_LIGHTS } from '@/hooks/useHomeLight'
+
+// ticket 9.3: default catalog fixture — the 9 curated lights (friendly_names
+// MUST stay in sync with the HOME_LIGHTS labels — the MainMenuView tests
+// expect e.g. '3er Stehlampe Gold'), one entity per other controllable
+// domain, plus a sensor that the catalog filter must drop
+function homeEntityCatalogFixture(): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  for (const light of HOME_LIGHTS) {
+    body[light.entityId] = {
+      entity_id: light.entityId,
+      state: 'off',
+      attributes: { friendly_name: light.label, supported_color_modes: ['color_temp', 'xy'] },
+    }
+  }
+  body['switch.wasserpumpe'] = {
+    entity_id: 'switch.wasserpumpe',
+    state: 'off',
+    attributes: { friendly_name: 'Wasserpumpe' },
+  }
+  body['scene.abendstimmung'] = {
+    entity_id: 'scene.abendstimmung',
+    state: 'none',
+    attributes: { friendly_name: 'Abendstimmung' },
+  }
+  body['fan.wohnzimmer'] = {
+    entity_id: 'fan.wohnzimmer',
+    state: 'off',
+    attributes: { friendly_name: 'Lüfter Wohnzimmer' },
+  }
+  body['media_player.wohnzimmer'] = {
+    entity_id: 'media_player.wohnzimmer',
+    state: 'idle',
+    attributes: { friendly_name: 'TV Wohnzimmer' },
+  }
+  body['cover.garage'] = {
+    entity_id: 'cover.garage',
+    state: 'closed',
+    attributes: { friendly_name: 'Garagentor' },
+  }
+  body['input_boolean.nachtmodus'] = {
+    entity_id: 'input_boolean.nachtmodus',
+    state: 'off',
+    attributes: { friendly_name: 'Nachtmodus' },
+  }
+  // must be filtered out by the catalog (not a controllable domain)
+  body['sensor.temperatur_wohnzimmer'] = {
+    entity_id: 'sensor.temperatur_wohnzimmer',
+    state: '21.5',
+    attributes: { friendly_name: 'Temperatur Wohnzimmer' },
+  }
+  return body
+}
 
 export const server = setupServer(
   http.get('*/observer/status', () => HttpResponse.json({ active: false, message: 'no session' })),
@@ -41,6 +94,24 @@ export const server = setupServer(
   // toggle handler, echo the requested entity back so the mock behaves like
   // the generic /ha-api/ service proxy
   http.post('*/ha-api/services/light/turn_on', async ({ request }) => {
+    const body = (await request.json()) as { entity_id?: string }
+    return HttpResponse.json([
+      {
+        entity_id: body.entity_id ?? 'light.3er_stehlampe_gold_esszimmer',
+        state: 'on',
+        attributes: {},
+      },
+    ])
+  }),
+  // ticket 9.3: the entity catalog (GET /states) — declared AFTER the specific
+  // light.* handler above so that one keeps first-match precedence (MSW takes
+  // the first matching handler)
+  http.get('*/ha-api/states', () => HttpResponse.json(homeEntityCatalogFixture())),
+  // ticket 9.3: generic service proxy catch-all — echoes the requested entity
+  // back with state 'on', like the real /ha-api/ proxy. Declared AFTER the
+  // specific light/toggle + light/turn_on handlers above so those keep
+  // precedence (MSW first-match wins)
+  http.post('*/ha-api/services/*', async ({ request }) => {
     const body = (await request.json()) as { entity_id?: string }
     return HttpResponse.json([
       {
