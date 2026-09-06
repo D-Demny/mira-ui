@@ -8,6 +8,11 @@
 export interface ListFocusEntry {
   onWheel: (e: WheelEvent) => void
   onConfirm: (() => void) | null
+  // bug53: hold-capable confirm (dial press held ≥ CARD_HOLD_MS). When set,
+  // the Enter keydown arms a hold timer instead of confirming immediately —
+  // a short press confirms on keyup, a held press fires onHold. Null/absent =
+  // the classic immediate keydown confirm (all other views, unchanged)
+  onHold?: (() => void) | null
   // called for the physical Back button; return true when the press was handled
   onBack?: (() => boolean) | null
   active: boolean

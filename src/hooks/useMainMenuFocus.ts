@@ -18,6 +18,11 @@ export interface UseMainMenuFocusOptions {
   onSelectSidebar?: (index: number) => void
   // called when a carousel card is confirmed (dial press or tap)
   onConfirmContent: (index: number) => void
+  // bug53: called when a carousel card is HELD (dial press ≥ CARD_HOLD_MS).
+  // Content pane: the hold routing (dimmable light → dim view, else press
+  // behavior); sidebar pane: behaves like confirm (enters the content pane).
+  // Falls back to onConfirmContent when not provided
+  onHoldContent?: (index: number) => void
   // called on back while focus is in the content pane, before returning to
   // the sidebar; returning true consumes the back press (e.g. closes a
   // playlist track sub-menu)
@@ -57,6 +62,7 @@ export function useMainMenuFocus({
   onExit,
   onSelectSidebar,
   onConfirmContent,
+  onHoldContent,
   onContentBack,
   onWheelContent,
 }: UseMainMenuFocusOptions): UseMainMenuFocusResult {
@@ -78,6 +84,7 @@ export function useMainMenuFocus({
   const onExitRef = useRef(onExit)
   const onSelectSidebarRef = useRef(onSelectSidebar)
   const onConfirmContentRef = useRef(onConfirmContent)
+  const onHoldContentRef = useRef(onHoldContent)
   const onContentBackRef = useRef(onContentBack)
   const onWheelContentRef = useRef(onWheelContent)
   const countsRef = useRef({ sidebarCount, contentCount })
@@ -85,6 +92,7 @@ export function useMainMenuFocus({
     onExitRef.current = onExit
     onSelectSidebarRef.current = onSelectSidebar
     onConfirmContentRef.current = onConfirmContent
+    onHoldContentRef.current = onHoldContent
     onContentBackRef.current = onContentBack
     onWheelContentRef.current = onWheelContent
     countsRef.current = { sidebarCount, contentCount }
@@ -165,6 +173,22 @@ export function useMainMenuFocus({
     }
   }, [selectSidebar])
 
+  // bug53: the hold twin of confirm — sidebar pane behaves exactly like
+  // confirm (enters the content pane); content pane routes to onHoldContent
+  // (fallback: the plain confirm behavior)
+  const holdConfirm = useCallback(() => {
+    if (activePaneRef.current === 'sidebar') {
+      selectSidebar(sidebarIndexRef.current)
+      return
+    }
+    const onHold = onHoldContentRef.current
+    if (onHold) {
+      onHold(contentIndexRef.current)
+      return
+    }
+    onConfirmContentRef.current(contentIndexRef.current)
+  }, [selectSidebar])
+
   const handleWheel = useCallback(
     (e: WheelEvent) => {
       if (e.deltaX === 0) return
@@ -209,13 +233,16 @@ export function useMainMenuFocus({
     ListFocusContext.setActive({
       onWheel: handleWheel,
       onConfirm: confirm,
+      // bug53: hold-capable confirm — the Enter press/hold split (dimmable
+      // light card → dim view on a hold)
+      onHold: holdConfirm,
       onBack: handleBack,
       active: true,
     })
     return () => {
       ListFocusContext.setActive(null)
     }
-  }, [handleWheel, confirm, handleBack])
+  }, [handleWheel, confirm, holdConfirm, handleBack])
 
   return {
     activePane,

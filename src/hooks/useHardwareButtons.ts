@@ -67,6 +67,14 @@ const POWER_LONG_PRESS_MS = 600
 // power button: a second press within this window counts as a double-press
 const POWER_DOUBLE_MS = 350
 
+// bug53: a dial press (Enter) held this long on a hold-capable list-focus
+// entry fires the entry's onHold (dim view) instead of the short-press
+// confirm. Comfortably above a normal press (< ~250 ms) and the 350 ms
+// double-press window, comfortably below a deliberate hold (users hold
+// ≥ 500 ms); shorter than the 2 s preset save because opening the dim view
+// is non-destructive and instantly reversible (Back)
+export const CARD_HOLD_MS = 400
+
 export interface VolumeOverlayState {
   visible: boolean
   value: number
@@ -221,21 +229,77 @@ export function useHardwareButtons({
   // knob press (Enter) is play/pause, back (Escape) is go back.
   // preventDefault so Enter doesnt also trigger a focused button like the menu.
   // capture phase for list focus confirm
+  // bug53: hold-capable entries (onHold set) defer the confirm to the keyup —
+  // a short press (< CARD_HOLD_MS) confirms on release, a held press fires
+  // onHold at the deadline and is consumed on release. Entries WITHOUT onHold
+  // keep the immediate keydown confirm (zero behavior change for all other
+  // views)
   useEffect(() => {
-    const onKeyDownCapture = (e: KeyboardEvent) => {
-      if (e.key === 'Enter') {
-        const listFocus = ListFocusContext.entry
-        if (listFocus && listFocus.onConfirm) {
-          e.preventDefault()
-          // Stop the bubble-phase Enter handler (play/pause) from also firing.
-          e.stopPropagation()
-          listFocus.onConfirm()
-          return
-        }
+    // the confirm/hold callbacks captured at keydown — the entry object is
+    // rebuilt on every render, so the callbacks (stable via useCallback) are
+    // the safe identity across the press
+    let enterHeld = false
+    let holdFired = false
+    let heldOnConfirm: (() => void) | null = null
+    let holdTimer: number | undefined
+
+    const clearHoldTimer = () => {
+      if (holdTimer != null) {
+        window.clearTimeout(holdTimer)
+        holdTimer = undefined
       }
     }
+
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return
+      const listFocus = ListFocusContext.entry
+      if (listFocus && listFocus.onConfirm) {
+        e.preventDefault()
+        // Stop the bubble-phase Enter handler (play/pause) from also firing.
+        e.stopPropagation()
+        if (listFocus.onHold) {
+          // repeats of the held key (and a second keydown before the keyup)
+          // never re-arm the hold
+          if (e.repeat || enterHeld) return
+          enterHeld = true
+          holdFired = false
+          heldOnConfirm = listFocus.onConfirm
+          holdTimer = window.setTimeout(() => {
+            holdTimer = undefined
+            holdFired = true
+            const onHold = listFocus.onHold
+            if (onHold) onHold()
+          }, CARD_HOLD_MS)
+          return
+        }
+        listFocus.onConfirm()
+        return
+      }
+    }
+
+    const onKeyUpCapture = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.repeat) return
+      if (!enterHeld) return // keyup without a matching keydown
+      enterHeld = false
+      clearHoldTimer()
+      if (holdFired) {
+        // the hold already acted — release is consumed (no confirm on top)
+        holdFired = false
+        heldOnConfirm = null
+        return
+      }
+      const onConfirm = heldOnConfirm
+      heldOnConfirm = null
+      if (onConfirm) onConfirm()
+    }
+
     window.addEventListener('keydown', onKeyDownCapture, { capture: true })
-    return () => window.removeEventListener('keydown', onKeyDownCapture, { capture: true })
+    window.addEventListener('keyup', onKeyUpCapture, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKeyDownCapture, { capture: true })
+      window.removeEventListener('keyup', onKeyUpCapture, { capture: true })
+      clearHoldTimer()
+    }
   }, [])
 
   useEffect(() => {

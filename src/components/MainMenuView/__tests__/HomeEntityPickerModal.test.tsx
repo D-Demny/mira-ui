@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { HomeEntityPickerModal } from '../HomeEntityPickerModal'
 import { server } from '@/__tests__/msw-server'
 import { SELECTION_LS_KEY, __resetHomeEntityStores } from '@/hooks/useHomeEntities'
 import { HOME_LIGHTS } from '@/hooks/useHomeLight'
+import { CATALOG_TIMEOUT_MS } from '@/api/homeassistant'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
 // ticket 9.3 (Teil 2): the entity picker modal — grouped catalog rows from
@@ -139,20 +140,119 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     second.unmount()
   })
 
-  it('shows the error state with a retry row when the catalog fetch fails', async () => {
-    server.use(http.get('*/ha-api/states', () => HttpResponse.error()))
+  it('shows the concrete error reason and retries with fresh requests until healthy', async () => {
+    // bug53: the error screen carries the CONCRETE reason (here: the daemon
+    // proxy's 502), not only the generic label
+    let calls = 0
+    server.use(
+      http.get('*/ha-api/states', () => {
+        calls += 1
+        return HttpResponse.json({ error: 'home assistant unreachable' }, { status: 502 })
+      }),
+    )
     renderPicker()
 
     await screen.findByText('Home Assistant nicht erreichbar')
+    expect(screen.getByText('home assistant 502')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Erneut versuchen/ })).toBeInTheDocument()
     // the (failed) catalog must not render any rows
     expect(screen.queryByText('Wasserpumpe')).not.toBeInTheDocument()
     expect(screen.queryByText('Zurücksetzen')).toBeDefined()
-    // retry: flip the mock to a healthy catalog and confirm the row
+
+    // retry while the endpoint is STILL failing: a fresh request is issued
+    // (no reused rejected promise) and the error state persists
+    fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
+    await waitFor(() => expect(calls).toBe(2))
+    await waitFor(() => expect(screen.getByText('home assistant 502')).toBeInTheDocument())
+
+    // the endpoint heals → the next retry loads the catalog
     server.use(http.get('*/ha-api/states', () => HttpResponse.json({})))
     fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
     await waitFor(() =>
       expect(screen.getByText('Keine steuerbaren Entitäten gefunden')).toBeInTheDocument(),
     )
+  })
+
+  // bug53: a timed-out catalog (the device's dominant failure mode — the
+  // full /states dump is slow) shows 'home assistant timeout' as the
+  // concrete reason. FULL fake timers + the never-resolving MSW handler
+  // (established pattern: MSW ignores AbortSignal). Under fake timers no
+  // findBy*/waitFor — only synchronous getBy* after the timer advance (the
+  // advance is wrapped in act so the store update commits); the healthy
+  // recovery at the end switches back to real timers.
+  it('shows the concrete timeout reason and retries with a fresh request', async () => {
+    let calls = 0
+    vi.useFakeTimers()
+    server.use(
+      http.get('*/ha-api/states', () => {
+        calls += 1
+        return new Promise<HttpResponse<undefined>>(() => {})
+      }),
+    )
+    renderPicker()
+    await vi.advanceTimersByTimeAsync(CATALOG_TIMEOUT_MS)
+
+    expect(calls).toBe(1)
+    expect(screen.getByText('Home Assistant nicht erreichbar')).toBeInTheDocument()
+    expect(screen.getByText('home assistant timeout')).toBeInTheDocument()
+
+    // retry while the endpoint still hangs: the loading state shows
+    // immediately…
+    fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
+    expect(screen.getByText('Lade…')).toBeInTheDocument()
+    // …and when the second attempt ALSO times out the error screen persists
+    // with the same concrete reason — the request count proves the retry
+    // issued a FRESH request (no reused rejected promise)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CATALOG_TIMEOUT_MS)
+    })
+    expect(calls).toBe(2)
+    expect(screen.getByText('Home Assistant nicht erreichbar')).toBeInTheDocument()
+    expect(screen.getByText('home assistant timeout')).toBeInTheDocument()
+
+    // the endpoint heals → the next retry loads the catalog (real timers from
+    // here — the immediate MSW answer settles on microtasks, not on the fake
+    // clock, and findBy* would hang under fake timers anyway)
+    vi.useRealTimers()
+    server.use(http.get('*/ha-api/states', () => HttpResponse.json({})))
+    fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
+    await screen.findByText('Keine steuerbaren Entitäten gefunden')
+  })
+
+  // bug53 (stale data retention): a failed TTL-expired refetch on top of an
+  // already-loaded catalog keeps the list visible (selection usable) with a
+  // non-blocking error note — no blank screen, no error screen
+  it('keeps the loaded catalog visible with an error note when a refetch fails', async () => {
+    const realNow = Date.now
+    let fakeNow = realNow()
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const first = renderPicker()
+      await screen.findByText('Wasserpumpe')
+      expect(screen.getByText('3er Stehlampe Gold')).toBeInTheDocument()
+      first.unmount()
+
+      // beyond the 60 s catalog TTL, a remount re-fetches — and that
+      // refetch fails
+      fakeNow += 61_000
+      server.use(
+        http.get('*/ha-api/states', () =>
+          HttpResponse.json({ message: 'boom' }, { status: 500 }),
+        ),
+      )
+      renderPicker()
+
+      // the (stale) catalog rows stay visible and selectable…
+      expect(screen.getByText('Wasserpumpe')).toBeInTheDocument()
+      expect(screen.getByText('3er Stehlampe Gold')).toBeInTheDocument()
+      // …with a non-blocking error note carrying the concrete reason
+      await screen.findByText(/home assistant 500/)
+      // and the full error screen (with its retry row) does NOT replace it
+      expect(screen.queryByRole('button', { name: /Erneut versuchen/ })).not.toBeInTheDocument()
+    } finally {
+      nowSpy.mockRestore()
+      warn.mockRestore()
+    }
   })
 })

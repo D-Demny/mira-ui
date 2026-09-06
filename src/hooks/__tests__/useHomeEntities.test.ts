@@ -185,6 +185,53 @@ describe('useHomeEntities', () => {
       await waitFor(() => expect(result.current.loading).toBe(false))
     })
 
+    // bug53: the picker's "Erneut versuchen" while the endpoint is STILL
+    // failing — the retry issues a fresh request (no reused rejected
+    // promise, no stale loading state), the error persists, and the moment
+    // the endpoint is healthy a retry loads the catalog
+    it('retry while the endpoint still fails: fresh request, error persists, recovers when healthy', async () => {
+      let calls = 0
+      let failing = true
+      server.use(
+        http.get('*/ha-api/states', () => {
+          calls += 1
+          return failing
+            ? HttpResponse.json({ message: 'boom' }, { status: 500 })
+            : HttpResponse.json({ [SWITCH]: { entity_id: SWITCH, state: 'off' } })
+        }),
+      )
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const { result } = renderHook(() => useHomeEntityCatalog())
+        await waitFor(() => expect(calls).toBe(1))
+        await waitFor(() => expect(result.current.error).toMatch(/500/))
+        expect(result.current.entries).toEqual([])
+        expect(result.current.loading).toBe(false)
+
+        // retry #1 — the endpoint is still failing: a FRESH request is
+        // issued (count 2) and the error state persists
+        act(() => {
+          result.current.refetch()
+        })
+        await waitFor(() => expect(calls).toBe(2))
+        await waitFor(() => expect(result.current.loading).toBe(false))
+        expect(result.current.error).toMatch(/500/)
+        expect(result.current.entries).toEqual([])
+
+        // the endpoint heals → retry #2 loads the catalog
+        failing = false
+        act(() => {
+          result.current.refetch()
+        })
+        await waitFor(() => expect(calls).toBe(3))
+        await waitFor(() => expect(result.current.entries.length).toBe(1))
+        expect(result.current.error).toBeNull()
+        expect(result.current.entries[0].entityId).toBe(SWITCH)
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
     it('keeps the old entries when the fetch fails', async () => {
       const realNow = Date.now
       let fakeNow = realNow()

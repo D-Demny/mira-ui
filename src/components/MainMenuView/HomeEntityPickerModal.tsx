@@ -80,8 +80,13 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
   }
 
   // render states (info lines are NOT focusable)
+  // bug53: a failed (re)fetch with an already-loaded catalog keeps the list
+  // visible (stale data retention) — the full error screen only appears when
+  // there is NO data to show; a failure on top of loaded data renders a
+  // non-blocking error note instead
   const showLoading = catalog.loading && catalog.entries.length === 0
-  const showError = catalog.error !== null && !showLoading
+  const showError = catalog.error !== null && !showLoading && catalog.entries.length === 0
+  const showErrorNote = catalog.error !== null && catalog.entries.length > 0
   const showEmpty = !catalog.loading && catalog.entries.length === 0 && catalog.error === null
   const listVisible = !showLoading && !showError && !showEmpty
 
@@ -167,6 +172,9 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
           {showError ? (
             <>
               <div className={styles.info}>Home Assistant nicht erreichbar</div>
+              {/* bug53: the concrete reason (timeout vs 502 vs parse failure)
+                  makes device diagnosis immediate instead of one label */}
+              <div className={styles.errorDetail}>{catalog.error}</div>
               <div
                 className={`${styles.row} ${focusedIndex === retryIndex ? styles.focused : ''}`}
                 ref={focusedIndex === retryIndex ? setFocusRef : undefined}
@@ -189,6 +197,13 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
           ) : null}
           {showEmpty ? (
             <div className={styles.info}>Keine steuerbaren Entitäten gefunden</div>
+          ) : null}
+          {listVisible && showErrorNote ? (
+            // bug53: non-blocking error note — the (stale) catalog stays
+            // selectable, the note carries the concrete reason
+            <div className={styles.errorNote}>
+              Home Assistant nicht erreichbar: {catalog.error}
+            </div>
           ) : null}
           {listVisible
             ? groups.map((group) => (

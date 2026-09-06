@@ -6,6 +6,10 @@ export interface CarouselCardProps {
   isFocused: boolean
   interactive: boolean
   onCardTap?: (card: MenuCard, index: number) => void
+  // bug53: fired when the card is HELD (pointer down ≥ CARD_HOLD_MS without
+  // slop movement). The parent must pass a STABLE callback (the card is
+  // memoized and keeps the first closure it receives)
+  onCardHold?: (card: MenuCard, index: number) => void
   // attaches the focused card element to the parent's ref (for scrollIntoView)
   registerRef?: (el: HTMLElement | null) => void
 }
