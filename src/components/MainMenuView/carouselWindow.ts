@@ -40,11 +40,25 @@ export const CAROUSEL_EDGE_PADDING = 16
 // minus half the viewport, clamped to [0, maxScroll] exactly like the native
 // call. The spacers keep the windowed scroll width identical to the full
 // list's, so the clamp uses the unwindowed total width.
+// bug50: on the target device the card pitch is margin-based (flex-gap-x,
+// Chromium 69 ignores flex `gap`), so this with-gap arithmetic matches the
+// rendered geometry — before that fix the measured card positions sat 400+ px
+// left of the values above and the focused card ended up under the sidebar.
 export function dialScrollLeft(count: number, focusedIndex: number, viewportW: number): number {
   const center = CAROUSEL_EDGE_PADDING + focusedIndex * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2
   const contentWidth = count > 0 ? count * CARD_WIDTH + (count - 1) * CARD_GAP : 0
   const maxScroll = Math.max(0, contentWidth + CAROUSEL_EDGE_PADDING * 2 - viewportW)
-  return Math.max(0, Math.min(center - viewportW / 2, maxScroll))
+  // bug50: hard left boundary — the focused card's left edge (edge padding +
+  // focusedIndex * pitch in scroll coordinates) must never be scrolled past
+  // the carousel's left edge padding (its rest position). The carousel
+  // viewport starts exactly at the fixed sidebar's right edge (250px in
+  // MainMenuView.module.scss), so this is what guarantees the focused card
+  // can never drift under the sidebar, at any depth of the list. Pure
+  // centering already satisfies the bound; the clamp makes the guarantee
+  // explicit (it is the formula's contract, not a property of the centering
+  // target alone).
+  const leftBoundary = focusedIndex * (CARD_WIDTH + CARD_GAP)
+  return Math.max(0, Math.min(center - viewportW / 2, maxScroll, leftBoundary))
 }
 
 // the physical scroll position of the carousel (measured after render); used
@@ -98,7 +112,9 @@ export function windowRange(
 }
 
 // spacer widths that exactly match the space the missing cards would occupy
-// (the carousel is a flex row with a CARD_GAP gap between every child)
+// (the carousel is a flex row with a CARD_GAP margin on every child after the
+// first — flex-gap-x, bug50: margins because the target Chromium 69 ignores
+// flex `gap`)
 export function leadingSpacerWidth(start: number): number {
   return start > 0 ? start * (CARD_WIDTH + CARD_GAP) - CARD_GAP : 0
 }
