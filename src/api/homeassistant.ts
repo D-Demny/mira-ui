@@ -133,3 +133,188 @@ export function setHaLightColorTemp(
 ): Promise<HaEntityState[]> {
   return callHaLightService(entityId, { color_temp_kelvin: Math.round(kelvin) }, signal)
 }
+
+// HA's SUPPORT_BRIGHTNESS feature flag (bit 0 of the supported_features
+// bitmask) — the pre-color-modes way of advertising dimmability
+const SUPPORT_BRIGHTNESS = 1
+
+// bug46: derive dimmability + the 0–100 brightness level from the state
+// attributes. Ticket rule (primary path): a light is dimmable when
+// supported_color_modes contains 'brightness' or 'color_temp' (all 9
+// configured lights report ["color_temp", "xy"], so all of them are
+// dimmable). The legacy supported_features bit 0 (SUPPORT_BRIGHTNESS) counts
+// additionally as a strict union: integrations that predate color modes may
+// only advertise dimmability there, and any light reporting it must get the
+// popup. Either check alone is sufficient (the ticket rule stays at least
+// equally powerful — the union can only add lights, never remove them);
+// switches and non-dimmable lights report neither and stay direct toggles.
+// The brightness attribute is 0–255, or null while the light is off.
+// (ticket 9.3: moved from src/hooks/useHomeLight.ts — it is pure
+// HaEntityState knowledge and belongs with the API layer)
+export function lightCapabilities(
+  entity: HaEntityState,
+): { dimmable: boolean; brightnessPct: number | null } {
+  const attrs = entity.attributes ?? {}
+  const rawModes = attrs.supported_color_modes
+  const modes = Array.isArray(rawModes)
+    ? rawModes.filter((mode): mode is string => typeof mode === 'string')
+    : []
+  const rawFeatures = attrs.supported_features
+  const supportedFeatures =
+    typeof rawFeatures === 'number' && Number.isFinite(rawFeatures) ? rawFeatures : 0
+  const dimmable =
+    modes.includes('brightness') ||
+    modes.includes('color_temp') ||
+    (supportedFeatures & SUPPORT_BRIGHTNESS) !== 0
+  const rawBrightness = attrs.brightness
+  const brightnessPct =
+    typeof rawBrightness === 'number' &&
+    Number.isFinite(rawBrightness) &&
+    rawBrightness > 0
+      ? Math.round((rawBrightness / 255) * 100)
+      : null
+  return { dimmable, brightnessPct }
+}
+
+// ticket 9.3: the domains the Home carousel can control — the order doubles
+// as the catalog sort order (priority)
+export const HOME_ENTITY_DOMAINS = [
+  'light',
+  'switch',
+  'fan',
+  'scene',
+  'cover',
+  'input_boolean',
+  'media_player',
+] as const
+
+export interface HaEntityCatalogEntry {
+  entityId: string
+  domain: string
+  label: string
+  state: string
+  active: boolean | null
+}
+
+// ticket 9.3: which state counts as "active" per domain. `null` = no active
+// concept (scenes are stateless) or a state the function does not know — the
+// UI renders no on/off badge for those
+export function entityActive(domain: string, state: string): boolean | null {
+  switch (domain) {
+    case 'light':
+    case 'switch':
+    case 'fan':
+    case 'input_boolean':
+      return state === 'on'
+    case 'cover':
+      return state === 'open'
+    case 'media_player':
+      return state === 'playing'
+    case 'scene':
+      return null
+    default:
+      return ['off', 'closed', 'paused', 'idle', 'standby'].includes(state) ? false : null
+  }
+}
+
+// ticket 9.3: readable fallback label when an entity has no friendly_name
+// (domain prefix stripped, underscores to spaces, words capitalized):
+// switch.wasserpumpe_keller → "Wasserpumpe Keller"
+export function humanizeEntityLabel(entityId: string): string {
+  const dot = entityId.indexOf('.')
+  const name = dot === -1 ? entityId : entityId.slice(dot + 1)
+  return name
+    .split('_')
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
+// ticket 9.3: flatten the raw GET /states object into the carousel catalog —
+// only the controllable domains survive (domain = prefix before the first
+// '.'), labels prefer friendly_name, sorted by domain priority then label
+export function toHomeEntityCatalog(raw: Record<string, HaEntityState>): HaEntityCatalogEntry[] {
+  const entries: HaEntityCatalogEntry[] = []
+  for (const entityId of Object.keys(raw)) {
+    const entity = raw[entityId]
+    if (!entity) continue
+    const dot = entityId.indexOf('.')
+    if (dot === -1) continue
+    const domain = entityId.slice(0, dot)
+    if ((HOME_ENTITY_DOMAINS as readonly string[]).indexOf(domain) === -1) continue
+    const state = entity.state
+    if (typeof state !== 'string') continue
+    const rawLabel = (entity.attributes ?? {}).friendly_name
+    const label =
+      typeof rawLabel === 'string' && rawLabel.length > 0 ? rawLabel : humanizeEntityLabel(entityId)
+    entries.push({ entityId, domain, label, state, active: entityActive(domain, state) })
+  }
+  entries.sort((a, b) => {
+    const da = (HOME_ENTITY_DOMAINS as readonly string[]).indexOf(a.domain)
+    const db = (HOME_ENTITY_DOMAINS as readonly string[]).indexOf(b.domain)
+    if (da !== db) return da - db
+    return a.label.localeCompare(b.label, 'de', { sensitivity: 'base' })
+  })
+  return entries
+}
+
+// ticket 9.3: the full state catalog (GET /states via the daemon proxy)
+export async function fetchHaEntityList(
+  signal?: AbortSignal,
+): Promise<Record<string, HaEntityState>> {
+  const res = await haFetch('/states', {}, signal)
+  if (!res.ok) throw new Error(`home assistant ${res.status}`)
+  const body = (await safeJson(res)) as unknown
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    throw new Error('invalid entity list')
+  }
+  return body as Record<string, HaEntityState>
+}
+
+// ticket 9.3: the activation service per controllable domain — scenes can
+// only be turned ON (there is no "toggle" for them), everything else toggles
+export const ENTITY_SERVICES: Record<string, string> = {
+  light: 'toggle',
+  switch: 'toggle',
+  fan: 'toggle',
+  scene: 'turn_on',
+  cover: 'toggle',
+  input_boolean: 'toggle',
+  media_player: 'toggle',
+}
+
+// both path segments are interpolated into the URL — validate them so the URL
+// space stays limited to [a-z_]+ (defensive, no injection)
+const SERVICE_SEGMENT = /^[a-z_]+$/
+
+// ticket 9.3: generic service call (POST /services/<domain>/<service>) —
+// the daemon's generic /ha-api/ service proxy forwards the body verbatim
+export function callHaService(
+  domain: string,
+  service: string,
+  data: { entity_id: string },
+  signal?: AbortSignal,
+): Promise<HaEntityState[]> {
+  if (!SERVICE_SEGMENT.test(domain) || !SERVICE_SEGMENT.test(service)) {
+    throw new TypeError(`invalid HA service: ${domain}/${service}`)
+  }
+  return haFetch(
+    `/services/${domain}/${service}`,
+    { method: 'POST', body: JSON.stringify(data) },
+    signal,
+  ).then(async (res) => {
+    if (!res.ok) throw new Error(`home assistant ${res.status}`)
+    const body = (await safeJson(res)) as unknown
+    return Array.isArray(body) ? (body as HaEntityState[]) : []
+  })
+}
+
+// ticket 9.3: activate one catalog entry via its domain's service
+export function activateHaEntity(
+  entry: { entityId: string; domain: string },
+  signal?: AbortSignal,
+): Promise<HaEntityState[]> {
+  const service = ENTITY_SERVICES[entry.domain]
+  if (!service) throw new TypeError(`no activation service for domain: ${entry.domain}`)
+  return callHaService(entry.domain, service, { entity_id: entry.entityId }, signal)
+}
