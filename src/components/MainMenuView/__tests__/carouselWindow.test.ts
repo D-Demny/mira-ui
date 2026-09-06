@@ -163,10 +163,125 @@ describe('spacer widths', () => {
   })
 })
 
+// bug50: the target Chromium 69 ignores flex `gap` (Chrome 84+), so the
+// carousel's spacing is margin-based (flex-gap-x on `.carousel`). These tests
+// pin the geometry the dial math depends on: the windowed spacer layout must
+// reproduce the with-gap scroll width (97202 px in the device's 501-track
+// case — the value the dial clamp is derived from), and the centering must
+// keep the focused card fully inside the visible content area, i.e. never to
+// the left of the carousel's edge padding. The carousel viewport starts
+// exactly at the fixed 250px sidebar's right edge (MainMenuView.module.scss),
+// so "card left ≥ edge padding" is the Bug50 exit criterion: the focused card
+// always stays fully to the right of the sidebar, at any depth of the list.
+describe('bug50: margin-based geometry invariants', () => {
+  // the windowed content width under the flex-gap-x layout (a CARD_GAP margin
+  // on every child after the first): [leading spacer + margin] + cards +
+  // inter-card margins + [margin + trailing spacer]
+  const windowedContentWidth = (count: number, start: number, end: number): number => {
+    const missing = count - end
+    let width = (end - start) * CARD_WIDTH + Math.max(0, end - start - 1) * CARD_GAP
+    if (start > 0) width += leadingSpacerWidth(start) + CARD_GAP
+    if (missing > 0) width += CARD_GAP + trailingSpacerWidth(missing)
+    return width
+  }
+  const fullContentWidth = (count: number) => count * CARD_WIDTH + (count - 1) * CARD_GAP
+
+  it('keeps the with-gap card pitch (STEP) for every mounted card, in every window position', () => {
+    // card f's left edge in scroll coordinates must be edge padding + f * STEP
+    // regardless of where the window sits — with the old flex-gap CSS the
+    // on-device pitch collapsed to CARD_WIDTH while the spacers kept the STEP
+    // arithmetic, which is exactly the Bug50 drift
+    for (const [start, end] of [
+      [0, 17],
+      [443, 476],
+      [472, 501],
+    ] as const) {
+      const offset = start > 0 ? leadingSpacerWidth(start) + CARD_GAP : 0
+      for (const index of [start, Math.floor((start + end) / 2), end - 1]) {
+        const cardLeft =
+          CAROUSEL_EDGE_PADDING + offset + (index - start) * (CARD_WIDTH + CARD_GAP)
+        expect(cardLeft, `card ${index} in window [${start}, ${end})`).toBe(
+          CAROUSEL_EDGE_PADDING + index * STEP,
+        )
+      }
+    }
+  })
+
+  it('reproduces the full list scroll width in every spacer configuration', () => {
+    const cases: [number, number, number][] = [
+      [501, 443, 476], // the device's 501-track list, mid window (both spacers)
+      [501, 0, 17], // list start (trailing spacer only)
+      [501, 472, 501], // list end (leading spacer only)
+      [501, 443, 501], // deep window reaching the end
+      [50, 9, 42], // 16/16 mid window
+      [50, 0, 50], // short list, no spacers
+      [2, 0, 2],
+    ]
+    for (const [count, start, end] of cases) {
+      expect(windowedContentWidth(count, start, end), `[${start}, ${end}) of ${count}`).toBe(
+        fullContentWidth(count),
+      )
+    }
+  })
+
+  it('matches the device-measured 501-track scroll width (97202 px)', () => {
+    // the W2b-v3 measurement: the with-gap geometry must yield scrollWidth
+    // 97202 (97170 content + 32 edge padding) — the pre-fix CR69 layout
+    // measured 96386 because the card gaps were never rendered
+    const { start, end } = windowRange(501, 459, null)
+    const scrollWidth = windowedContentWidth(501, start, end) + CAROUSEL_EDGE_PADDING * 2
+    expect(scrollWidth).toBe(97202)
+  })
+
+  it('keeps the focused card fully inside the content area for every index (right of the sidebar)', () => {
+    // deep indices included — the Bug50 symptom was the focused card drifting
+    // under the 250px sidebar the further right the user scrolled; the left
+    // edge must never cross the carousel's edge padding (screen x ≥ 250 + 16)
+    // and the right edge must never cross the opposite edge padding, at any
+    // index and including both end clamps
+    const count = 501
+    const viewportW = 550 // the device's content-pane carousel width
+    for (let index = 0; index < count; index++) {
+      const scrollLeft = dialScrollLeft(count, index, viewportW)
+      const cardLeft = CAROUSEL_EDGE_PADDING + index * STEP - scrollLeft
+      const cardRight = cardLeft + CARD_WIDTH
+      expect(cardLeft, `index ${index}`).toBeGreaterThanOrEqual(CAROUSEL_EDGE_PADDING)
+      expect(cardRight, `index ${index}`).toBeLessThanOrEqual(viewportW - CAROUSEL_EDGE_PADDING)
+    }
+  })
+
+  it('keeps the last card fully visible at the end clamp (deep index, no clamp drift)', () => {
+    // the end clamp must not push the focused card left of the content area
+    // (the pre-fix end state had the focused card under the sidebar while the
+    // viewport showed cards to the RIGHT of the focus)
+    const viewportW = 550
+    const scrollLeft = dialScrollLeft(501, 500, viewportW)
+    expect(scrollLeft).toBe(
+      Math.max(0, fullContentWidth(501) + CAROUSEL_EDGE_PADDING * 2 - viewportW),
+    )
+    const cardLeft = CAROUSEL_EDGE_PADDING + 500 * STEP - scrollLeft
+    expect(cardLeft).toBeGreaterThanOrEqual(CAROUSEL_EDGE_PADDING)
+    expect(cardLeft + CARD_WIDTH).toBeLessThanOrEqual(viewportW - CAROUSEL_EDGE_PADDING)
+  })
+
+  it('centers the focused card on the viewport middle for interior indices', () => {
+    // with the margin-based pitch the centering target lands on the viewport
+    // center — in screen coordinates 250 (sidebar) + 275 (half of 550) = 525,
+    // the content pane's middle, never under the sidebar
+    const viewportW = 550
+    for (const index of [17, 100, 346, 459, 475]) {
+      const scrollLeft = dialScrollLeft(501, index, viewportW)
+      const cardCenterScreen = 250 + CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2 - scrollLeft
+      expect(cardCenterScreen, `index ${index}`).toBe(250 + viewportW / 2)
+    }
+  })
+})
+
 describe('dialScrollLeft (bug47 R2, F2)', () => {
-  // the carousel is a flex row (STEP between children) with
-  // CAROUSEL_EDGE_PADDING on both ends; the spacers keep the windowed scroll
-  // width identical to the full list's, so the clamp uses the unwindowed total
+  // the carousel is a flex row (a CARD_GAP margin on every child after the
+  // first, bug50) with CAROUSEL_EDGE_PADDING on both ends; the spacers keep
+  // the windowed scroll width identical to the full list's, so the clamp uses
+  // the unwindowed total
   const maxScroll = (count: number, viewportW: number) =>
     Math.max(0, count * CARD_WIDTH + (count - 1) * CARD_GAP + CAROUSEL_EDGE_PADDING * 2 - viewportW)
   const cardCenter = (index: number) =>

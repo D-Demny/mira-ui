@@ -2,10 +2,17 @@
 $card-art-size: 170px;
 
 // bug2.1: 24px container gap + 16px edge padding so cards never touch the edges
+// bug50: the margin-based flex-gap-x mixin instead of flex `gap` — the target
+// Chromium 69 ignores flex gap (Chrome 84+), and with raw `gap` the on-device
+// card pitch collapsed to CARD_WIDTH while the window spacers and the dial
+// centering math (carouselWindow.ts) kept computing the CARD_WIDTH + CARD_GAP
+// pitch: the focused card drifted 400+ px left of its intended position and
+// ended up under the fixed sidebar. Margins reproduce the with-gap geometry
+// on every browser (same spacer widths, same scrollWidth).
 .carousel {
   display: flex;
   align-items: center;
-  gap: $s-6;
+  @include flex-gap-x($s-6);
   height: 100%;
   box-sizing: border-box;
   padding: 0 $s-4;

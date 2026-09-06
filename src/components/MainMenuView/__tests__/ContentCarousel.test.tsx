@@ -161,6 +161,7 @@ import {
   CARD_WIDTH,
   CAROUSEL_EDGE_PADDING,
   dialScrollLeft,
+  windowRange,
 } from '../carouselWindow'
 import type { MenuCard } from '../mockData'
 import type { ObserverStatusActive } from '@/api/types'
@@ -450,6 +451,39 @@ describe('bug5/bug6/bug18: windowed rendering', () => {
     )
     expect(container.querySelectorAll('article')).toHaveLength(20)
     expect(container.querySelectorAll('.spacer')).toHaveLength(0)
+  })
+
+  it('bug50: the rendered window reproduces the full list scroll width (margin pitch)', () => {
+    // the flex-gap-x margin layout (Chromium 69 ignores flex `gap`): every
+    // child after the first carries a CARD_GAP margin, so the mounted content
+    // width is [leading spacer + margin] + cards at the (CARD_WIDTH +
+    // CARD_GAP) pitch + [margin + trailing spacer] — and must equal the
+    // unwindowed total (the 501-track device case: 97202 px scroll width
+    // incl. edge padding, the value dialScrollLeft's end clamp is derived
+    // from)
+    const cases: [number, number][] = [
+      [25, 50], // mid window: both spacers
+      [0, 50], // list start: trailing spacer only
+      [49, 50], // list end: leading spacer only
+    ]
+    for (const [focusedIndex, count] of cases) {
+      const { container } = render(
+        <ContentCarousel cards={MANY.slice(0, count)} categoryId="playlists" focusedIndex={focusedIndex} />,
+      )
+      const spacers = Array.from(container.querySelectorAll('.spacer')) as HTMLElement[]
+      const { start, end } = windowRange(count, focusedIndex, null)
+      const cardCount = container.querySelectorAll('article').length
+      const leading = start > 0 ? parseFloat(spacers[0].style.width) : 0
+      const trailing = end < count ? parseFloat(spacers[spacers.length - 1].style.width) : 0
+      const contentWidth =
+        (leading > 0 ? leading + CARD_GAP : 0) +
+        cardCount * CARD_WIDTH +
+        Math.max(0, cardCount - 1) * CARD_GAP +
+        (trailing > 0 ? CARD_GAP + trailing : 0)
+      expect(contentWidth, `focus ${focusedIndex} of ${count}`).toBe(
+        count * CARD_WIDTH + (count - 1) * CARD_GAP,
+      )
+    }
   })
 })
 
