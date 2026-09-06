@@ -30,8 +30,9 @@ const hookState = vi.hoisted(() => ({
       played_at: '2026-08-20T10:00:00Z',
     },
   ],
-  // bug34: the main menu renders every configured light via useHomeLights()
-  // (same entity list as the real hook's HOME_LIGHTS)
+  // ticket 9.3: the main menu renders the user-selected entities via
+  // useHomeSelectedEntities() (here: the default selection, the same entity
+  // list as the real hook's HOME_LIGHTS)
   lights: [
     { entityId: 'light.3er_stehlampe_gold_esszimmer', label: '3er Stehlampe Gold', room: 'Esszimmer' },
     { entityId: 'light.esstisch_hangelampe_3er', label: 'Esstisch Hängelampe', room: 'Esszimmer' },
@@ -110,17 +111,23 @@ vi.mock('@/hooks/usePlaylistTracks', () => ({
   clearTracksCache: () => {},
 }))
 
-vi.mock('@/hooks/useHomeLight', () => ({
-  HOME_LIGHTS: hookState.lights,
-  useHomeLights: () =>
+vi.mock('@/hooks/useHomeEntities', () => ({
+  // ticket 9.3: the main menu renders the user-selected entities via
+  // useHomeSelectedEntities() (here: the default selection, the same entity
+  // list as the real hook's HOME_LIGHTS); actuate stands in for the light
+  // toggle the card action runs (dimmable false → direct actuation)
+  useHomeSelectedEntities: () =>
     hookState.lights.map((light) => ({
       ...light,
+      domain: 'light',
       state: 'on',
       loading: false,
       error: null,
-      toggling: false,
-      toggle: hookState.toggle,
-      refetch: () => {},
+      actuating: false,
+      active: true,
+      dimmable: false,
+      brightnessPct: null,
+      actuate: hookState.toggle,
     })),
 }))
 

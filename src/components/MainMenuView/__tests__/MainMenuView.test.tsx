@@ -9,6 +9,7 @@ import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
 import { HOME_LIGHTS, __resetHomeLightStore } from '@/hooks/useHomeLight'
+import { __resetHomeEntityStores, SELECTION_LS_KEY } from '@/hooks/useHomeEntities'
 import { __resetMiraServerState, checkMiraServer } from '@/hooks/useMiraServer'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
@@ -164,6 +165,10 @@ describe('MainMenuView', () => {
     // flight that resolves against the PREVIOUS test's MSW handlers and
     // re-seeds the store (stale dimmable capability)
     __resetHomeLightStore()
+    // ticket 9.3: the entity selection/catalog/state stores are module-level
+    // (the selection falls back to localStorage) — reset both so every test
+    // starts from the default HOME_LIGHTS selection
+    __resetHomeEntityStores()
     // bug45 option C: the warmed-art set is module-level — reset it per test
     // so the bug8.2 pre-decode assertions start from a fresh session
     __resetWarmedArt()
@@ -860,8 +865,15 @@ describe('MainMenuView', () => {
       __resetWarmedArt()
       pressBack()
       const afterLeave = created.slice(beforeSwitch)
+      // ticket 9.3: scope to the network covers — the rebuilt home category
+      // re-warms its self-contained data-URI entity art, which the pre-decode
+      // assertion does not concern (and jsdom resolves a cleaned-up img src to
+      // the document url)
+      const afterLeaveNet = afterLeave
+        .map((img) => img.src)
+        .filter((src) => src.startsWith('http://img/'))
       // Road Trip + Liked Songs (Workout has no image) + the recent track
-      expect(new Set(afterLeave.map((img) => img.src))).toEqual(
+      expect(new Set(afterLeaveNet)).toEqual(
         new Set(['http://img/r.jpg', 'http://img/liked.jpg', 'http://img/s.jpg']),
       )
       // the deep band the dial had warmed (band-30..70) is NOT re-warmed —
@@ -874,9 +886,16 @@ describe('MainMenuView', () => {
       fireEvent.click(screen.getByText('Road Trip'))
       await screen.findByText('Band Track 0')
       await waitFor(() => expect(hasWarmedArt('http://img/band-20.jpg')).toBe(true))
-      const afterReopen = created.slice(beforeReopen)
+      // ticket 9.3: scope to the network covers — the rebuilt home category's
+      // data-URI entity art is already in the warmed set (warmArt de-dupes)
+      // and the seeded color cache keeps useColorExtract from creating images,
+      // so the network covers of the rebuilt band are exactly 21
+      const afterReopen = created
+        .slice(beforeReopen)
+        .map((img) => img.src)
+        .filter((src) => src.startsWith('http://img/'))
       expect(afterReopen).toHaveLength(21)
-      expect(new Set(afterReopen.map((img) => img.src))).toEqual(
+      expect(new Set(afterReopen)).toEqual(
         new Set(Array.from({ length: 21 }, (_, i) => `http://img/band-${i}.jpg`)),
       )
     })
@@ -898,18 +917,24 @@ describe('MainMenuView', () => {
 
       render(<MainMenuView nowPlaying={nowPlaying} />)
 
+      // ticket 9.3: the home entity cards carry self-contained data-URI art
+      // (which flips with the entity state), and the color extractor's img
+      // cleanup resets its src — which jsdom resolves to the document url.
+      // The pre-decode assertion concerns the network covers only.
+      const netSrcs = () => created.map((img) => img.src).filter((src) => src.startsWith('http://img/'))
+
       // wait until the dynamic card data (playlists/recent) has arrived and
       // every dynamic cover is warmed (pl-2 has no images → no entry)
       await waitFor(() => {
-        expect(new Set(created.map((img) => img.src))).toEqual(
+        expect(new Set(netSrcs())).toEqual(
           new Set(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg', 'http://img/liked.jpg']),
         )
       })
 
-      const srcs = created.map((img) => img.src).sort()
+      const srcs = netSrcs().sort()
       expect(srcs).toEqual(['http://img/h.jpg', 'http://img/liked.jpg', 'http://img/r.jpg', 'http://img/s.jpg'])
-      // no duplicate warming: each URL is fetched exactly once
-      expect(new Set(created.map((img) => img.src)).size).toBe(created.length)
+      // no duplicate warming: each cover URL is fetched exactly once
+      expect(new Set(netSrcs()).size).toBe(netSrcs().length)
       // same fetch attributes as AlbumArt so the browser reuses one cache entry
       for (const img of created) {
         expect(img.crossOrigin).toBe('anonymous')
@@ -1370,15 +1395,18 @@ describe('MainMenuView', () => {
     })
   })
 
-  describe('bug34: every configured HA light renders as a home card', () => {
-    it('renders a card for every HOME_LIGHTS entry, in menu order', () => {
+  // ticket 9.3: the home cards render the user-selected entities (default
+  // selection = the HOME_LIGHTS) plus the manage card (picker entry)
+  describe('bug34: every selected entity renders as a home card', () => {
+    it('renders a card for every selected entity (default = HOME_LIGHTS) plus the manage card', () => {
       const { container } = render(<MainMenuView />)
 
       const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
-      expect(content.querySelectorAll('.card')).toHaveLength(HOME_LIGHTS.length)
-      // the card order follows the HOME_LIGHTS menu order (card 0 = primary light)
+      // the default selection's 9 lights + the manage card at the end
+      expect(content.querySelectorAll('.card')).toHaveLength(HOME_LIGHTS.length + 1)
+      // the card order follows the selection (default = HOME_LIGHTS menu order)
       const titles = Array.from(content.querySelectorAll('.card h3')).map((el) => el.textContent)
-      expect(titles).toEqual(HOME_LIGHTS.map((light) => light.label))
+      expect(titles).toEqual([...HOME_LIGHTS.map((light) => light.label), 'Entitäten wählen'])
     })
 
     it('shows the live on/off subtitle per light (default mock: all off)', async () => {
@@ -1458,6 +1486,96 @@ describe('MainMenuView', () => {
       expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'true')
       const card = screen.getByText('3er Stehlampe Gold').closest('.card')
       expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+    })
+
+    it('tapping the manage card opens the entity picker', async () => {
+      const onOpenEntityPicker = vi.fn()
+      render(<MainMenuView onOpenEntityPicker={onOpenEntityPicker} />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      fireEvent.click(screen.getByText('Entitäten wählen'))
+
+      expect(onOpenEntityPicker).toHaveBeenCalledTimes(1)
+    })
+
+    it('tapping a switch card sends a switch/toggle request for that entity', async () => {
+      const switched: string[] = []
+      localStorage.setItem(
+        SELECTION_LS_KEY,
+        JSON.stringify([...HOME_LIGHTS.map((light) => light.entityId), 'switch.wasserpumpe']),
+      )
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () =>
+          HttpResponse.json({
+            entity_id: 'switch.wasserpumpe',
+            state: 'off',
+            attributes: {},
+          }),
+        ),
+        http.post('*/ha-api/services/switch/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          switched.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+        }),
+      )
+      render(<MainMenuView />)
+      const title = await screen.findByText('Wasserpumpe')
+      await waitFor(() => {
+        expect(title.closest('.card')?.querySelector('.subtitle')?.textContent).toBe('Aus')
+      })
+
+      fireEvent.click(title)
+
+      await waitFor(() => expect(switched).toEqual(['switch.wasserpumpe']))
+      // the card reflects the toggle result
+      const card = screen.getByText('Wasserpumpe').closest('.card')
+      expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+    })
+
+    it('tapping a scene card sends a scene/turn_on request for that entity', async () => {
+      const scenes: string[] = []
+      localStorage.setItem(
+        SELECTION_LS_KEY,
+        JSON.stringify([...HOME_LIGHTS.map((light) => light.entityId), 'scene.abendstimmung']),
+      )
+      server.use(
+        http.get('*/ha-api/states/scene.abendstimmung', () =>
+          HttpResponse.json({
+            entity_id: 'scene.abendstimmung',
+            state: 'none',
+            attributes: {},
+          }),
+        ),
+        http.post('*/ha-api/services/scene/turn_on', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          scenes.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'none', attributes: {} }])
+        }),
+      )
+      render(<MainMenuView />)
+      const title = await screen.findByText('Abendstimmung')
+      await waitFor(() => {
+        expect(title.closest('.card')?.querySelector('.subtitle')?.textContent).toBe('Szene')
+      })
+
+      fireEvent.click(title)
+
+      await waitFor(() => expect(scenes).toEqual(['scene.abendstimmung']))
+      // scenes are stateless — the card keeps its fixed 'Szene' subtitle
+      const card = screen.getByText('Abendstimmung').closest('.card')
+      expect(card?.querySelector('.subtitle')?.textContent).toBe('Szene')
+    })
+
+    it('an empty selection shows the inert placeholder plus the manage card', () => {
+      localStorage.setItem(SELECTION_LS_KEY, '[]')
+      const { container } = render(<MainMenuView />)
+
+      expect(screen.getByText('Keine Entitäten gewählt')).toBeInTheDocument()
+      expect(screen.getByText('Entitäten wählen')).toBeInTheDocument()
+      const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+      expect(content.querySelectorAll('.card')).toHaveLength(2)
     })
   })
 

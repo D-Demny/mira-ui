@@ -1,13 +1,17 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { HomeMenuView } from '../HomeMenuView'
 import { server } from '@/__tests__/msw-server'
-import { __resetHomeLightStore } from '@/hooks/useHomeLight'
+import { __resetHomeEntityStores } from '@/hooks/useHomeEntities'
 
 describe('HomeMenuView', () => {
   beforeEach(() => {
-    __resetHomeLightStore()
+    // ticket 9.3: the view now renders the user-selected entities (the
+    // module-level selection/catalog/state stores) — reset them and the
+    // persisted selection so every test starts from the default HOME_LIGHTS
+    __resetHomeEntityStores()
+    localStorage.clear()
   })
 
   it('renders all lights with their rooms and real-time status', async () => {
@@ -94,8 +98,22 @@ describe('HomeMenuView', () => {
     await waitFor(() => expect(screen.getAllByText('Offline')).toHaveLength(9))
   })
 
-  it('exposes every home item as an accessible button', () => {
+  it('exposes every selected entity as an accessible button', () => {
     render(<HomeMenuView />)
-    expect(screen.getAllByRole('button')).toHaveLength(11)
+    // ticket 9.3: the default selection is the nine HOME_LIGHTS — without the
+    // picker callback there is no manage row (the old two placeholder rows are
+    // gone, the list is the live selection)
+    expect(screen.getAllByRole('button')).toHaveLength(9)
+  })
+
+  it('appends the manage row and opens the picker on confirm (ticket 9.3)', () => {
+    const onOpenEntityPicker = vi.fn()
+    render(<HomeMenuView onOpenEntityPicker={onOpenEntityPicker} />)
+    const buttons = screen.getAllByRole('button')
+    expect(buttons).toHaveLength(10)
+    expect(buttons[9].textContent).toContain('Entitäten wählen')
+    expect(buttons[9].textContent).toContain('9 ausgewählt')
+    fireEvent.click(buttons[9])
+    expect(onOpenEntityPicker).toHaveBeenCalledTimes(1)
   })
 })
