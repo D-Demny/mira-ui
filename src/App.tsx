@@ -11,6 +11,7 @@ import { IdleScreen } from '@/components/IdleScreen'
 import { LibraryView } from '@/components/LibraryView'
 import { MainMenuView } from '@/components/MainMenuView'
 import { HALightControlModal } from '@/components/MainMenuView/HALightControlModal'
+import { HomeEntityPickerModal } from '@/components/MainMenuView/HomeEntityPickerModal'
 import { Lyrics } from '@/components/Lyrics'
 import { Menu } from '@/components/Menu'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
@@ -139,6 +140,8 @@ export default function App() {
   const [piKeyboardField, setPiKeyboardField] = useState<PiKeyboardField | null>(null)
   // bug46: the dimmable HA light control popup (entity + label while open)
   const [lightControl, setLightControl] = useState<{ entityId: string; label: string } | null>(null)
+  // ticket 9.3: the home carousel entity picker overlay
+  const [entityPickerOpen, setEntityPickerOpen] = useState(false)
   const [btMenuOpenReal, setBtMenuOpen] = useState(false)
   const [debugOpen, setDebugOpen] = useState(false)
   const [transferPromptActive, setTransferPromptActive] = useState(false)
@@ -876,6 +879,10 @@ export default function App() {
           onClose={() => setLightControl(null)}
         />
       ) : null}
+      {/* ticket 9.3: the home carousel entity picker */}
+      {entityPickerOpen ? (
+        <HomeEntityPickerModal onClose={() => setEntityPickerOpen(false)} />
+      ) : null}
       {btMenuOpen ? <BluetoothMenu online={online} onClose={() => setBtMenuOpen(false)} /> : null}
       <DebugScreen open={debugOpen} onClose={() => setDebugOpen(false)} onReport={setReportId} />
       {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
@@ -1082,7 +1089,7 @@ export default function App() {
   if (forced === 'home') {
     return (
       <div className={styles.app}>
-        <HomeMenuView />
+        <HomeMenuView onOpenEntityPicker={() => setEntityPickerOpen(true)} />
         {globalOverlays}
       </div>
     )
@@ -1093,6 +1100,8 @@ export default function App() {
         <MainMenuView
           // bug46: the dev screen also gets the light control popup
           onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
+          // ticket 9.3: the dev screen also gets the entity picker
+          onOpenEntityPicker={() => setEntityPickerOpen(true)}
           // epic10 task 4: the dev screen also gets the Pi settings view
           onOpenPiServer={() => setPiServerModalOpen(true)}
         />
@@ -1246,6 +1255,8 @@ export default function App() {
             onOpenBluetooth={() => setBtMenuOpen(true)}
             // bug46: dimmable HA light cards open the control popup
             onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
+            // ticket 9.3: the manage card opens the entity picker
+            onOpenEntityPicker={() => setEntityPickerOpen(true)}
             // epic10 task 4: the Raspberry Pi row opens the provisioning view
             onOpenPiServer={() => setPiServerModalOpen(true)}
           />

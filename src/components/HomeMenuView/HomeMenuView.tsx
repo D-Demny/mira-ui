@@ -1,41 +1,102 @@
 import styles from './HomeMenuView.module.scss'
 import { useListFocus } from '@/hooks/useListFocus'
-import { HOME_LIGHTS, useHomeLights } from '@/hooks/useHomeLight'
+import { useHomeSelectedEntities, type HomeEntityView } from '@/hooks/useHomeEntities'
 
-// temporary placeholder items until more Home Assistant entities are wired up
-const PLACEHOLDER_ITEMS = [
-  { id: 'switch-demo', label: 'Switch (placeholder)' },
-  { id: 'scene-demo', label: 'Scene (placeholder)' },
-]
-
-interface Props {
-  onNavigate?: (route: string) => void
+// ticket 9.3: the German domain label shown as row meta when the entity has
+// no curated room (the HOME_LIGHTS lights do, everything else does not)
+function domainLabelFor(domain: string): string {
+  switch (domain) {
+    case 'light':
+      return 'Licht'
+    case 'switch':
+      return 'Schalter'
+    case 'fan':
+      return 'Lüfter'
+    case 'scene':
+      return 'Szene'
+    case 'cover':
+      return 'Rollladen'
+    case 'input_boolean':
+      return 'Boolescher Wert'
+    case 'media_player':
+      return 'Mediaplayer'
+    default:
+      return domain
+  }
 }
 
-function HomeMenuViewImpl({ onNavigate }: Props) {
-  const lights = useHomeLights()
+function badgeFor(view: HomeEntityView): string {
+  if (view.error) return 'Offline'
+  if (view.loading) return '…'
+  if (view.active === true) return 'ON'
+  if (view.active === false) return 'OFF'
+  return '–'
+}
 
-  // single focus list: the lights first, then the placeholder entities
-  const itemCount = HOME_LIGHTS.length + PLACEHOLDER_ITEMS.length
+interface Props {
+  // ticket 9.3: opens the entity picker (the App-level overlay); when
+  // provided, a manage row is appended to the focus list
+  onOpenEntityPicker?: () => void
+}
+
+function HomeMenuViewImpl({ onOpenEntityPicker }: Props) {
+  const entities = useHomeSelectedEntities()
+
+  const hasManage = typeof onOpenEntityPicker === 'function'
+
+  // single focus list: the selected entities, then (if the picker entry is
+  // available) the manage row
+  const itemCount = entities.length + (hasManage ? 1 : 0)
 
   const { focusedIndex, handleWheel, tapItem, setFocusRef } = useListFocus({
     itemCount,
     onSelect: (index) => {
-      if (index < HOME_LIGHTS.length) {
-        lights[index].toggle()
+      if (index < entities.length) {
+        entities[index].actuate()
         return
       }
-      const item = PLACEHOLDER_ITEMS[index - HOME_LIGHTS.length]
-      if (!item) return
-      onNavigate?.(item.id)
+      onOpenEntityPicker?.()
     },
     allowTapSelect: true,
   })
 
-  const badgeFor = (light: (typeof lights)[number]) =>
-    light.error ? 'Offline' : light.loading ? '…' : light.state === 'on' ? 'ON' : 'OFF'
-  const badgeClassFor = (light: (typeof lights)[number]) =>
-    light.error ? styles.badgeError : light.state === 'on' && !light.loading ? styles.badgeOn : ''
+  const badgeClassFor = (view: HomeEntityView) =>
+    view.error ? styles.badgeError : view.active === true && !view.loading ? styles.badgeOn : ''
+
+  // one row per focus-list item: entity rows carry a status badge, the
+  // manage row does not (same li/role/ref/`.focused` structure as before)
+  const renderRow = (index: number, key: string, label: string, meta: string, badge: string | null) => {
+    const view = index < entities.length ? entities[index] : null
+    const focused = index === focusedIndex
+    return (
+      <li
+        key={key}
+        className={`${styles.listItem} ${focused ? styles.focused : ''}`}
+        role="button"
+        tabIndex={0}
+        ref={focused ? setFocusRef : undefined}
+        onClick={() => tapItem(index)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            tapItem(index)
+          }
+        }}
+      >
+        <span className={styles.listItemText}>
+          <span>{label}</span>
+          <span className={styles.meta}>{meta}</span>
+        </span>
+        {badge !== null ? (
+          <span
+            className={`${styles.badge} ${view ? badgeClassFor(view) : ''}`}
+          >
+            {badge}
+          </span>
+        ) : null}
+      </li>
+    )
+  }
 
   return (
     <div className={styles.container}>
@@ -44,55 +105,18 @@ function HomeMenuViewImpl({ onNavigate }: Props) {
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Home Assistant</h2>
         <ul className={styles.list} onWheel={handleWheel as unknown as React.WheelEventHandler}>
-          {lights.map((light, i) => {
-            const focused = i === focusedIndex
-            return (
-              <li
-                key={light.entityId}
-                className={`${styles.listItem} ${focused ? styles.focused : ''}`}
-                role="button"
-                tabIndex={0}
-                ref={focused ? setFocusRef : undefined}
-                onClick={() => tapItem(i)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    tapItem(i)
-                  }
-                }}
-              >
-                <span className={styles.listItemText}>
-                  <span>{light.label}</span>
-                  <span className={styles.meta}>{light.room}</span>
-                </span>
-                <span className={`${styles.badge} ${badgeClassFor(light)}`}>{badgeFor(light)}</span>
-              </li>
-            )
-          })}
-          {PLACEHOLDER_ITEMS.map((item, i) => {
-            const index = i + HOME_LIGHTS.length
-            return (
-              <li
-                key={item.id}
-                className={`${styles.listItem} ${index === focusedIndex ? styles.focused : ''}`}
-                role="button"
-                tabIndex={0}
-                ref={index === focusedIndex ? setFocusRef : undefined}
-                onClick={() => tapItem(index)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    tapItem(index)
-                  }
-                }}
-              >
-                <span className={styles.listItemText}>
-                  <span>{item.label}</span>
-                  <span className={styles.meta}>Coming soon</span>
-                </span>
-              </li>
-            )
-          })}
+          {entities.map((view, i) =>
+            renderRow(i, view.entityId, view.label, view.room ?? domainLabelFor(view.domain), badgeFor(view)),
+          )}
+          {hasManage
+            ? renderRow(
+                entities.length,
+                'manage-entities',
+                'Entitäten wählen',
+                entities.length + ' ausgewählt',
+                null,
+              )
+            : null}
         </ul>
       </section>
     </div>

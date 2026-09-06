@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { useHomeLights, type HomeLightView } from '@/hooks/useHomeLight'
+import { useHomeSelectedEntities, type HomeEntityView } from '@/hooks/useHomeEntities'
 import { useMiraServer } from '@/hooks/useMiraServer'
 import type { MiraServerState } from '@/api/miraServer'
 import { useMainMenuFocus } from '@/hooks/useMainMenuFocus'
@@ -31,6 +31,7 @@ import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
 import { warmArt } from './warmedArt'
+import { entityArt } from './homeEntityArt'
 import styles from './MainMenuView.module.scss'
 
 // bug25: the lyric sync offset range mirrors the player SettingsSheet
@@ -43,12 +44,27 @@ function fmtOffset(ms: number): string {
   return `${ms > 0 ? '+' : ''}${ms} ms`
 }
 
-// bug34: on/off subtitle of a home light card — same states as the single
-// primary light card had before (loading/unknown '…', error 'Offline', An/Aus)
-function lightSubtitleFor(view: Pick<HomeLightView, 'state' | 'loading' | 'error'>): string {
+// ticket 9.3: per-domain status subtitle of a home entity card — same state
+// ladder as the bug34 light subtitle (loading/unknown '…', error 'Offline'),
+// then the domain's active words (scene has no state → fixed 'Szene')
+function entitySubtitleFor(view: HomeEntityView): string {
   if (view.loading || view.state === null) return '…'
   if (view.error) return 'Offline'
-  return view.state === 'on' ? 'An' : 'Aus'
+  switch (view.domain) {
+    case 'light':
+    case 'switch':
+    case 'fan':
+    case 'input_boolean':
+      return view.active ? 'An' : 'Aus'
+    case 'cover':
+      return view.active ? 'Offen' : 'Zu'
+    case 'media_player':
+      return view.active ? 'Läuft' : view.state === 'paused' ? 'Pausiert' : 'Bereit'
+    case 'scene':
+      return 'Szene'
+    default:
+      return view.state
+  }
 }
 
 // epic10 task 4: the short status shown on the 'Raspberry Pi' settings row
@@ -210,6 +226,9 @@ export interface MainMenuViewProps {
   // bug46: a dimmable HA light card opens the brightness / color-temperature
   // popup (rendered by the App's globalOverlays) instead of toggling directly
   onOpenLightControl?: (entityId: string, label: string) => void
+  // ticket 9.3: the manage card (and the empty-selection placeholder) open
+  // the entity picker overlay (rendered by the App's globalOverlays)
+  onOpenEntityPicker?: () => void
   // epic10 task 4: the 'Raspberry Pi' settings row opens the provisioning
   // view (rendered by the App's globalOverlays)
   onOpenPiServer?: () => void
@@ -226,6 +245,7 @@ export function MainMenuView({
   onOpenDevices,
   onOpenBluetooth,
   onOpenLightControl,
+  onOpenEntityPicker,
   onOpenPiServer,
 }: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
@@ -248,10 +268,10 @@ export function MainMenuView({
     refetch: refetchRecent,
     refresh: refreshRecent,
   } = useRecent()
-  // bug34: every configured light in one hook (the same hook the Home
-  // sub-menu uses); the categories memo keys on the scalar snapshot below,
-  // never on the fresh per-render view objects (bug8.1)
-  const lightViews = useHomeLights()
+  // ticket 9.3: the user-selected entities in one hook (the same hook the
+  // Home sub-menu uses); the categories memo keys on the scalar snapshot
+  // below, never on the fresh per-render view objects (bug8.1)
+  const selectedEntities = useHomeSelectedEntities()
   const settings = useSettings()
   // epic10: Pi helper-server feature detection — starts the capabilities
   // poll while the main menu is mounted. The artwork pre-decode below uses
@@ -283,16 +303,25 @@ export function MainMenuView({
     )
     .join('\u0000')
 
-  // bug34: useHomeLights() returns fresh view objects on every render — collapse
-  // the per-light state into a scalar key (like nowPlayingQueueKey) so the
-  // categories memo only rebuilds when a light's on/off/loading/error state
-  // actually changes, never on the object churn alone (bug8.1). bug46: the
-  // dimmable capability is part of the snapshot (the card action depends on
-  // it once the capability fetch lands)
-  const lightSnapshotKey = lightViews
+  // ticket 9.3: useHomeSelectedEntities() returns fresh view objects on every
+  // render — collapse the per-entity state into a scalar key (like
+  // nowPlayingQueueKey) so the categories memo only rebuilds when an entity's
+  // id/state/loading/error/active/dimmable actually changes, never on the
+  // object churn alone (bug8.1)
+  const homeSnapshotKey = selectedEntities
     .map(
       (view) =>
-        `${view.state ?? ''}|${view.loading ? 1 : 0}|${view.error ?? ''}|${view.dimmable ? 1 : 0}`,
+        view.entityId +
+        '|' +
+        (view.state ?? '') +
+        '|' +
+        (view.loading ? 1 : 0) +
+        '|' +
+        (view.error ?? '') +
+        '|' +
+        (view.active === null ? 'n' : view.active ? 1 : 0) +
+        '|' +
+        (view.dimmable ? 1 : 0),
     )
     .join('\u0000')
 
@@ -378,16 +407,32 @@ export function MainMenuView({
   const settingsRows = isAdjustLevel ? settingsAdjustRows : settingsRootRows
 
   const categories = useMemo(() => {
-    // bug34: every configured HA light is a home carousel card (previously
-    // only the primary light); card 0 stays the primary light and its tap
-    // toggles that light, exactly as before
-    const lightCards: MenuCard[] = lightViews.map((view) => ({
-      id: `light-${view.entityId}`,
+    // ticket 9.3: every user-selected entity is a home carousel card, in
+    // selection order; the manage card (the picker entry) always sits LAST,
+    // and an empty selection gets an inert placeholder before it
+    const homeCards: MenuCard[] = selectedEntities.map((view) => ({
+      id: 'ha-' + view.entityId,
       title: view.label,
-      subtitle: lightSubtitleFor(view),
-      kind: 'action',
-      actionId: `toggle-light:${view.entityId}`,
+      subtitle: entitySubtitleFor(view),
+      art: entityArt(view.domain, view.entityId, view.active),
+      kind: 'action' as const,
+      actionId: 'ha-act:' + view.entityId,
     }))
+    if (selectedEntities.length === 0) {
+      homeCards.push({
+        id: 'ha-empty',
+        title: 'Keine Entitäten gewählt',
+        subtitle: 'Wähle Entitäten aus',
+      })
+    }
+    homeCards.push({
+      id: 'ha-manage',
+      title: 'Entitäten wählen',
+      subtitle: selectedEntities.length + ' ausgewählt',
+      art: entityArt('manage', 'manage', null),
+      kind: 'action' as const,
+      actionId: 'ha-manage',
+    })
 
     // bug2.3: playlist cards show only the title — no owner name / track count
     const playlistCards: MenuCard[] = playlistItems.map((playlist) => ({
@@ -490,7 +535,7 @@ export function MainMenuView({
     }
 
     const cardsByCategory: Record<string, MenuCard[]> = {
-      home: lightCards,
+      home: homeCards,
       'now-playing': nowPlayingCards,
       playlists: tracklistCards ?? playlistCards,
       recent: recentCards,
@@ -501,8 +546,8 @@ export function MainMenuView({
       ...category,
       cards: cardsByCategory[category.id] ?? category.cards,
     }))
-    // deliberately keyed on the scalar snapshot above (lightSnapshotKey), not
-    // on the lightViews objects, which are new on every render (bug8.1)
+    // deliberately keyed on the scalar snapshot above (homeSnapshotKey), not
+    // on the selectedEntities objects, which are new on every render (bug8.1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     playlistItems,
@@ -510,7 +555,7 @@ export function MainMenuView({
     recentItems,
     recentLoading,
     recentError,
-    lightSnapshotKey,
+    homeSnapshotKey,
     settingsRows,
     nowPlayingSnapshot,
     openTracklist,
@@ -620,20 +665,27 @@ export function MainMenuView({
       // start playback and land directly on the 'Läuft gerade' pane
       setActiveCategoryId('now-playing')
       onPlay?.(card.uri)
-    } else if (card.kind === 'action' && card.actionId?.startsWith('toggle-light:')) {
-      // bug34: per-light action — the action id carries the entity id (card 0
-      // = the former primary card). Keep focus inside the carousel — no view
-      // transition.
-      // bug46: dimmable lights (capability from supported_color_modes) open
-      // the brightness / color-temperature control popup instead of toggling;
-      // non-dimmable lights — and lights whose capability is still unknown
-      // (first fetch pending, offline) — keep the direct toggle
-      const entityId = card.actionId.slice('toggle-light:'.length)
-      const view = lightViews.find((light) => light.entityId === entityId)
-      if (view?.dimmable) {
+    } else if (
+      card.kind === 'action' &&
+      (card.actionId === 'ha-manage' || card.id === 'ha-empty')
+    ) {
+      // ticket 9.3: the picker entry (the manage card, or the empty-selection
+      // placeholder) opens the entity picker overlay
+      onOpenEntityPicker?.()
+    } else if (card.kind === 'action' && card.actionId?.startsWith('ha-act:')) {
+      // ticket 9.3: per-entity action — the action id carries the entity id.
+      // Keep focus inside the carousel — no view transition.
+      // bug46 convention: dimmable lights (capability from supported_color_modes)
+      // open the brightness / color-temperature control popup instead of
+      // actuating; everything else — and lights whose capability is still
+      // unknown (first fetch pending, offline) — actuate directly
+      const entityId = card.actionId.slice('ha-act:'.length)
+      const view = selectedEntities.find((e) => e.entityId === entityId)
+      if (!view) return
+      if (view.domain === 'light' && view.dimmable) {
         onOpenLightControl?.(view.entityId, view.label)
       } else {
-        view?.toggle()
+        view.actuate()
       }
     } else if (card.id === 'tr-error') {
       // error placeholder: dial press retries the track list fetch
