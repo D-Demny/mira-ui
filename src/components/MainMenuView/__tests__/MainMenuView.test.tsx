@@ -9,6 +9,7 @@ import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
 import { HOME_LIGHTS, __resetHomeLightStore } from '@/hooks/useHomeLight'
+import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import { __resetHomeEntityStores, SELECTION_LS_KEY } from '@/hooks/useHomeEntities'
 import { __resetMiraServerState, checkMiraServer } from '@/hooks/useMiraServer'
 import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorExtract'
@@ -2524,47 +2525,109 @@ describe('MainMenuView', () => {
     })
   })
 
-  describe('bug46: dimmable HA light cards open the control popup', () => {
-    it('a dimmable light card opens the popup instead of toggling', async () => {
-      const onOpenLightControl = vi.fn()
+  describe('bug53: light-card press/hold (press = toggle, hold = dim view)', () => {
+    // the live HA facts: the first light (card 0 of the Home carousel)
+    // reports dimmable color modes; the toggle POSTs are counted. The toggle
+    // response must ECHO the color-mode attributes — the view trusts the
+    // service answer over the store (useHomeEntities.actuate) and an
+    // empty-attributes answer would wipe the dimmable capability right after
+    // the first actuation (a subsequent hold would then actuate instead of
+    // opening the dim view)
+    function seedDimmableFirstLight() {
       const toggled: string[] = []
+      const attributes = {
+        supported_color_modes: ['color_temp', 'xy'],
+        min_color_temp_kelvin: 2202,
+        max_color_temp_kelvin: 6535,
+      }
       server.use(
-        // the live HA facts: all 9 lights report these color modes
         http.get('*/ha-api/states/light.3er_stehlampe_gold_esszimmer', () =>
           HttpResponse.json({
             entity_id: 'light.3er_stehlampe_gold_esszimmer',
             state: 'off',
-            attributes: {
-              supported_color_modes: ['color_temp', 'xy'],
-              min_color_temp_kelvin: 2202,
-              max_color_temp_kelvin: 6535,
-            },
+            attributes,
           }),
         ),
         http.post('*/ha-api/services/light/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           toggled.push(body.entity_id ?? '')
-          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes }])
         }),
       )
+      return toggled
+    }
+
+    it('a dial press on a dimmable light card actuates (toggle POST), the dim view does NOT open', async () => {
+      const onOpenLightControl = vi.fn()
+      const toggled = seedDimmableFirstLight()
       render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
       await waitFor(() => {
         expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
       })
 
-      fireEvent.click(screen.getByText('3er Stehlampe Gold'))
+      // Home is the focused sidebar item — confirm enters the content pane
+      // with card 0 (the dimmable light) focused
+      confirmDial()
+      // single press (dial) → actuate for ALL domains, dimmable lights included
+      confirmDial()
 
-      await waitFor(() =>
-        expect(onOpenLightControl).toHaveBeenCalledWith(
-          'light.3er_stehlampe_gold_esszimmer',
-          '3er Stehlampe Gold',
-        ),
+      await waitFor(() => expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer']))
+      expect(onOpenLightControl).not.toHaveBeenCalled()
+    })
+
+    it('a dial hold on a dimmable light card opens the dim view without toggling', async () => {
+      const onOpenLightControl = vi.fn()
+      const toggled = seedDimmableFirstLight()
+      render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      confirmDial() // enter the Home content pane, card 0 focused
+
+      // the hardware layer fires entry.onHold for a press held ≥ CARD_HOLD_MS
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+
+      expect(onOpenLightControl).toHaveBeenCalledWith(
+        'light.3er_stehlampe_gold_esszimmer',
+        '3er Stehlampe Gold',
       )
-      // the dimmable card must NOT toggle directly
+      // a hold must NOT actuate
       expect(toggled).toEqual([])
     })
 
-    it('a light without brightness/color_temp support keeps the direct toggle', async () => {
+    it('a press AND a hold on a non-dimmable switch card actuate (like a press)', async () => {
+      // the default selection is the 9 lights — make the switch the ONLY card
+      window.localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(['switch.wasserpumpe']))
+      const toggled: string[] = []
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () =>
+          HttpResponse.json({ entity_id: 'switch.wasserpumpe', state: 'off' }),
+        ),
+        http.post('*/ha-api/services/switch/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          toggled.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+        }),
+      )
+      render(<MainMenuView />)
+      await screen.findByText('Wasserpumpe') // the switch card (card 0)
+
+      confirmDial() // enter the Home content pane
+      confirmDial() // press → actuate
+      await waitFor(() => expect(toggled).toEqual(['switch.wasserpumpe']))
+
+      // holding a non-dimmable entity behaves like a press (no dead gesture,
+      // no dim view exists for it)
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      await waitFor(() => expect(toggled).toEqual(['switch.wasserpumpe', 'switch.wasserpumpe']))
+    })
+
+    it('a light without brightness/color_temp support keeps the direct toggle on press', async () => {
       const onOpenLightControl = vi.fn()
       const toggled: string[] = []
       server.use(
@@ -2592,7 +2655,7 @@ describe('MainMenuView', () => {
       expect(onOpenLightControl).not.toHaveBeenCalled()
     })
 
-    it('a light advertising only the legacy SUPPORT_BRIGHTNESS bit (bit 0 of supported_features, no color modes) opens the popup', async () => {
+    it('a light advertising only the legacy SUPPORT_BRIGHTNESS bit: press toggles, hold opens the dim view', async () => {
       const onOpenLightControl = vi.fn()
       const toggled: string[] = []
       server.use(
@@ -2608,7 +2671,11 @@ describe('MainMenuView', () => {
         http.post('*/ha-api/services/light/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           toggled.push(body.entity_id ?? '')
-          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+          // echo the legacy capability bit — the view trusts the service
+          // answer over the store (empty attributes would wipe dimmable)
+          return HttpResponse.json([
+            { entity_id: body.entity_id, state: 'on', attributes: { supported_features: 1 } },
+          ])
         }),
       )
       render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
@@ -2616,15 +2683,71 @@ describe('MainMenuView', () => {
         expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
       })
 
+      // press (tap) → toggle, no dim view
       fireEvent.click(screen.getByText('3er Deko'))
+      await waitFor(() => expect(toggled).toEqual(['light.3er_deko_esszimmer']))
+      expect(onOpenLightControl).not.toHaveBeenCalled()
 
-      await waitFor(() =>
-        expect(onOpenLightControl).toHaveBeenCalledWith(
-          'light.3er_deko_esszimmer',
-          '3er Deko',
-        ),
+      // hold (dial) on the same card (HOME_LIGHTS[2] → card index 2) → dim
+      // view. The tap did not change the active pane (selectContent only
+      // moves the content index), so confirm enters the content pane first
+      // and the two wheel ticks land the focus back on card 2
+      confirmDial()
+      wheel(-10)
+      wheel(-10)
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      expect(onOpenLightControl).toHaveBeenCalledWith('light.3er_deko_esszimmer', '3er Deko')
+      // the hold must not actuate a second time
+      expect(toggled).toEqual(['light.3er_deko_esszimmer'])
+    })
+
+    it('touch: a tap toggles, a held pointer opens the dim view, a drag (slop) does neither', async () => {
+      const onOpenLightControl = vi.fn()
+      const toggled = seedDimmableFirstLight()
+      render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
+      await waitFor(() => {
+        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
+      })
+
+      const card = screen.getByText('3er Stehlampe Gold').closest('.card') as HTMLElement
+
+      // (a) short press: pointerdown → pointerup inside the threshold → the
+      // browser click that follows is a plain TAP (actuate)
+      vi.useFakeTimers()
+      fireEvent.pointerDown(card, { clientX: 10, clientY: 10, pointerId: 1 })
+      vi.advanceTimersByTime(200) // < CARD_HOLD_MS
+      fireEvent.pointerUp(card, { pointerId: 1 })
+      vi.useRealTimers()
+      fireEvent.click(card)
+      await waitFor(() => expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer']))
+      expect(onOpenLightControl).not.toHaveBeenCalled()
+
+      // (b) held pointer: pointerdown → ≥ CARD_HOLD_MS → onCardHold (dim
+      // view); the browser click that follows the long press is suppressed
+      vi.useFakeTimers()
+      fireEvent.pointerDown(card, { clientX: 20, clientY: 20, pointerId: 1 })
+      vi.advanceTimersByTime(CARD_HOLD_MS + 50)
+      fireEvent.pointerUp(card, { pointerId: 1 })
+      vi.useRealTimers()
+      fireEvent.click(card) // must be suppressed by the held flag
+      expect(onOpenLightControl).toHaveBeenCalledWith(
+        'light.3er_stehlampe_gold_esszimmer',
+        '3er Stehlampe Gold',
       )
-      expect(toggled).toEqual([])
+      expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer'])
+
+      // (c) drag: movement beyond the slop before release cancels the hold —
+      // a swipe is never a hold (useSwipeGestures territory)
+      vi.useFakeTimers()
+      fireEvent.pointerDown(card, { clientX: 30, clientY: 30, pointerId: 1 })
+      fireEvent.pointerMove(card, { clientX: 80, clientY: 30, pointerId: 1 })
+      vi.advanceTimersByTime(CARD_HOLD_MS + 50)
+      fireEvent.pointerUp(card, { pointerId: 1 })
+      vi.useRealTimers()
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1) // no second dim view
+      expect(toggled).toHaveLength(1) // and no second toggle
     })
   })
 })

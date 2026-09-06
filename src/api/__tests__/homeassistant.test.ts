@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
 import {
+  CATALOG_TIMEOUT_MS,
   ENTITY_SERVICES,
   HOME_ENTITY_DOMAINS,
+  __setHaTimeoutForTests,
   activateHaEntity,
   callHaService,
   entityActive,
@@ -19,6 +21,8 @@ import type { HaEntityState } from '../homeassistant'
 describe('homeassistant api', () => {
   afterEach(() => {
     vi.useRealTimers()
+    // bug53: never leak the test-timeout override into other tests
+    __setHaTimeoutForTests(null)
   })
 
   it('fetches an entity state via the daemon /ha-api/ proxy', async () => {
@@ -113,15 +117,53 @@ describe('homeassistant api', () => {
       await expect(fetchHaEntityList()).rejects.toThrow(/401/)
     })
 
-    // MSW ignores AbortSignal — the timeout test needs FULL fake timers
+    // MSW ignores AbortSignal — the timeout tests need FULL fake timers
     // (same pattern as the fetchHaEntityState timeout test above)
-    it('times out after 5 seconds', async () => {
+    // bug53: the catalog carries the dedicated CATALOG_TIMEOUT_MS budget
+    // (15 s — deliberately ABOVE the daemon proxy's 8 s client timeout), so
+    // the abort fires at that deadline, not at the 5 s single-state budget
+    it('times out after the catalog budget, not the single-state budget', async () => {
       vi.useFakeTimers()
       server.use(
         http.get('*/ha-api/states', () => new Promise<HttpResponse<undefined>>(() => {})),
       )
       const pending = fetchHaEntityList().catch((e: unknown) => e)
-      await vi.advanceTimersByTimeAsync(5000)
+      await vi.advanceTimersByTimeAsync(CATALOG_TIMEOUT_MS)
+      const err = await pending
+      expect(err).toBeInstanceOf(Error)
+      expect((err as Error).message).toBe('home assistant timeout')
+    })
+
+    // bug53: a response slower than the old 5 s single-state budget (here:
+    // 6 s) must now SUCCEED — the catalog's own 15 s budget no longer
+    // aborts it; the daemon proxy's 8 s client timeout is the next wall
+    it('accepts a catalog response slower than the single-state budget', async () => {
+      vi.useFakeTimers()
+      server.use(
+        http.get('*/ha-api/states', async () => {
+          await new Promise((resolve) => setTimeout(resolve, 6000))
+          return HttpResponse.json({ 'switch.b': { entity_id: 'switch.b', state: 'off' } })
+        }),
+      )
+      const pending = fetchHaEntityList()
+      await vi.advanceTimersByTimeAsync(6000)
+      const list = await pending
+      expect(list['switch.b']?.state).toBe('off')
+    })
+
+    // bug53: the testability seam overrides the DEFAULT fetch timeout — the
+    // single-state budget can be shrunk for deterministic abort tests without
+    // real 5 s waits (the catalog keeps its explicit CATALOG_TIMEOUT_MS)
+    it('the test-timeout override shrinks the default single-state budget', async () => {
+      vi.useFakeTimers()
+      __setHaTimeoutForTests(100)
+      server.use(
+        http.get('*/ha-api/states/light.slow-seam', () =>
+          new Promise<HttpResponse<undefined>>(() => {}),
+        ),
+      )
+      const pending = fetchHaEntityState('light.slow-seam').catch((e: unknown) => e)
+      await vi.advanceTimersByTimeAsync(100)
       const err = await pending
       expect(err).toBeInstanceOf(Error)
       expect((err as Error).message).toBe('home assistant timeout')

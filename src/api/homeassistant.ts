@@ -8,15 +8,35 @@ export interface HaEntityState {
 
 const HA_TIMEOUT_MS = 5000
 
+// bug53: the full state catalog (GET /states) is a large payload that can take
+// longer than the single-state budget on the device path — the timeout must
+// EXCEED the daemon proxy's own 8 s client timeout so that a genuinely slow or
+// broken HA call surfaces as the daemon's meaningful JSON error (e.g. the
+// 502 {"error":"home assistant unreachable"}) instead of the UI aborting first
+export const CATALOG_TIMEOUT_MS = 15_000
+
+// testability seam (bug53): module-level override of the DEFAULT fetch
+// timeout so tests can trigger the abort deterministically without real 5 s
+// waits (fake timers + MSW, see the timeout tests in __tests__)
+let haTimeoutOverride: number | null = null
+
+export function __setHaTimeoutForTests(ms: number | null) {
+  haTimeoutOverride = ms
+}
+
 // Chrome 69 target: AbortSignal.timeout() does not exist, so the request
 // timeout is implemented with a plain AbortController + setTimeout.
 async function haFetch(
   path: string,
   init: RequestInit = {},
   externalSignal?: AbortSignal,
+  timeoutMs?: number,
 ): Promise<Response> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), HA_TIMEOUT_MS)
+  const timer = setTimeout(
+    () => controller.abort(),
+    timeoutMs ?? haTimeoutOverride ?? HA_TIMEOUT_MS,
+  )
   const onExternalAbort = () => controller.abort()
   if (externalSignal) {
     if (externalSignal.aborted) controller.abort()
@@ -259,10 +279,12 @@ export function toHomeEntityCatalog(raw: Record<string, HaEntityState>): HaEntit
 }
 
 // ticket 9.3: the full state catalog (GET /states via the daemon proxy)
+// bug53: the dedicated CATALOG_TIMEOUT_MS budget (larger than the single-state
+// HA_TIMEOUT_MS, see above)
 export async function fetchHaEntityList(
   signal?: AbortSignal,
 ): Promise<Record<string, HaEntityState>> {
-  const res = await haFetch('/states', {}, signal)
+  const res = await haFetch('/states', {}, signal, CATALOG_TIMEOUT_MS)
   if (!res.ok) throw new Error(`home assistant ${res.status}`)
   const body = (await safeJson(res)) as unknown
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {

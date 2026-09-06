@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
+import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import type { MenuCard } from './mockData'
 import { carouselCardAreEqual } from './carouselCardCompare'
 import type { CarouselCardProps } from './carouselCardCompare'
@@ -15,14 +16,80 @@ import styles from './ContentCarousel.module.scss'
 // cover art size for carousel cards (bug2: was 200, reduced for breathing room)
 const CARD_ART_SIZE = 170
 
+// bug53: pointer movement beyond this distance cancels the hold — a
+// drag/swipe (useSwipeGestures territory) is never a hold and must not open
+// the dim view
+const CARD_HOLD_SLOP_PX = 10
+
 function CarouselCardImpl({
   card,
   index,
   isFocused,
   interactive,
   onCardTap,
+  onCardHold,
   registerRef,
 }: CarouselCardProps) {
+  // bug53: touch hold detection — pointerdown arms the CARD_HOLD_MS timer,
+  // pointerup/cancel before the deadline leaves it a tap, movement beyond
+  // the slop cancels it. The heldRef flag suppresses the browser `click`
+  // that follows a long press (CR69 note: PointerEvents are fine on Chrome
+  // 55+ — the codebase already uses them; pointer capture is NOT needed
+  // here)
+  const holdTimerRef = useRef<number | undefined>(undefined)
+  const holdOriginRef = useRef<{ x: number; y: number } | null>(null)
+  const heldRef = useRef(false)
+
+  const clearHoldTimer = () => {
+    if (holdTimerRef.current != null) {
+      window.clearTimeout(holdTimerRef.current)
+      holdTimerRef.current = undefined
+    }
+  }
+
+  // an unmount with the timer still armed must not fire the hold later
+  useEffect(() => clearHoldTimer, [])
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // a fresh press clears any stale suppression flag (a hold whose follow-up
+    // click never arrived, e.g. the pointer left the element)
+    heldRef.current = false
+    clearHoldTimer()
+    holdOriginRef.current = { x: e.clientX, y: e.clientY }
+    holdTimerRef.current = window.setTimeout(() => {
+      holdTimerRef.current = undefined
+      heldRef.current = true
+      onCardHold?.(card, index)
+    }, CARD_HOLD_MS)
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (holdTimerRef.current == null) return
+    const origin = holdOriginRef.current
+    if (
+      origin &&
+      (Math.abs(e.clientX - origin.x) > CARD_HOLD_SLOP_PX ||
+        Math.abs(e.clientY - origin.y) > CARD_HOLD_SLOP_PX)
+    ) {
+      clearHoldTimer()
+      holdOriginRef.current = null
+    }
+  }
+
+  const handlePointerRelease = () => {
+    clearHoldTimer()
+    holdOriginRef.current = null
+  }
+
+  const handleTap = () => {
+    if (heldRef.current) {
+      // the browser click that follows a long press — suppress it
+      heldRef.current = false
+      return
+    }
+    onCardTap?.(card, index)
+  }
+
   return (
     <article
       ref={isFocused ? registerRef : undefined}
@@ -30,7 +97,11 @@ function CarouselCardImpl({
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? card.title : undefined}
       className={isFocused ? `${styles.card} ${styles.cardFocused}` : styles.card}
-      onClick={interactive ? () => onCardTap?.(card, index) : undefined}
+      onClick={interactive ? handleTap : undefined}
+      onPointerDown={interactive ? handlePointerDown : undefined}
+      onPointerMove={interactive ? handlePointerMove : undefined}
+      onPointerUp={interactive ? handlePointerRelease : undefined}
+      onPointerCancel={interactive ? handlePointerRelease : undefined}
       onKeyDown={
         interactive
           ? (e) => {
@@ -67,6 +138,10 @@ interface ContentCarouselProps {
   // reset to the new first card here instead
   activeTrackKey?: string
   onCardTap?: (card: MenuCard, index: number) => void
+  // bug53: touch hold (≥ CARD_HOLD_MS) on a card — the parent routes it
+  // (dimmable light → dim view, everything else like a tap). Must be STABLE:
+  // the memoized cards keep the first closure they receive
+  onCardHold?: (card: MenuCard, index: number) => void
   // index of the dial-focused card (rendered with a focus outline + centered)
   focusedIndex?: number
   // bug47: how the last focus change arrived — 'dial' (wheel tick) scrolls
@@ -82,6 +157,7 @@ export function ContentCarousel({
   categoryId,
   activeTrackKey,
   onCardTap,
+  onCardHold,
   focusedIndex,
   focusScrollBehavior = 'smooth',
 }: ContentCarouselProps) {
@@ -244,6 +320,7 @@ export function ContentCarousel({
             isFocused={focusedIndex === index}
             interactive={onCardTap != null}
             onCardTap={onCardTap}
+            onCardHold={onCardHold}
             registerRef={registerFocusedRef}
           />
         )

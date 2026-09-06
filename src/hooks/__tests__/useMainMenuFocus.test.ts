@@ -211,6 +211,63 @@ describe('useMainMenuFocus', () => {
     expect(onWheelContent).not.toHaveBeenCalled()
   })
 
+  // bug53: the hold twin of confirm — the dial press held ≥ CARD_HOLD_MS
+  // (the hardware layer decides when to call entry.onHold)
+  describe('hold routing (bug53)', () => {
+    it('content pane: entry.onHold routes to onHoldContent with the focused index', () => {
+      const onConfirmContent = vi.fn()
+      const onHoldContent = vi.fn()
+      renderFocus({ onConfirmContent, onHoldContent })
+
+      act(() => {
+        ListFocusContext.entry.onConfirm?.() // enter content
+      })
+      act(() => {
+        ListFocusContext.entry.onWheel(makeWheelEvent(-10)) // focus index 1
+      })
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+
+      expect(onHoldContent).toHaveBeenCalledTimes(1)
+      expect(onHoldContent).toHaveBeenCalledWith(1)
+      expect(onConfirmContent).not.toHaveBeenCalled()
+    })
+
+    it('content pane without onHoldContent falls back to the plain confirm behavior', () => {
+      const onConfirmContent = vi.fn()
+      renderFocus({ onConfirmContent })
+
+      act(() => {
+        ListFocusContext.entry.onConfirm?.() // enter content
+      })
+      act(() => {
+        ListFocusContext.entry.onWheel(makeWheelEvent(-10)) // focus index 1
+      })
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+
+      expect(onConfirmContent).toHaveBeenCalledTimes(1)
+      expect(onConfirmContent).toHaveBeenCalledWith(1)
+    })
+
+    it('sidebar pane: entry.onHold behaves like confirm (enters the content pane)', () => {
+      const onHoldContent = vi.fn()
+      const onSelectSidebar = vi.fn()
+      const { result } = renderFocus({ onHoldContent, onSelectSidebar })
+
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+
+      expect(result.current.activePane).toBe('content')
+      expect(result.current.contentIndex).toBe(0)
+      expect(onSelectSidebar).toHaveBeenCalledWith(0)
+      expect(onHoldContent).not.toHaveBeenCalled()
+    })
+  })
+
   it('keeps the content focus in range when the card list shrinks', () => {
     const { result, rerender } = renderHook(
       ({ contentCount }: { contentCount: number }) =>

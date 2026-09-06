@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderHook } from '@testing-library/react'
-import { useHardwareButtons } from '@/hooks/useHardwareButtons'
+import { useHardwareButtons, CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import type { ObserverStatusActive } from '@/api/types'
 
@@ -107,6 +107,116 @@ describe('useHardwareButtons Enter handling', () => {
 
     expect(onBackFocus).toHaveBeenCalledTimes(1)
     expect(onBack).toHaveBeenCalledTimes(1)
+  })
+})
+
+// bug53: hold-capable list-focus entries split the dial press into
+// short press (< CARD_HOLD_MS) = onConfirm on the keyup and held press
+// (≥ CARD_HOLD_MS) = onHold at the deadline, consumed on the keyup. Entries
+// WITHOUT onHold keep the immediate keydown confirm (covered above).
+describe('useHardwareButtons Enter press/hold (bug53)', () => {
+  function key(type: 'keydown' | 'keyup', repeat = false) {
+    document.body.dispatchEvent(
+      new KeyboardEvent(type, { key: 'Enter', bubbles: true, repeat }),
+    )
+  }
+
+  function setupHoldEntry() {
+    const onConfirm = vi.fn()
+    const onHold = vi.fn()
+    ListFocusContext.setActive({
+      onWheel: vi.fn(),
+      onConfirm,
+      onHold,
+      active: true,
+    })
+    const utils = setup()
+    return { onConfirm, onHold, ...utils }
+  }
+
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+    vi.useRealTimers()
+  })
+
+  it('a short press confirms once on release and never fires the hold', () => {
+    vi.useFakeTimers()
+    const { onConfirm, onHold } = setupHoldEntry()
+
+    key('keydown')
+    vi.advanceTimersByTime(CARD_HOLD_MS - 1) // still inside the hold budget
+    key('keyup')
+
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    expect(onHold).not.toHaveBeenCalled()
+    // the hold timer must not fire after the release
+    vi.advanceTimersByTime(CARD_HOLD_MS)
+    expect(onHold).not.toHaveBeenCalled()
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('a held press fires the hold at the deadline and is consumed on release', () => {
+    vi.useFakeTimers()
+    const { onConfirm, onHold } = setupHoldEntry()
+
+    key('keydown')
+    vi.advanceTimersByTime(CARD_HOLD_MS) // the deadline fires onHold
+    expect(onHold).toHaveBeenCalledTimes(1)
+    key('keyup') // release is consumed — no confirm on top of the hold
+
+    expect(onHold).toHaveBeenCalledTimes(1)
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('fires the hold exactly at the threshold (400 ms)', () => {
+    vi.useFakeTimers()
+    const { onConfirm, onHold } = setupHoldEntry()
+
+    key('keydown')
+    vi.advanceTimersByTime(CARD_HOLD_MS - 1)
+    expect(onHold).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(onHold).toHaveBeenCalledTimes(1)
+    key('keyup')
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('ignores key auto-repeat while the press is held', () => {
+    vi.useFakeTimers()
+    const { onConfirm, onHold } = setupHoldEntry()
+
+    key('keydown')
+    key('keydown', true) // OS key repeat
+    key('keydown', true)
+    vi.advanceTimersByTime(CARD_HOLD_MS)
+    expect(onHold).toHaveBeenCalledTimes(1) // exactly one hold
+    key('keyup')
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('ignores a keyup without a matching keydown', () => {
+    vi.useFakeTimers()
+    const { onConfirm, onHold } = setupHoldEntry()
+
+    key('keyup')
+    vi.advanceTimersByTime(CARD_HOLD_MS)
+    expect(onConfirm).not.toHaveBeenCalled()
+    expect(onHold).not.toHaveBeenCalled()
+  })
+
+  it('keeps the immediate keydown confirm for entries without onHold (no keyup needed)', () => {
+    vi.useFakeTimers()
+    const { onPlayPause } = setup()
+    const onConfirm = vi.fn()
+    ListFocusContext.setActive({ onWheel: vi.fn(), onConfirm, active: true })
+
+    key('keydown')
+
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    expect(onPlayPause).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(CARD_HOLD_MS)
+    key('keyup')
+    expect(onConfirm).toHaveBeenCalledTimes(1) // no second confirm on the keyup
   })
 })
 

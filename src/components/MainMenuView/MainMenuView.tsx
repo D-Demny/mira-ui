@@ -675,18 +675,13 @@ export function MainMenuView({
     } else if (card.kind === 'action' && card.actionId?.startsWith('ha-act:')) {
       // ticket 9.3: per-entity action — the action id carries the entity id.
       // Keep focus inside the carousel — no view transition.
-      // bug46 convention: dimmable lights (capability from supported_color_modes)
-      // open the brightness / color-temperature control popup instead of
-      // actuating; everything else — and lights whose capability is still
-      // unknown (first fetch pending, offline) — actuate directly
+      // bug53: a single press (dial press or tap) ACTUATES every entity —
+      // dimmable lights included (the bug46 "press opens the dim popup"
+      // shortcut is gone: that popup cannot express "off"). The dim/color
+      // view now opens on a HOLD only (handleCardHold / onHoldContent)
       const entityId = card.actionId.slice('ha-act:'.length)
       const view = selectedEntities.find((e) => e.entityId === entityId)
-      if (!view) return
-      if (view.domain === 'light' && view.dimmable) {
-        onOpenLightControl?.(view.entityId, view.label)
-      } else {
-        view.actuate()
-      }
+      if (view) view.actuate()
     } else if (card.id === 'tr-error') {
       // error placeholder: dial press retries the track list fetch
       refetchTracks()
@@ -729,6 +724,33 @@ export function MainMenuView({
       setAdjustingRowId(activeAdjustingRowId === card.id ? null : card.id)
     }
   }
+
+  // bug53: the hold twin of handleCardAction — a HELD press (dial ≥
+  // CARD_HOLD_MS or touch hold) on a dimmable light card opens the
+  // brightness / color-temperature control view; every other card behaves
+  // exactly like a press. The routing reads live values through a ref: the
+  // carousel cards are memoized (bug8.2) and keep the FIRST onCardHold
+  // closure they receive, so the callback identity must be stable (same
+  // latest-callback pattern as the focus hook's internal refs and the
+  // focusRef below — the render-body ref write is intentional, the
+  // react-hooks/refs finding is the accepted false positive for this
+  // established pattern, see the eslint-disable below)
+  const cardHoldRoutingRef = useRef<(card: MenuCard, index: number) => void>(() => {})
+  // eslint-disable-next-line react-hooks/refs
+  cardHoldRoutingRef.current = (card: MenuCard, index: number) => {
+    if (card.kind === 'action' && card.actionId?.startsWith('ha-act:')) {
+      const entityId = card.actionId.slice('ha-act:'.length)
+      const view = selectedEntities.find((e) => e.entityId === entityId)
+      if (view && view.domain === 'light' && view.dimmable) {
+        onOpenLightControl?.(view.entityId, view.label)
+        return
+      }
+    }
+    handleCardAction(card, index)
+  }
+  const handleCardHold = useCallback((card: MenuCard, index: number) => {
+    cardHoldRoutingRef.current(card, index)
+  }, [])
 
   // bug25: adjust mode — the wheel changes the value of the adjusting row
   // instead of moving the focus; turning past the min/max boundary leaves
@@ -794,6 +816,12 @@ export function MainMenuView({
       // only ever runs in the content pane, where displayed == confirmed
       const card = confirmedCategory.cards[index]
       if (card) handleCardAction(card, index)
+    },
+    // bug53: dial HOLD on a card — same routing as the press path, plus the
+    // dimmable-light → dim view shortcut (handleCardHold covers it)
+    onHoldContent: (index) => {
+      const card = confirmedCategory.cards[index]
+      if (card) handleCardHold(card, index)
     },
     // bug4/bug25: back in the content pane first leaves the settings sub-level,
     // then closes the track sub-menu
@@ -1045,6 +1073,9 @@ export function MainMenuView({
             }
             // selectContent confirms the tapped card (runs the card action exactly once)
             onCardTap={handleCardTap}
+            // bug53: touch HOLD on a card (≥ CARD_HOLD_MS) — same routing as
+            // the dial hold (dimmable light → dim view, everything else press)
+            onCardHold={handleCardHold}
             focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
             // bug47: dial ticks scroll instantly, taps/confirms/switches keep
             // the smooth scroll (the hook tags the last focus change)
