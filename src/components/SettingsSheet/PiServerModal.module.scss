@@ -40,6 +40,19 @@
 // height inside the max-height-capped card, which is what triggers the
 // overflow. CR69/Bug49: no flex gap — the block spacing comes from the
 // margin-based flex-gap-y mixin (Chromium 69 ignores flex `gap`, Chrome 84+).
+//
+// Bug51: the direct children (header / profile list / credential fields /
+// action buttons) must NOT shrink. They are flex items of this column with
+// the default flex-shrink: 1 — once the card is capped by the
+// max-height chain (800x480 device), the items are compressed BELOW their
+// content height, their inner content (labels, inputs, buttons) then paints
+// on top of each other, and the scrollHeight never exceeds the clientHeight
+// so the overflow-y: auto above never kicks in (the reported overlap:
+// status lines colliding, the action buttons sitting on the password input,
+// no vertical scroll). flex-shrink: 0 on every direct child is the same
+// rule the SettingsList rows carry (flex-shrink: 0 in
+// SettingsList.module.scss) — that is what makes the settings sheet scroll
+// while the Pi menu collapsed.
 .content {
   flex: 1 1 auto;
   min-height: 0;
@@ -47,6 +60,10 @@
   @include hide-scrollbar;
   @include column;
   @include flex-gap-y($s-4);
+
+  > * {
+    flex-shrink: 0;
+  }
 }
 
 @keyframes slideIn {
