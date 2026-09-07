@@ -36,15 +36,32 @@ function seedEntity(state: string, brightness: number | null) {
   )
 }
 
-function makeCallsRecorder() {
+// bug56: the recorder keeps the turn_on bodies in the returned array (so the
+// existing assertions stay unchanged) and exposes the parallel turn_off ledger
+// as a property on the same array
+type RecordedCalls = Record<string, unknown>[] & {
+  offCalls: Record<string, unknown>[]
+}
+
+function makeCallsRecorder(): RecordedCalls {
   const calls: Record<string, unknown>[] = []
+  const offCalls: Record<string, unknown>[] = []
   server.use(
     http.post('*/ha-api/services/light/turn_on', async ({ request }) => {
       calls.push((await request.json()) as Record<string, unknown>)
       return HttpResponse.json([{ entity_id: ENTITY, state: 'on', attributes: {} }])
     }),
   )
-  return calls
+  // bug56: also capture light.turn_off (the 0 % slider commit)
+  server.use(
+    http.post('*/ha-api/services/light/turn_off', async ({ request }) => {
+      offCalls.push((await request.json()) as Record<string, unknown>)
+      return HttpResponse.json([{ entity_id: ENTITY, state: 'off', attributes: {} }])
+    }),
+  )
+  const recorded = calls as RecordedCalls
+  recorded.offCalls = offCalls
+  return recorded
 }
 
 function wheel(deltaX: number) {
@@ -246,6 +263,32 @@ describe('HALightControlModal (bug46)', () => {
       expect(screen.getByRole('button', { name: '3500 K' })).toHaveClass('focused')
       await waitFor(() => expect(calls).toHaveLength(1))
       expect(calls[0]).toEqual({ entity_id: ENTITY, color_temp_kelvin: 3500 })
+    })
+
+    // bug56: the 0 % slider position must switch the light OFF (turn_off with
+    // only { entity_id }) — the old behavior sent turn_on brightness_pct: 1
+    it('commits 0 % as light.turn_off with only { entity_id } (bug56)', async () => {
+      const calls = makeCallsRecorder()
+      seedEntity('on', 117) // 46 %
+      renderModal()
+      await waitFor(() => expect(screen.getByText('46%')).toBeInTheDocument())
+
+      // dial down in 5 % steps until the slider reaches 0 % (46 → 41 → … → 1 → 0)
+      for (let i = 0; i < 10; i += 1) wheel(10)
+      expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '0')
+
+      // the throttled write delivers the final 0 % as light.turn_off
+      await waitFor(() => expect(calls.offCalls).toHaveLength(1))
+      expect(calls.offCalls[0]).toEqual({ entity_id: ENTITY })
+      expect(calls).toHaveLength(1) // only the single dimming write (41 %) on the way down
+      expect(calls[0]).toEqual({ entity_id: ENTITY, brightness_pct: 41 })
+
+      // dial press commits at 0 % — there must be NO turn_on after 0 %
+      confirmDial()
+      // wait out the throttle window: a spurious extra write would surface here
+      await new Promise((r) => setTimeout(r, 300))
+      expect(calls.offCalls).toHaveLength(1)
+      expect(calls).toHaveLength(1)
     })
   })
 
