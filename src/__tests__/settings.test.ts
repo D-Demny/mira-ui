@@ -287,4 +287,40 @@ describe('settings store', () => {
       expect(getSettings().hybridDisabled).toBe(false)
     })
   })
+
+  describe('sidebarBackground (bug54)', () => {
+    it('defaults to solid on a fresh install', () => {
+      expect(getSettings().sidebarBackground).toBe('solid')
+    })
+
+    it('coerces a missing field in an old blob to solid (idempotent migration)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
+      )
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('solid')
+    })
+
+    it.each([
+      ['the exact "translucent" string', 'translucent', 'translucent'],
+      ['"transparent"', 'transparent', 'solid'],
+      ['"SOLID"', 'SOLID', 'solid'],
+      ['the number 1', 1, 'solid'],
+      ['true', true, 'solid'],
+      ['null', null, 'solid'],
+      ['an object', {}, 'solid'],
+    ])('strict coercion: stored %s → %s', (_label, stored, expected) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ sidebarBackground: stored }))
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe(expected)
+    })
+
+    it('round-trips translucent through localStorage', () => {
+      updateSettings({ sidebarBackground: 'translucent' })
+      expect(getSettings().sidebarBackground).toBe('translucent')
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('translucent')
+    })
+  })
 })

@@ -331,3 +331,99 @@ describe('dialScrollLeft (bug47 R2, F2)', () => {
     expect(full).toBe(maxScroll(50, viewportW))
   })
 })
+
+// bug54: the translucent menu background — the carousel viewport spans the
+// FULL screen (the content pane slides under the 250px sidebar), so the
+// centering geometry shifts: the first card's rest position is the sidebar
+// width + the edge padding (266), the FOCUSED card's left edge may never
+// cross the sidebar's right edge (minVisibleX 250 — the Bug50 boundary
+// stays intact: the focused card is always fully visible), and the
+// centering target is the middle of the VISIBLE zone (250 + (800-250)/2 =
+// 525 on the 800px device screen).
+describe('bug54: translucent geometry (CarouselGeometry)', () => {
+  const VIEWPORT_W = 800 // the full device screen (the pane slides under)
+  const UNDERFLOW = 250 // the sidebar width (SIDEBAR_WIDTH)
+  const geo = {
+    leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW, // 266
+    minVisibleX: UNDERFLOW,
+    centerTarget: UNDERFLOW + (VIEWPORT_W - UNDERFLOW) / 2, // 525
+  }
+  const cardCenter = (index: number) => geo.leftInset + index * STEP + CARD_WIDTH / 2
+  const maxScroll = (count: number) =>
+    Math.max(
+      0,
+      count * CARD_WIDTH + (count - 1) * CARD_GAP + geo.leftInset + CAROUSEL_EDGE_PADDING - VIEWPORT_W,
+    )
+
+  it('keeps the default (no-geometry) path bit-exact', () => {
+    // the pre-bug54 formula, verbatim — the generalization must reproduce
+    // it exactly for every (count, index, viewportW) when no geometry is
+    // passed
+    const legacy = (count: number, index: number, viewportW: number) => {
+      const center = CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2
+      const contentWidth = count > 0 ? count * CARD_WIDTH + (count - 1) * CARD_GAP : 0
+      const max = Math.max(0, contentWidth + CAROUSEL_EDGE_PADDING * 2 - viewportW)
+      const leftBoundary = index * STEP
+      return Math.max(0, Math.min(center - viewportW / 2, max, leftBoundary))
+    }
+    for (const viewportW of [550, 800, 1000]) {
+      for (const count of [0, 1, 2, 50, 101, 501]) {
+        for (let index = 0; index < count; index++) {
+          expect(dialScrollLeft(count, index, viewportW), `[${count}, ${index}, ${viewportW}]`).toBe(
+            legacy(count, index, viewportW),
+          )
+        }
+      }
+    }
+  })
+
+  it('card 0 focused: scrollLeft stays 0 and the card rests at 266px (fully right of the sidebar)', () => {
+    for (const count of [1, 50, 501]) {
+      const scrollLeft = dialScrollLeft(count, 0, VIEWPORT_W, geo)
+      expect(scrollLeft, `count ${count}`).toBe(0)
+      // screen x of card 0's left edge = rest position - scroll
+      expect(geo.leftInset - scrollLeft).toBe(266)
+      expect(geo.leftInset - scrollLeft).toBeGreaterThanOrEqual(geo.minVisibleX)
+    }
+  })
+
+  it('keeps the focused card right of the sidebar boundary for EVERY index (Bug50 stays intact)', () => {
+    // the device case: a long list dialed to every depth — the left edge of
+    // the focused card (scroll coord minus scrollLeft) may never be left of
+    // minVisibleX, at any index, including both end clamps
+    const count = 101
+    for (let index = 0; index < count; index++) {
+      const scrollLeft = dialScrollLeft(count, index, VIEWPORT_W, geo)
+      const cardLeft = geo.leftInset + index * STEP - scrollLeft
+      expect(cardLeft, `index ${index}`).toBeGreaterThanOrEqual(geo.minVisibleX)
+    }
+  })
+
+  it('centers the focused card on the visible zone middle (525) for every unclamped index', () => {
+    const count = 101
+    // unclamped range: the start clamp releases at index 1 (card 0's center
+    // 351 is left of the target 525), the end clamp engages at index 100 —
+    // 1..99 must center exactly on the visible zone's middle
+    for (let index = 1; index <= 99; index++) {
+      const scrollLeft = dialScrollLeft(count, index, VIEWPORT_W, geo)
+      expect(scrollLeft + geo.centerTarget, `index ${index}`).toBe(cardCenter(index))
+    }
+  })
+
+  it('clamps to maxScroll at the end of the list and survives the clamp', () => {
+    const count = 101
+    const scrollLeft = dialScrollLeft(count, count - 1, VIEWPORT_W, geo)
+    expect(scrollLeft).toBe(maxScroll(count))
+    // the unclamped target would overshoot (the clamp is real)
+    expect(cardCenter(count - 1) - geo.centerTarget).toBeGreaterThan(maxScroll(count))
+    // and the Bug50 boundary survives the clamp
+    const cardLeft = geo.leftInset + (count - 1) * STEP - scrollLeft
+    expect(cardLeft).toBeGreaterThanOrEqual(geo.minVisibleX)
+  })
+
+  it('stays at 0 when the list is shorter than the full-screen viewport', () => {
+    // 2 cards = 364 px content + 266 + 16 = 646 px < 800 px viewport
+    expect(dialScrollLeft(2, 0, VIEWPORT_W, geo)).toBe(0)
+    expect(dialScrollLeft(2, 1, VIEWPORT_W, geo)).toBe(0)
+  })
+})

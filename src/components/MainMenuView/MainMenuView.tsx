@@ -27,6 +27,7 @@ import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorEx
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
+import { SIDEBAR_WIDTH } from './carouselWindow'
 import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
@@ -173,6 +174,14 @@ function buildAdjustSettingsRows(
         disabled: settings.autoBrightness,
         defaultValue: 5,
       },
+    },
+    // bug54: LAST row on purpose — appending (not inserting) keeps every
+    // existing row index stable
+    {
+      id: 'set-sidebar-bg',
+      title: 'Menü-Hintergrund',
+      value: settings.sidebarBackground === 'translucent' ? 'Durchsichtig' : 'Schwarz',
+      kind: 'toggle',
     },
   ]
 }
@@ -405,6 +414,10 @@ export function MainMenuView({
   const isAdjustLevel = activeCategoryId === 'settings' && settingsLevel === 'adjust'
   const activeAdjustingRowId = activeCategoryId === 'settings' ? adjustingRowId : null
   const settingsRows = isAdjustLevel ? settingsAdjustRows : settingsRootRows
+  // bug54: the 'Menü-Hintergrund' setting — 'translucent' slides the content
+  // under the sidebar (the glass, cards partially visible underneath),
+  // 'solid' keeps today's strict clipping
+  const translucent = settings.sidebarBackground === 'translucent'
 
   const categories = useMemo(() => {
     // ticket 9.3: every user-selected entity is a home carousel card, in
@@ -714,6 +727,11 @@ export function MainMenuView({
       // (like the sun chip) — no adjust mode; while auto is OFF the wheel on
       // the focused row adjusts the level directly (handleWheelContent)
       updateSettings({ autoBrightness: !settings.autoBrightness })
+    } else if (card.id === 'set-sidebar-bg') {
+      // bug54: toggle the menu background (solid black / translucent glass)
+      updateSettings({
+        sidebarBackground: settings.sidebarBackground === 'solid' ? 'translucent' : 'solid',
+      })
     } else if (
       // bug25: dial-confirm on a slider row toggles its adjust mode; while
       // active the wheel changes the value (handleWheelContent)
@@ -1028,7 +1046,16 @@ export function MainMenuView({
   return (
     <div
       ref={viewRef}
-      className={`${styles.view} ${focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus}`}
+      className={
+        [
+          styles.view,
+          focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
+          // bug54: the translucent modifier slides the content under the sidebar
+          translucent ? styles.viewTranslucent : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+      }
       style={viewStyle}
     >
       {/* bug8/bug24: ambient background — static per category, or driven by
@@ -1040,20 +1067,31 @@ export function MainMenuView({
           activeId={activeCategoryId}
           onSelect={onCategorySelect}
           focusedIndex={focus.activePane === 'sidebar' ? focus.sidebarIndex : undefined}
+          glass={translucent}
         />
       </aside>
       <main className={styles.contentPane} aria-label="Menü-Inhalt">
         {displayedCategory.id === 'settings' ? (
           // bug25: the settings pane is a vertical list; the sidebar preview
-          // always shows the root rows, the confirmed pane the open level
-          <SettingsList
-            rows={settingsRows}
-            focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
-            adjustingRowId={activeAdjustingRowId}
-            onRowTap={(index) => selectFocusedCard(index)}
-            onSliderChange={handleSliderChange}
-            onToggleAuto={() => updateSettings({ autoBrightness: !settings.autoBrightness })}
-          />
+          // always shows the root rows, the confirmed pane the open level.
+          // bug54: the wrapper keeps the list out from under the glass in
+          // translucent mode (display:contents in solid mode — no change)
+          <div
+            className={
+              translucent
+                ? `${styles.settingsWrap} ${styles.settingsUnderflow}`
+                : styles.settingsWrap
+            }
+          >
+            <SettingsList
+              rows={settingsRows}
+              focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+              adjustingRowId={activeAdjustingRowId}
+              onRowTap={(index) => selectFocusedCard(index)}
+              onSliderChange={handleSliderChange}
+              onToggleAuto={() => updateSettings({ autoBrightness: !settings.autoBrightness })}
+            />
+          </div>
         ) : (
           <ContentCarousel
             cards={displayedCategory.cards}
@@ -1080,6 +1118,9 @@ export function MainMenuView({
             // bug47: dial ticks scroll instantly, taps/confirms/switches keep
             // the smooth scroll (the hook tags the last focus change)
             focusScrollBehavior={focus.contentMoveKind === 'dial' ? 'auto' : 'smooth'}
+            // bug54: in translucent mode the carousel viewport spans the
+            // full screen — the geometry underflow is the sidebar width
+            underflowPx={translucent ? SIDEBAR_WIDTH : 0}
           />
         )}
       </main>

@@ -5,10 +5,12 @@ import type { MenuCard } from './mockData'
 import { carouselCardAreEqual } from './carouselCardCompare'
 import type { CarouselCardProps } from './carouselCardCompare'
 import {
+  CAROUSEL_EDGE_PADDING,
   dialScrollLeft,
   leadingSpacerWidth,
   trailingSpacerWidth,
   windowRange,
+  type CarouselGeometry,
   type ScrollMetrics,
 } from './carouselWindow'
 import styles from './ContentCarousel.module.scss'
@@ -150,6 +152,14 @@ interface ContentCarouselProps {
   // confirm, category switch) keeps the smooth scroll. Defaults to 'smooth'
   // so standalone usage (tests, other views) is unchanged.
   focusScrollBehavior?: 'auto' | 'smooth'
+  // bug54: by how many px the carousel viewport extends UNDERNEATH a fixed
+  // overlay (the translucent sidebar). 0 (default) keeps the solid layout
+  // exactly as before; a positive value shifts the dial centering geometry
+  // (full-screen viewport, first card's rest position and the left boundary
+  // at the overlay's right edge, centering target in the visible zone) and
+  // applies the .underflow padding so the scroll port starts under the
+  // overlay.
+  underflowPx?: number
 }
 
 export function ContentCarousel({
@@ -160,6 +170,7 @@ export function ContentCarousel({
   onCardHold,
   focusedIndex,
   focusScrollBehavior = 'smooth',
+  underflowPx = 0,
 }: ContentCarouselProps) {
   const focusedCardRef = useRef<HTMLElement | null>(null)
   const carouselRef = useRef<HTMLDivElement | null>(null)
@@ -175,9 +186,13 @@ export function ContentCarousel({
   // the lazy re-measure in the dial branch below only covers a zero width at
   // mount (jsdom).
   const viewportWidthRef = useRef(0)
+  // bug54: re-measure when the underflow changes — the measured clientWidth
+  // is the FULL-screen viewport in translucent mode, the content-pane width
+  // in solid mode (the runtime setting toggle must re-center from the new
+  // geometry)
   useLayoutEffect(() => {
     viewportWidthRef.current = carouselRef.current?.clientWidth ?? 0
-  }, [])
+  }, [underflowPx])
 
   const registerFocusedRef = useCallback((el: HTMLElement | null) => {
     focusedCardRef.current = el
@@ -277,11 +292,27 @@ export function ContentCarousel({
         card.scrollIntoView({ behavior: 'auto', inline: 'center' })
         return
       }
-      carousel.scrollLeft = dialScrollLeft(cards.length, focusedIndex, viewportWidthRef.current)
+      const viewportW = viewportWidthRef.current
+      // bug54: translucent mode — the viewport spans the full screen
+      // (underflowPx under the sidebar), so the centering geometry shifts:
+      // the first card's rest position sits at sidebar width + edge padding,
+      // the focused card's left edge may never cross the sidebar's right
+      // edge (the Bug50 boundary), and the centering target is the middle of
+      // the visible zone. underflowPx 0 passes no geometry — today's exact
+      // arithmetic.
+      const geo: CarouselGeometry | undefined =
+        underflowPx > 0
+          ? {
+              leftInset: CAROUSEL_EDGE_PADDING + underflowPx,
+              minVisibleX: underflowPx,
+              centerTarget: underflowPx + (viewportW - underflowPx) / 2,
+            }
+          : undefined
+      carousel.scrollLeft = dialScrollLeft(cards.length, focusedIndex, viewportW, geo)
       return
     }
     card.scrollIntoView({ behavior: 'smooth', inline: 'center' })
-  }, [focusedIndex, categoryId, focusScrollBehavior, cards.length])
+  }, [focusedIndex, categoryId, focusScrollBehavior, cards.length, underflowPx])
 
   // bug5/bug6/bug18: mount only [start, end) plus invisible width spacers for
   // the off-screen cards so scroll metrics and index math stay correct
@@ -299,7 +330,10 @@ export function ContentCarousel({
   const trailingWidth = trailingSpacerWidth(cards.length - end)
 
   return (
-    <div className={styles.carousel} ref={carouselRef}>
+    <div
+      className={underflowPx > 0 ? `${styles.carousel} ${styles.underflow}` : styles.carousel}
+      ref={carouselRef}
+    >
       {leadingWidth > 0 && (
         <div
           key={`lead-${start}`}

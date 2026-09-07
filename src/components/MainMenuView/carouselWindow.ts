@@ -31,34 +31,75 @@ export const CARD_GAP = 24
 // keep in sync with $s-4 (the carousel's horizontal edge padding) in
 // ContentCarousel.module.scss
 export const CAROUSEL_EDGE_PADDING = 16
+// bug54: the main-menu sidebar width in px (SCSS source of truth:
+// $sidebar-width in styles/_variables.scss). In the translucent menu
+// background mode the carousel viewport extends underneath the sidebar by
+// exactly this width — keep in sync with the SCSS variable.
+export const SIDEBAR_WIDTH = 250
+
+// bug54: the geometry of the viewport the centering math is written for.
+// Omitted (the default) means today's solid layout: the viewport starts at
+// the sidebar's right edge, the first card's rest position is the edge
+// padding, and the centering target is the viewport's middle. In the
+// translucent menu background mode the viewport spans the FULL screen
+// (the content pane slides under the sidebar): the first card's rest
+// position is the sidebar width + edge padding, the FOCUSED card's left
+// edge may never cross the sidebar's right edge (minVisibleX — the Bug50
+// boundary: the focused card is always fully visible, all other cards may
+// slide under the glass), and the centering target is the middle of the
+// VISIBLE zone right of the sidebar (the card is centered where it can
+// actually be seen).
+export interface CarouselGeometry {
+  // rest position of the first card (scroll coordinates); default 16
+  leftInset: number
+  // the focused card's left edge (screen x) may never be left of this;
+  // default 16 (the carousel's left edge padding)
+  minVisibleX: number
+  // the scroll coordinate the focused card's center should land on;
+  // default viewportW / 2
+  centerTarget: number
+}
 
 // bug47 R2 (F2): the scrollLeft that centers card `focusedIndex` in a
 // `viewportW`-wide carousel, computed from constants alone — no layout read,
 // so the dial tick path stays read-free. Mirrors
 // scrollIntoView({ inline: 'center' }): the card's center in scroll
-// coordinates (edge padding + i * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2)
-// minus half the viewport, clamped to [0, maxScroll] exactly like the native
-// call. The spacers keep the windowed scroll width identical to the full
-// list's, so the clamp uses the unwindowed total width.
+// coordinates (leftInset + i * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2)
+// minus the centering target, clamped to [0, maxScroll] and to the left
+// boundary exactly like the native call. The spacers keep the windowed
+// scroll width identical to the full list's, so the clamp uses the
+// unwindowed total width.
 // bug50: on the target device the card pitch is margin-based (flex-gap-x,
 // Chromium 69 ignores flex `gap`), so this with-gap arithmetic matches the
 // rendered geometry — before that fix the measured card positions sat 400+ px
 // left of the values above and the focused card ended up under the sidebar.
-export function dialScrollLeft(count: number, focusedIndex: number, viewportW: number): number {
-  const center = CAROUSEL_EDGE_PADDING + focusedIndex * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2
+// bug54: with an explicit CarouselGeometry the same formula serves the
+// translucent underflow (full-screen viewport, center in the visible zone).
+// Without one, every value falls back to the solid layout — bit-exact
+// identical to the pre-bug54 formula.
+export function dialScrollLeft(
+  count: number,
+  focusedIndex: number,
+  viewportW: number,
+  geo?: CarouselGeometry,
+): number {
+  const pitch = CARD_WIDTH + CARD_GAP
+  const leftInset = geo?.leftInset ?? CAROUSEL_EDGE_PADDING
+  const minVisibleX = geo?.minVisibleX ?? CAROUSEL_EDGE_PADDING
+  const centerTarget = geo?.centerTarget ?? viewportW / 2
+  const center = leftInset + focusedIndex * pitch + CARD_WIDTH / 2
   const contentWidth = count > 0 ? count * CARD_WIDTH + (count - 1) * CARD_GAP : 0
-  const maxScroll = Math.max(0, contentWidth + CAROUSEL_EDGE_PADDING * 2 - viewportW)
-  // bug50: hard left boundary — the focused card's left edge (edge padding +
-  // focusedIndex * pitch in scroll coordinates) must never be scrolled past
-  // the carousel's left edge padding (its rest position). The carousel
-  // viewport starts exactly at the fixed sidebar's right edge (250px in
-  // MainMenuView.module.scss), so this is what guarantees the focused card
-  // can never drift under the sidebar, at any depth of the list. Pure
-  // centering already satisfies the bound; the clamp makes the guarantee
-  // explicit (it is the formula's contract, not a property of the centering
-  // target alone).
-  const leftBoundary = focusedIndex * (CARD_WIDTH + CARD_GAP)
-  return Math.max(0, Math.min(center - viewportW / 2, maxScroll, leftBoundary))
+  // the right edge padding stays CAROUSEL_EDGE_PADDING in both geometries
+  const maxScroll = Math.max(0, contentWidth + leftInset + CAROUSEL_EDGE_PADDING - viewportW)
+  // bug50/bug54: hard left boundary — the focused card's left edge must
+  // never be scrolled left of `minVisibleX` (default: the card's rest
+  // position; translucent: the sidebar's right edge, i.e. the focused card
+  // is ALWAYS fully visible while the other cards slide under the glass).
+  // Pure centering already satisfies the bound; the clamp makes the
+  // guarantee explicit (it is the formula's contract, not a property of the
+  // centering target alone).
+  const leftBoundary = focusedIndex * pitch + (leftInset - minVisibleX)
+  return Math.max(0, Math.min(center - centerTarget, maxScroll, leftBoundary))
 }
 
 // the physical scroll position of the carousel (measured after render); used

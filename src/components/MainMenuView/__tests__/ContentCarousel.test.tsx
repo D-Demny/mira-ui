@@ -1010,3 +1010,211 @@ describe('bug47 R2 (F1/F2): dial mode is read-free and centers arithmetically', 
     expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
   })
 })
+
+// bug54: the translucent menu background — underflowPx > 0 means the
+// carousel viewport spans the FULL screen (the content pane slides under the
+// 250px sidebar). The dial centering must use the underflow geometry (first
+// card's rest position at 266, left boundary at the sidebar's right edge,
+// centering target in the visible zone at 525) and the scroll port must
+// apply the .underflow padding.
+describe('bug54: underflow geometry (translucent menu background)', () => {
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, 'scrollIntoView')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // 50 cards: long enough for windowing (same shape as the bug47 R2 suite)
+  const MANY: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `u-${i}`,
+    title: `Under ${i}`,
+    subtitle: '',
+  }))
+  const SCREEN_W = 800 // the device's full screen (the pane slides under)
+  const UNDERFLOW_PX = 250 // the sidebar width
+  const GEO = {
+    leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW_PX, // 266
+    minVisibleX: UNDERFLOW_PX,
+    centerTarget: UNDERFLOW_PX + (SCREEN_W - UNDERFLOW_PX) / 2, // 525
+  }
+
+  function carouselEl(container: HTMLElement): HTMLElement {
+    return container.querySelector('.carousel') as HTMLElement
+  }
+
+  // instrument the carousel: count layout reads, capture scrollLeft writes
+  function instrument(el: HTMLElement): {
+    reads: { width: number; left: number }
+    left: { value: number }
+  } {
+    const reads = { width: 0, left: 0 }
+    const left = { value: -1 }
+    Object.defineProperty(el, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        reads.width++
+        return SCREEN_W
+      },
+    })
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      get: () => {
+        reads.left++
+        return left.value
+      },
+      set: (v: number) => {
+        left.value = v
+      },
+    })
+    return { reads, left }
+  }
+
+  it('dial ticks center the focus in the visible zone (525), not the screen middle', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+
+    // the mount-time measure saw 0 (jsdom, before instrumentation) → the
+    // first tick measures once (the full-screen viewport), then stays
+    // read-free and writes the underflow centering offset
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(reads.width).toBe(1)
+    expect(reads.left).toBe(0)
+    expect(left.value).toBe(dialScrollLeft(50, 25, SCREEN_W, GEO))
+    // ...which is NOT the solid geometry's centering (the target moved from
+    // the screen middle to the visible zone's middle)
+    expect(left.value).not.toBe(dialScrollLeft(50, 25, SCREEN_W))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('clamps to 0 for card 0 and to maxScroll at the end, like the solid path', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { left } = instrument(carouselEl(container))
+
+    // card 1: the first card whose center is not clamped
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={1}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(left.value).toBe(dialScrollLeft(50, 1, SCREEN_W, GEO))
+    expect(left.value).toBeGreaterThan(0)
+
+    // the last card: clamped to the underflow maxScroll (left edge padding
+    // 266 + right edge padding 16, viewport 800)
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={49}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const maxScroll =
+      GEO.leftInset + CAROUSEL_EDGE_PADDING + 50 * CARD_WIDTH + 49 * CARD_GAP - SCREEN_W
+    expect(left.value).toBe(maxScroll)
+
+    // dialing back to the first card clamps to 0
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(left.value).toBe(0)
+  })
+
+  it('re-measures the viewport when the underflow toggles at runtime (re-centering)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    // mount measured 0 (jsdom) and fell back to the native call
+    scrollIntoView.mockClear()
+
+    // runtime toggle to solid: the viewport is re-measured and the focus
+    // re-centers with the plain (no-geometry) arithmetic
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={0}
+      />,
+    )
+    expect(reads.width).toBe(1)
+    expect(left.value).toBe(dialScrollLeft(50, 25, SCREEN_W))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    // and back to translucent: re-measured again, visible-zone geometry
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(reads.width).toBe(2)
+    expect(left.value).toBe(dialScrollLeft(50, 25, SCREEN_W, GEO))
+  })
+
+  it('applies the .underflow class only in underflow mode (the scroll port starts under the glass)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(carouselEl(container).className).toContain('underflow')
+
+    rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} />)
+    expect(carouselEl(container).className).not.toContain('underflow')
+  })
+})
