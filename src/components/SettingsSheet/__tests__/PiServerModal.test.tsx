@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
@@ -1168,7 +1169,7 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
   })
 })
 
-describe('PiServerModal: layout (Bug10-1)', () => {
+describe('PiServerModal: layout (Bug10-1 / Bug51)', () => {
   it('wraps the whole menu in a vertical scroll container (fixed card shell + overflow-y: auto content)', () => {
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     // the card is the fixed shell; .content (overflow-y: auto in
@@ -1180,6 +1181,10 @@ describe('PiServerModal: layout (Bug10-1)', () => {
     expect(card).not.toBeNull()
     expect(content).not.toBeNull()
     expect(content?.parentElement).toBe(card)
+    // Bug51: the scroll container is the ONLY child of the fixed shell —
+    // every block of the menu must scroll with it (nothing may live in the
+    // card outside the scroll container and escape the height cap)
+    expect(Array.from(card!.children)).toEqual([content])
     // the scroll container holds the ENTIRE menu: header (status lines),
     // profile list, credential fields and the action buttons
     expect(content?.textContent).toContain('Raspberry Pi')
@@ -1187,6 +1192,152 @@ describe('PiServerModal: layout (Bug10-1)', () => {
     expect(content?.textContent).toContain('Profil hinzufügen')
     expect(content?.textContent).toContain('Profil entfernen')
     expect(content?.textContent).toContain('Pi automatisch einrichten')
+  })
+
+  // Bug51: on the 800x480 device the card is capped by the max-height chain
+  // (backdrop 100vh → card max-height calc(100% - $s-6)). Inside the capped
+  // card the .content block shrinks to the available height (flex: 1 1 auto
+  // + min-height: 0) — and then its direct children must keep their content
+  // height (flex-shrink: 0, the SettingsList .row rule). With the default
+  // flex-shrink: 1 the blocks were compressed BELOW their content height
+  // instead: labels painted on the inputs, the action buttons on the
+  // focused password input, and the scrollHeight never exceeded the
+  // clientHeight so overflow-y: auto never kicked in (no scroll). jsdom
+  // does not compute class-based styles, so the fix is pinned in the
+  // stylesheet source (same pattern as the bug43 min-height pin in
+  // SettingsList.test.tsx — the CSS pipeline intercepts .scss imports).
+  it('pins the CR69 scroll chain in the stylesheet: capped shell, overflow content, non-shrinking blocks, margin spacing, no raw gap', () => {
+    // read from disk: vitest's CSS pipeline intercepts .scss imports, so
+    // the file is the only observable form of the rules
+    const scss = readFileSync('src/components/SettingsSheet/PiServerModal.module.scss', 'utf8')
+    // extract a top-level block (brace-balanced — .content nests its child
+    // selector)
+    const block = (selector: string): string => {
+      const start = scss.indexOf(`.${selector} {`)
+      expect(start, `${selector} block missing`).toBeGreaterThanOrEqual(0)
+      let depth = 0
+      let end = -1
+      for (let i = start; i < scss.length; i++) {
+        if (scss[i] === '{') depth += 1
+        else if (scss[i] === '}') {
+          depth -= 1
+          if (depth === 0) {
+            end = i
+            break
+          }
+        }
+      }
+      expect(end, `${selector} block unbalanced`).toBeGreaterThanOrEqual(0)
+      return scss.slice(start, end + 1)
+    }
+    // the fixed shell: height-capped, and it does NOT scroll itself
+    // (Bug10-1 contract — the overflow lives in .content)
+    const card = block('card')
+    expect(card).toContain('max-height: calc(100% - #{$s-6});')
+    expect(card).not.toContain('overflow')
+    // the scroll container: capped flex child with overflow (Bug10-1) and
+    // the Bug51 rule — its direct children never shrink, so they keep
+    // their content height and the overflow (with it the scroll) happens
+    const content = block('content')
+    expect(content).toContain('flex: 1 1 auto;')
+    expect(content).toContain('min-height: 0;')
+    expect(content).toContain('overflow-y: auto;')
+    expect(content).toMatch(/> \* \{\s*flex-shrink: 0;\s*\}/)
+    // CR69/Bug49: vertical spacing is margin-based (flex-gap-y) — no raw
+    // flex `gap` anywhere in the module (Chromium 69 ignores it)
+    expect(scss).not.toMatch(/gap\s*:/)
+  })
+
+  // Bug51: the complete block chain inside the scroll container — every
+  // block of the menu is a DIRECT child of .content in visual order (with
+  // one profile: header, profile list, the four credential fields, both
+  // action rows, the setup button, the danger button). Normal document
+  // flow only: this is what keeps the blocks from rendering on top of
+  // each other when the content exceeds the 480px display height.
+  it('renders the complete block chain as direct children of the scroll container in visual order', () => {
+    updateSettings({
+      piProfiles: [
+        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+      ],
+      activePiId: 'pi-1',
+    })
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    const content = document.querySelector('.content')
+    expect(content).not.toBeNull()
+    // className strings can carry the template literal's trailing space —
+    // normalize before comparing the class chain
+    const classes = (el: Element) => el.className.split(' ').filter(Boolean).join(' ')
+    expect(Array.from(content!.children).map(classes)).toEqual([
+      'header',
+      'profileList',
+      'field',
+      'field',
+      'field',
+      'field',
+      'profileActions',
+      'actions',
+      'btn btnPrimary',
+      'btn btnDanger btnDangerFull',
+    ])
+    // the empty list state renders the same chain (the "Kein Pi
+    // konfiguriert" hint is inside the list block, not a new top-level
+    // block) — the danger button leaves with the empty list
+    act(() => {
+      updateSettings({ piProfiles: [], activePiId: null })
+    })
+    expect(Array.from(content!.children).map(classes)).toEqual([
+      'header',
+      'profileList',
+      'field',
+      'field',
+      'field',
+      'field',
+      'profileActions',
+      'actions',
+      'btn btnPrimary',
+    ])
+  })
+
+  // Bug51: the header status lines (mode line, session line, key line) are
+  // a plain vertical STACK of direct children in document order — the
+  // reported collision ("Getrennt (Standalone)" / "Getrennt" /
+  // "Passwort-Login erforderlich" / "Kein Pi konfiguriert" overlapping) is
+  // the compressed-shrink artifact; with the blocks in normal flow inside
+  // the header (and the header as a non-shrinking child of the scroll
+  // container) the lines can only stack, never overlap.
+  it('stacks the header status lines in document order inside the scroll container', async () => {
+    server.use(
+      http.get('*/api/setup-pi/status', () =>
+        HttpResponse.json({ state: 'idle', key_installed: false }),
+      ),
+      http.get('*/api/pi/status', () => HttpResponse.json({ conn: 'disconnected' })),
+    )
+    render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
+    // all three status lines render (mode line is the standalone default)
+    await screen.findByText('Getrennt (Standalone)')
+    await screen.findByText('Passwort-Login erforderlich')
+    await screen.findByText('Getrennt')
+    const content = document.querySelector('.content')
+    const header = document.querySelector('.header')
+    expect(header).not.toBeNull()
+    // the header scrolls WITH the menu (direct child of the scroll
+    // container — nothing is pinned above it)
+    expect(header!.parentElement).toBe(content)
+    const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING
+    const titleRow = header!.querySelector('.titleRow')
+    const status = header!.querySelector('.status')
+    const piLine = header!.querySelector('.piLine')
+    const keyLine = header!.querySelector('.keyLine')
+    // titleRow → mode line → session line → key line, in exactly this
+    // order (the `?? 0` guards the querySelector results: a missing node
+    // fails the bit test instead of tripping TS2532 on the `&`)
+    expect((titleRow?.compareDocumentPosition(status!) ?? 0) & FOLLOWING).toBeTruthy()
+    expect((status?.compareDocumentPosition(piLine!) ?? 0) & FOLLOWING).toBeTruthy()
+    expect((piLine?.compareDocumentPosition(keyLine!) ?? 0) & FOLLOWING).toBeTruthy()
+    for (const el of [titleRow, status, piLine, keyLine]) {
+      expect(el).not.toBeNull()
+      expect(el!.parentElement).toBe(header)
+    }
   })
 
   it('keeps header, credential fields and buttons in document-flow order inside the scroll container (no overlap structure)', () => {
