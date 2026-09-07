@@ -14,6 +14,16 @@
   overflow: hidden;
 }
 
+// bug54: translucent menu background — semi-transparent overlay so the
+// carousel cards sliding under the sidebar stay partially visible (the
+// ticket's Nocturne reference). NO backdrop-filter: the target Chromium 69
+// has no backdrop-filter (Chrome 76+) — the ticket's explicit fallback is a
+// clean semi-transparent color. The solid mode keeps the 0.95 background
+// above (this class only overrides it).
+.glass {
+  background: rgba(18, 18, 18, 0.65);
+}
+
 .item {
   position: relative;
   display: flex;

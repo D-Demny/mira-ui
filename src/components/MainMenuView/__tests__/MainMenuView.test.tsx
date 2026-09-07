@@ -2265,11 +2265,16 @@ describe('MainMenuView', () => {
       expect(screen.getByText('Brightness').closest('[role="button"]')?.className).toContain(
         'rowFocused',
       )
-      wheel(-10) // value stays clamped, the focus clamps on the row
-      expect(getSettings().brightness).toBe(10)
-      expect(screen.getByText('Brightness').closest('[role="button"]')?.className).toContain(
-        'rowFocused',
-      )
+      wheel(-10) // value stays clamped, the focus moves on to the appended
+      // 'Menü-Hintergrund' row (bug54: the row is APPENDED — index 5, the
+      // old end-of-list was Brightness)
+      expect(
+        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
+      ).toContain('rowFocused')
+      wheel(-10) // at the new end of the list: the focus clamps on the row
+      expect(
+        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
+      ).toContain('rowFocused')
     })
 
     it('the wheel never changes the level while auto is on (row navigation stays)', async () => {
@@ -2288,11 +2293,12 @@ describe('MainMenuView', () => {
         'rowFocused',
       )
       wheel(-10) // back to Brightness
+      wheel(-10) // to the appended 'Menü-Hintergrund' row (bug54)
       wheel(-10) // at the end of the list: the focus stays on the row
       expect(getSettings().brightness).toBe(5)
-      expect(screen.getByText('Brightness').closest('[role="button"]')?.className).toContain(
-        'rowFocused',
-      )
+      expect(
+        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
+      ).toContain('rowFocused')
     })
 
     it('the slider drag stays locked while auto is on and adjusts the level when auto is off', async () => {
@@ -2371,6 +2377,83 @@ describe('MainMenuView', () => {
 
       confirmDial() // leave adjust mode again
       expect(row()?.className).not.toContain('rowAdjusting')
+    })
+  })
+
+  describe('bug54: configurable menu background (solid black / translucent glass)', () => {
+    // the 'Menü-Hintergrund' row is APPENDED to the 'Settings' sub-level
+    // (Einstellungen → Settings, index 5) — existing row indices stay stable
+    function toSidebarBackgroundRow() {
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+    }
+
+    it('renders the "Menü-Hintergrund" row last in the sub-level with the default value', async () => {
+      render(<MainMenuView />)
+      toSidebarBackgroundRow()
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10) // 'Menü-Hintergrund' (5, the new last row)
+
+      const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
+      expect(row).not.toBeNull()
+      expect(row?.textContent).toContain('Schwarz')
+    })
+
+    it('confirming the row toggles the store, the row value, and the view modifiers', async () => {
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+      const nav = container.querySelector('nav') as HTMLElement
+      expect(view.className).not.toContain('viewTranslucent')
+      expect(nav.className).not.toContain('glass')
+
+      toSidebarBackgroundRow()
+      await screen.findByText('Settings')
+      confirmDial() // sub-level
+      for (let i = 0; i < 5; i++) wheel(-10) // to 'Menü-Hintergrund' (5)
+      confirmDial()
+
+      expect(getSettings().sidebarBackground).toBe('translucent')
+      const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
+      expect(row?.textContent).toContain('Durchsichtig')
+      // the view root and the sidebar carry the translucent modifiers
+      expect(view.className).toContain('viewTranslucent')
+      expect(nav.className).toContain('glass')
+
+      confirmDial() // back to solid
+      expect(getSettings().sidebarBackground).toBe('solid')
+      expect(row?.textContent).toContain('Schwarz')
+      expect(view.className).not.toContain('viewTranslucent')
+      expect(nav.className).not.toContain('glass')
+    })
+
+    it('hands the underflow geometry to the carousel in translucent mode (and removes it in solid mode)', async () => {
+      updateSettings({ sidebarBackground: 'translucent' })
+      const { container } = render(<MainMenuView />)
+      // the Home carousel is rendered — the underflow padding puts the scroll
+      // port under the sidebar (the .underflow modifier)
+      const carousel = container.querySelector('.carousel') as HTMLElement
+      expect(carousel).not.toBeNull()
+      expect(carousel.className).toContain('underflow')
+
+      act(() => {
+        updateSettings({ sidebarBackground: 'solid' })
+      })
+      expect((container.querySelector('.carousel') as HTMLElement).className).not.toContain(
+        'underflow',
+      )
+    })
+
+    it('the settings list wrapper gets the underflow inset in translucent mode', async () => {
+      updateSettings({ sidebarBackground: 'translucent' })
+      const { container } = render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
+      expect(list.parentElement?.className).toContain('settingsUnderflow')
     })
   })
 

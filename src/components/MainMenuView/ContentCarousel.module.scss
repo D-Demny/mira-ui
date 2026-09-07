@@ -25,6 +25,17 @@ $card-art-size: 170px;
   }
 }
 
+// bug54: translucent menu background — the carousel viewport spans the FULL
+// screen (the content pane slides under the sidebar, MainMenuView.module
+// .scss), so the left edge padding becomes the sidebar width + the regular
+// edge padding: the first card's rest position sits just right of the
+// sidebar, and the scroll port starts under the glass. $sidebar-width is the
+// SCSS source of truth (styles/_variables.scss; keep in sync with
+// SIDEBAR_WIDTH in carouselWindow.ts).
+.underflow {
+  padding-left: $sidebar-width + $s-4;
+}
+
 // bug5/bug6: invisible placeholder for the off-screen cards — keeps the
 // total scroll width identical to the unwindowed layout
 .spacer {

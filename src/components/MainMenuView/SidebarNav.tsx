@@ -8,11 +8,22 @@ interface SidebarNavProps {
   onSelect: (id: string) => void
   // index of the dial-focused item (rendered with a focus outline)
   focusedIndex?: number
+  // bug54: translucent menu background — the nav switches to the semi-
+  // transparent glass overlay (cards slide underneath), instead of the
+  // opaque solid mask
+  glass?: boolean
 }
 
-export function SidebarNav({ categories, activeId, onSelect, focusedIndex }: SidebarNavProps) {
+export function SidebarNav({
+  categories,
+  activeId,
+  onSelect,
+  focusedIndex,
+  glass = false,
+}: SidebarNavProps) {
+  const navClass = glass ? `${styles.sidebar} ${styles.glass}` : styles.sidebar
   return (
-    <nav className={styles.sidebar} aria-label="Hauptmenü">
+    <nav className={navClass} aria-label="Hauptmenü">
       {categories.map((category, index) => {
         const active = category.id === activeId
         const focused = index === focusedIndex

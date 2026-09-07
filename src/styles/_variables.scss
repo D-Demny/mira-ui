@@ -2,6 +2,12 @@
 $screen-width: 800px;
 $screen-height: 480px;
 
+// bug54: the main-menu sidebar width — the single SCSS source of truth for
+// the translucent underflow geometry (content pane sliding under the
+// sidebar). Keep in sync with SIDEBAR_WIDTH in
+// components/MainMenuView/carouselWindow.ts
+$sidebar-width: 250px;
+
 // layout
 $pad-x: 24px;
 $pad-y: 24px;

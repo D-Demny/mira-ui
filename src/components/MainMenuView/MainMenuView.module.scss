@@ -63,8 +63,9 @@
 .sidebarPane {
   position: relative;
   z-index: 20;
-  // the carousel viewport starts exactly at this width (bug21)
-  width: 250px;
+  // the carousel viewport starts exactly at this width (bug21); $sidebar-width
+  // is the SCSS source of truth for the bug54 underflow geometry
+  width: $sidebar-width;
   flex-shrink: 0;
   box-sizing: border-box;
 }
@@ -78,6 +79,34 @@
   // the pane's left edge (250px, the sidebar width; no negative margins) and
   // nothing renders beyond it
   overflow: hidden;
+}
+
+// bug54: translucent menu background — the content pane slides under the
+// sidebar: the negative margin pulls its left edge back to the screen's left
+// (x=0..800 instead of x=250..800), so the pane's overflow:hidden clips at
+// the SCREEN edge instead of the sidebar's right edge and the carousel can
+// scroll under the glass. The sidebar keeps z-index 20, so it paints above
+// the pane.
+.viewTranslucent {
+  .contentPane {
+    margin-left: -$sidebar-width;
+  }
+}
+
+// bug54: the vertical settings list must never slide under the glass — in
+// translucent mode the content pane spans the full screen, so the list keeps
+// a left inset of the sidebar width. The wrapper is display:contents (the
+// target Chromium 69 supports it) so the solid-mode DOM and layout stay
+// untouched.
+.settingsWrap {
+  display: contents;
+}
+
+.settingsUnderflow {
+  display: block;
+  height: 100%;
+  padding-left: $sidebar-width;
+  box-sizing: border-box;
 }
 
 // swipe focus panes: dim the inactive pane so the focus position is visible

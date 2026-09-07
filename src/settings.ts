@@ -40,6 +40,10 @@ export interface Settings {
   // capability poll (the only ambient Pi activity). Creating a new profile
   // clears it again (explicit re-opt-in — see useMiraServer.retarget).
   hybridDisabled: boolean
+  // bug54: the main-menu sidebar background — 'solid' (opaque black,
+  // default) or 'translucent' (semi-transparent glass the carousel slides
+  // under)
+  sidebarBackground: 'solid' | 'translucent'
 }
 
 export const VOLUME_STEP_MIN = 1
@@ -88,6 +92,7 @@ const DEFAULTS: Settings = {
   piProfiles: [],
   activePiId: null,
   hybridDisabled: false,
+  sidebarBackground: 'solid',
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -225,6 +230,11 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     // separate step; no schema version bump — additive field, old builds
     // ignore unknown keys).
     hybridDisabled: partial?.hybridDisabled === true,
+    // bug54: strict like keyInstalled — only the exact 'translucent' string
+    // selects the glass mode. Anything else (hand-edited blobs with foreign
+    // values, blobs predating the field) coerces to 'solid'.
+    sidebarBackground:
+      partial?.sidebarBackground === 'translucent' ? 'translucent' : 'solid',
   }
 }
 
