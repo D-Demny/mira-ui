@@ -13,6 +13,7 @@ import {
   fetchHaEntityState,
   humanizeEntityLabel,
   lightCapabilities,
+  setHaLightBrightness,
   toHomeEntityCatalog,
   toggleHaEntity,
 } from '../homeassistant'
@@ -89,6 +90,69 @@ describe('homeassistant api', () => {
       ),
     )
     await expect(toggleHaEntity('light.3er_stehlampe_gold_esszimmer')).rejects.toThrow(/404|401/)
+  })
+
+  // bug56: 0 % (or negative) must switch the light OFF via light.turn_off —
+  // the old code clamped to Math.max(1, …) and sent turn_on brightness_pct: 1
+  describe('setHaLightBrightness (bug56)', () => {
+    it('sends light.turn_off with only { entity_id } for 0 % and negative values', async () => {
+      const off: unknown[] = []
+      const on: unknown[] = []
+      server.use(
+        http.post('*/ha-api/services/light/turn_off', async ({ request }) => {
+          off.push(await request.json())
+          return HttpResponse.json([
+            { entity_id: 'light.livingroom', state: 'off', attributes: {} },
+          ])
+        }),
+        http.post('*/ha-api/services/light/turn_on', async ({ request }) => {
+          on.push(await request.json())
+          return HttpResponse.json([
+            { entity_id: 'light.livingroom', state: 'on', attributes: {} },
+          ])
+        }),
+      )
+      const offResult = await setHaLightBrightness('light.livingroom', 0)
+      expect(off).toEqual([{ entity_id: 'light.livingroom' }])
+      expect(on).toEqual([]) // the old bug: turn_on with brightness_pct: 1
+      expect(offResult[0]?.state).toBe('off')
+
+      await setHaLightBrightness('light.livingroom', -3)
+      expect(off).toEqual([
+        { entity_id: 'light.livingroom' },
+        { entity_id: 'light.livingroom' },
+      ])
+      expect(on).toEqual([])
+    })
+
+    it('keeps light.turn_on with brightness_pct for 1–100 %', async () => {
+      const off: unknown[] = []
+      const on: unknown[] = []
+      server.use(
+        http.post('*/ha-api/services/light/turn_on', async ({ request }) => {
+          on.push(await request.json())
+          return HttpResponse.json([
+            { entity_id: 'light.livingroom', state: 'on', attributes: {} },
+          ])
+        }),
+        http.post('*/ha-api/services/light/turn_off', async ({ request }) => {
+          off.push(await request.json())
+          return HttpResponse.json([
+            { entity_id: 'light.livingroom', state: 'off', attributes: {} },
+          ])
+        }),
+      )
+      await setHaLightBrightness('light.livingroom', 5)
+      expect(on).toEqual([{ entity_id: 'light.livingroom', brightness_pct: 5 }])
+      expect(off).toEqual([])
+
+      await setHaLightBrightness('light.livingroom', 100)
+      expect(on).toEqual([
+        { entity_id: 'light.livingroom', brightness_pct: 5 },
+        { entity_id: 'light.livingroom', brightness_pct: 100 },
+      ])
+      expect(off).toEqual([])
+    })
   })
 
   describe('fetchHaEntityList (ticket 9.3)', () => {

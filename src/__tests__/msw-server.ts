@@ -113,6 +113,20 @@ export const server = setupServer(
       },
     ])
   }),
+  // bug56: light.turn_off (the 0 % slider commit) — echo the requested entity
+  // back with state 'off'. Declared AFTER light/turn_on and BEFORE the generic
+  // services catch-all below so it keeps first-match precedence (MSW takes the
+  // first matching handler in registration order)
+  http.post('*/ha-api/services/light/turn_off', async ({ request }) => {
+    const body = (await request.json()) as { entity_id?: string }
+    return HttpResponse.json([
+      {
+        entity_id: body.entity_id ?? 'light.3er_stehlampe_gold_esszimmer',
+        state: 'off',
+        attributes: {},
+      },
+    ])
+  }),
   // ticket 9.3: the entity catalog (GET /states) — declared AFTER the specific
   // light.* handler above so that one keeps first-match precedence (MSW takes
   // the first matching handler)

@@ -140,10 +140,13 @@ export function setHaLightBrightness(
   pct: number,
   signal?: AbortSignal,
 ): Promise<HaEntityState[]> {
-  // turn_on cannot express "off": brightness_pct is 1–100, so the modal's
-  // 0 % slider position maps to the minimum 1 %
-  const value = Math.max(1, Math.min(100, Math.round(pct)))
-  return callHaLightService(entityId, { brightness_pct: value }, signal)
+  // bug56: 0 % (or a negative value) must switch the light OFF — turn_on
+  // cannot express "off" (brightness_pct is bounded 1–100), so the modal's
+  // 0 % slider position routes to light.turn_off with only { entity_id };
+  // 1–100 % stays on light.turn_on with brightness_pct (capped at 100)
+  const value = Math.round(pct)
+  if (value <= 0) return callHaService('light', 'turn_off', { entity_id: entityId }, signal)
+  return callHaLightService(entityId, { brightness_pct: Math.min(100, value) }, signal)
 }
 
 export function setHaLightColorTemp(
