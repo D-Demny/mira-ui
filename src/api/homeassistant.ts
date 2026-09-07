@@ -281,16 +281,36 @@ export function toHomeEntityCatalog(raw: Record<string, HaEntityState>): HaEntit
 // ticket 9.3: the full state catalog (GET /states via the daemon proxy)
 // bug53: the dedicated CATALOG_TIMEOUT_MS budget (larger than the single-state
 // HA_TIMEOUT_MS, see above)
+// bug55: HA answers GET /api/states with a JSON ARRAY of
+// {entity_id, state, attributes} entries (verified on the device: HTTP 200,
+// 576,624 B, 1,186 entries) — the old guard rejected arrays, so every
+// successful catalog fetch deterministically threw 'invalid entity list'.
+// The array is normalized into the entity_id-keyed map the catalog consumers
+// expect (toHomeEntityCatalog iterates the map's keys); an empty array is a
+// legal (empty) catalog, a non-array body or an entry without a valid
+// entity_id is a contract violation.
 export async function fetchHaEntityList(
   signal?: AbortSignal,
 ): Promise<Record<string, HaEntityState>> {
   const res = await haFetch('/states', {}, signal, CATALOG_TIMEOUT_MS)
   if (!res.ok) throw new Error(`home assistant ${res.status}`)
   const body = (await safeJson(res)) as unknown
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+  if (!Array.isArray(body)) {
     throw new Error('invalid entity list')
   }
-  return body as Record<string, HaEntityState>
+  const map: Record<string, HaEntityState> = {}
+  for (const entry of body) {
+    if (
+      !entry ||
+      typeof entry !== 'object' ||
+      typeof entry.entity_id !== 'string' ||
+      entry.entity_id.length === 0
+    ) {
+      throw new Error('invalid entity list')
+    }
+    map[entry.entity_id] = entry as HaEntityState
+  }
+  return map
 }
 
 // ticket 9.3: the activation service per controllable domain — scenes can
