@@ -144,7 +144,7 @@ describe('useHomeEntities', () => {
         server.use(
           http.get('*/ha-api/states', () => {
             calls += 1
-            return HttpResponse.json({ [SWITCH]: { entity_id: SWITCH, state: 'off' } })
+            return HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]) // bug55: HA array contract
           }),
         )
         const first = renderHook(() => useHomeEntityCatalog())
@@ -173,7 +173,7 @@ describe('useHomeEntities', () => {
       server.use(
         http.get('*/ha-api/states', () => {
           calls += 1
-          return HttpResponse.json({ [SWITCH]: { entity_id: SWITCH, state: 'off' } })
+          return HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]) // bug55: HA array contract
         }),
       )
       const { result } = renderHook(() => useHomeEntityCatalog())
@@ -197,7 +197,7 @@ describe('useHomeEntities', () => {
           calls += 1
           return failing
             ? HttpResponse.json({ message: 'boom' }, { status: 500 })
-            : HttpResponse.json({ [SWITCH]: { entity_id: SWITCH, state: 'off' } })
+            : HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]) // bug55: HA array contract
         }),
       )
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -241,7 +241,7 @@ describe('useHomeEntities', () => {
         http.get('*/ha-api/states', () =>
           fail
             ? HttpResponse.json({ message: 'boom' }, { status: 500 })
-            : HttpResponse.json({ [SWITCH]: { entity_id: SWITCH, state: 'off' } }),
+            : HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]) // bug55: HA array contract,
         ),
       )
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

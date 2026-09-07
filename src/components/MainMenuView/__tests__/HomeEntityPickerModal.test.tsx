@@ -165,8 +165,10 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     await waitFor(() => expect(calls).toBe(2))
     await waitFor(() => expect(screen.getByText('home assistant 502')).toBeInTheDocument())
 
-    // the endpoint heals → the next retry loads the catalog
-    server.use(http.get('*/ha-api/states', () => HttpResponse.json({})))
+    // the endpoint heals → the next retry loads the catalog (bug55: the real
+    // HA contract is an array — [] = valid empty catalog, {} would be a
+    // contract violation)
+    server.use(http.get('*/ha-api/states', () => HttpResponse.json([])))
     fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
     await waitFor(() =>
       expect(screen.getByText('Keine steuerbaren Entitäten gefunden')).toBeInTheDocument(),
@@ -214,7 +216,8 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     // here — the immediate MSW answer settles on microtasks, not on the fake
     // clock, and findBy* would hang under fake timers anyway)
     vi.useRealTimers()
-    server.use(http.get('*/ha-api/states', () => HttpResponse.json({})))
+    // bug55: [] = valid (empty) HA array contract
+    server.use(http.get('*/ha-api/states', () => HttpResponse.json([])))
     fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
     await screen.findByText('Keine steuerbaren Entitäten gefunden')
   })

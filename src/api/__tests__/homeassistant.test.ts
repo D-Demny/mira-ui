@@ -103,11 +103,62 @@ describe('homeassistant api', () => {
       expect(list['sensor.temperatur_wohnzimmer']?.state).toBe('21.5')
     })
 
-    it('rejects non-object bodies', async () => {
+    // bug55: HA's REAL contract is a JSON array — a well-formed array must be
+    // accepted and normalized into the entity_id-keyed map (the old test
+    // asserted the opposite: that an array body must throw)
+    it('accepts HA\'s JSON array contract and normalizes it to the entity_id map', async () => {
       server.use(
-        http.get('*/ha-api/states', () => HttpResponse.json(['light.a', 'light.b'])),
+        http.get('*/ha-api/states', () =>
+          HttpResponse.json([
+            { entity_id: 'light.a', state: 'on', attributes: { friendly_name: 'A' } },
+            { entity_id: 'switch.b', state: 'off' },
+          ]),
+        ),
+      )
+      const list = await fetchHaEntityList()
+      expect(list).toEqual({
+        'light.a': { entity_id: 'light.a', state: 'on', attributes: { friendly_name: 'A' } },
+        'switch.b': { entity_id: 'switch.b', state: 'off' },
+      })
+    })
+
+    it('maps an empty array to an empty catalog without error', async () => {
+      server.use(http.get('*/ha-api/states', () => HttpResponse.json([])))
+      await expect(fetchHaEntityList()).resolves.toEqual({})
+    })
+
+    // bug55: the shape guard now rejects NON-array bodies — an object map (the
+    // old, wrong fixture contract) must throw
+    it('rejects a non-array object body', async () => {
+      server.use(
+        http.get('*/ha-api/states', () =>
+          HttpResponse.json({ 'light.a': { entity_id: 'light.a', state: 'on' } }),
+        ),
       )
       await expect(fetchHaEntityList()).rejects.toThrow('invalid entity list')
+    })
+
+    it('rejects an array containing an entry without a valid entity_id', async () => {
+      for (const badEntry of [null, 42, { state: 'on' }, { entity_id: '' }]) {
+        server.use(
+          http.get('*/ha-api/states', () =>
+            HttpResponse.json([{ entity_id: 'light.a', state: 'on' }, badEntry]),
+          ),
+        )
+        await expect(fetchHaEntityList()).rejects.toThrow('invalid entity list')
+      }
+    })
+
+    it('maps a non-JSON (HTML error page) body to a clean error', async () => {
+      server.use(
+        http.get('*/ha-api/states', () =>
+          new HttpResponse('<html>502 Bad Gateway</html>', {
+            status: 200,
+            headers: { 'content-type': 'text/html' },
+          }),
+        ),
+      )
+      await expect(fetchHaEntityList()).rejects.toThrow(/Expected JSON but got text\/html/)
     })
 
     it('throws on a non-ok response', async () => {
@@ -142,7 +193,8 @@ describe('homeassistant api', () => {
       server.use(
         http.get('*/ha-api/states', async () => {
           await new Promise((resolve) => setTimeout(resolve, 6000))
-          return HttpResponse.json({ 'switch.b': { entity_id: 'switch.b', state: 'off' } })
+          // bug55: real HA contract — a JSON array, not an object map
+          return HttpResponse.json([{ entity_id: 'switch.b', state: 'off' }])
         }),
       )
       const pending = fetchHaEntityList()

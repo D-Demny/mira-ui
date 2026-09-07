@@ -5,52 +5,62 @@ import { HOME_LIGHTS } from '@/hooks/useHomeLight'
 // ticket 9.3: default catalog fixture — the 9 curated lights (friendly_names
 // MUST stay in sync with the HOME_LIGHTS labels — the MainMenuView tests
 // expect e.g. '3er Stehlampe Gold'), one entity per other controllable
-// domain, plus a sensor that the catalog filter must drop
-function homeEntityCatalogFixture(): Record<string, unknown> {
-  const body: Record<string, unknown> = {}
+// domain, plus a sensor that the catalog filter must drop.
+// bug55: shaped like the REAL HA GET /api/states response — a JSON ARRAY of
+// {entity_id, state, attributes} entries (NOT an entity_id-keyed map)
+function homeEntityCatalogFixture(): Array<{
+  entity_id: string
+  state: string
+  attributes: Record<string, unknown>
+}> {
+  const body: Array<{
+    entity_id: string
+    state: string
+    attributes: Record<string, unknown>
+  }> = []
   for (const light of HOME_LIGHTS) {
-    body[light.entityId] = {
+    body.push({
       entity_id: light.entityId,
       state: 'off',
       attributes: { friendly_name: light.label, supported_color_modes: ['color_temp', 'xy'] },
-    }
+    })
   }
-  body['switch.wasserpumpe'] = {
+  body.push({
     entity_id: 'switch.wasserpumpe',
     state: 'off',
     attributes: { friendly_name: 'Wasserpumpe' },
-  }
-  body['scene.abendstimmung'] = {
+  })
+  body.push({
     entity_id: 'scene.abendstimmung',
     state: 'none',
     attributes: { friendly_name: 'Abendstimmung' },
-  }
-  body['fan.wohnzimmer'] = {
+  })
+  body.push({
     entity_id: 'fan.wohnzimmer',
     state: 'off',
     attributes: { friendly_name: 'Lüfter Wohnzimmer' },
-  }
-  body['media_player.wohnzimmer'] = {
+  })
+  body.push({
     entity_id: 'media_player.wohnzimmer',
     state: 'idle',
     attributes: { friendly_name: 'TV Wohnzimmer' },
-  }
-  body['cover.garage'] = {
+  })
+  body.push({
     entity_id: 'cover.garage',
     state: 'closed',
     attributes: { friendly_name: 'Garagentor' },
-  }
-  body['input_boolean.nachtmodus'] = {
+  })
+  body.push({
     entity_id: 'input_boolean.nachtmodus',
     state: 'off',
     attributes: { friendly_name: 'Nachtmodus' },
-  }
+  })
   // must be filtered out by the catalog (not a controllable domain)
-  body['sensor.temperatur_wohnzimmer'] = {
+  body.push({
     entity_id: 'sensor.temperatur_wohnzimmer',
     state: '21.5',
     attributes: { friendly_name: 'Temperatur Wohnzimmer' },
-  }
+  })
   return body
 }
 
