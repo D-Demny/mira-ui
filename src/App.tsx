@@ -43,6 +43,7 @@ import { useConnectDevices } from '@/hooks/useConnectDevices'
 import { useControls } from '@/hooks/useControls'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
 import { useKnownDevices } from '@/hooks/useKnownDevices'
+import { useLyrics } from '@/hooks/useLyrics'
 import { useNavigation } from '@/navigation/navigationContext'
 import { useNotify } from '@/notify/notifyContext'
 import { useObserver } from '@/hooks/useObserver'
@@ -351,6 +352,32 @@ export default function App() {
   )
 
   const showLyrics = forced === 'playing-no-lyrics' ? false : showLyricsReal
+  // live status when active otherwise the last playing (computed before the lyrics
+  // hook below so both read the same status)
+  const playerStatus = status && status.active ? status : reconnecting ? heldStatus : null
+  // bug52: the split-view vs. standard-layout decision needs the real lyrics state,
+  // so the fetch is hoisted from the Lyrics component into its layout owner (App).
+  // The Lyrics component renders this state and only fetches on its own when none is
+  // passed (single source of truth, no double fetch per track)
+  const lyricsState = useLyrics({
+    trackId: playerStatus?.track_id || null,
+    trackName: playerStatus?.track_name ?? '',
+    artist: playerStatus?.track_artist ?? '',
+    album: playerStatus?.track_album,
+    durationMs: playerStatus?.duration,
+    episode: playerStatus ? playerStatus.track_uri.startsWith('spotify:episode:') : false,
+    enabled: showLyrics,
+    karaoke: settings.karaokeLyrics,
+  })
+  // bug52: the split lyrics layout only renders when lyrics actually exist. A track
+  // without lyrics (404, empty result, fetch error) — or while the fetch is still in
+  // flight — falls back to the standard full-width layout, exactly like the layout
+  // "Show lyrics" OFF renders
+  const hasLyrics =
+    lyricsState.error === null &&
+    lyricsState.lyrics !== null &&
+    lyricsState.lyrics.lines.length > 0
+  const renderLyricsLayout = showLyrics && hasLyrics && !lyricsState.loading
   const menuOpen = forced === 'menu' ? true : menuOpenReal
   const powerMenuOpen = forced === 'power-menu' ? true : powerMenuOpenReal
   const btMenuOpen = forced === 'bluetooth-menu' ? true : btMenuOpenReal
@@ -1280,8 +1307,6 @@ export default function App() {
     }
   }
 
-  // live status when active otherwise the last playing
-  const playerStatus = status && status.active ? status : reconnecting ? heldStatus : null
   if (!playerStatus || !playerStatus.active) return null
   const isPodcast = playerStatus.track_uri.startsWith('spotify:episode:')
 
@@ -1313,7 +1338,7 @@ export default function App() {
           {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
           <div className={styles.stage} ref={stageRef}>
             <div
-              className={`${styles.viewLayer} ${showLyrics ? styles.viewActive : styles.viewInactive}`}
+              className={`${styles.viewLayer} ${renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
             >
               <div className={styles.top}>
                 <div
@@ -1323,17 +1348,22 @@ export default function App() {
                   <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
                 </div>
                 <div className={styles.right}>
-                  <Lyrics status={playerStatus} onSeek={handleSeek} active={showLyrics} />
+                  <Lyrics
+                    status={playerStatus}
+                    onSeek={handleSeek}
+                    active={renderLyricsLayout}
+                    lyricsState={lyricsState}
+                  />
                 </div>
               </div>
             </div>
             <div
-              className={`${styles.viewLayer} ${!showLyrics ? styles.viewActive : styles.viewInactive}`}
+              className={`${styles.viewLayer} ${!renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
             >
               <div
                 className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
               >
-                <NoLyricsView status={playerStatus} active={!showLyrics} artSize={heroArtSize} />
+                <NoLyricsView status={playerStatus} active={!renderLyricsLayout} artSize={heroArtSize} />
               </div>
             </div>
           </div>

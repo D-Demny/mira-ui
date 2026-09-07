@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import { darkBg, useColorExtract, type RGB } from '@/hooks/useColorExtract'
 import { useActiveLine } from '@/hooks/useActiveLine'
 import { useLyricStarts, useLyrics } from '@/hooks/useLyrics'
+import type { LyricsState } from '@/hooks/useLyrics'
 import { useSettings } from '@/settings'
 import { effectiveLyricsScale, getUiScaleY, useUiScale } from '@/uiScale'
 import type { LyricsWord, ObserverStatusActive } from '@/api/types'
@@ -73,6 +74,11 @@ interface Props {
   status: ObserverStatusActive
   onSeek?: (positionMs: number) => void
   active?: boolean
+  // bug52: when the layout owner (App) passes the shared lyrics state, it decides
+  // the split-view vs. standard-layout switch from it; the component then only
+  // renders it instead of fetching on its own (single source of truth, no double
+  // fetch). Without it (standalone usage, unit tests) the internal hook runs as before
+  lyricsState?: LyricsState
 }
 
 type LineVariant = 'active' | 'adjacent' | 'far' | 'unsynced'
@@ -126,23 +132,26 @@ const LyricLine = memo(function LyricLine({
   )
 })
 
-function LyricsImpl({ status, onSeek, active = true }: Props) {
+function LyricsImpl({ status, onSeek, active = true, lyricsState }: Props) {
   const isPodcast = status.track_uri.startsWith('spotify:episode:')
   const { lyricOffsetMs, karaokeLyrics } = useSettings()
   // touch and wheel deltas arrive in viewport space; the scroll offset below is layout
   // space. they only agree at 100%. the hook value is here to re-run the measuring
   // effects; the handlers read the vertical scale directly at event time
   const uiScale = useUiScale()
-  const { lyrics, loading, error } = useLyrics({
+  // bug52: the fetch is disabled while the parent supplies the shared state (App owns
+  // it for the layout decision) — the hook stays mounted for the unconditional-call rule
+  const internalState = useLyrics({
     trackId: status.track_id || null,
     trackName: status.track_name,
     artist: status.track_artist,
     album: status.track_album,
     durationMs: status.duration,
     episode: isPodcast,
-    enabled: active,
+    enabled: lyricsState == null && active,
     karaoke: karaokeLyrics,
   })
+  const { lyrics, loading, error } = lyricsState ?? internalState
 
   const color: RGB = useColorExtract(status.track_image)
   const starts = useLyricStarts(lyrics)

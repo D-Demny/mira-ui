@@ -13,7 +13,7 @@ interface LyricsParams {
   karaoke?: boolean
 }
 
-interface LyricsState {
+export interface LyricsState {
   lyrics: LyricsResult | null
   loading: boolean
   error: string | null
