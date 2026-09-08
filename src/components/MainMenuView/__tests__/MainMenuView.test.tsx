@@ -2380,11 +2380,18 @@ describe('MainMenuView', () => {
     })
   })
 
-  describe('bug54: configurable menu background (solid black / translucent glass)', () => {
+  describe('bug54: configurable menu background (Schwarz / Halbdurchsichtig / Durchsichtig)', () => {
     // the 'Menü-Hintergrund' row is APPENDED to the 'Settings' sub-level
     // (Einstellungen → Settings, index 5) — existing row indices stay stable
     function toSidebarBackgroundRow() {
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+    }
+
+    // the row's right-aligned value span (exact value text — 'Durchsichtig'
+    // is a substring of 'Halbdurchsichtig', so row-level textContent
+    // matching would not distinguish the two)
+    function rowValue(row: Element | null): string | undefined {
+      return row?.querySelector('[class*="value"]')?.textContent
     }
 
     it('renders the "Menü-Hintergrund" row last in the sub-level with the default value', async () => {
@@ -2403,12 +2410,13 @@ describe('MainMenuView', () => {
       expect(row?.textContent).toContain('Schwarz')
     })
 
-    it('confirming the row toggles the store, the row value, and the glass modifier', async () => {
+    it('confirming the row cycles all three options (store, row value, sidebar modifier)', async () => {
       const { container } = render(<MainMenuView />)
       const view = container.firstElementChild as HTMLElement
       const nav = container.querySelector('nav') as HTMLElement
       expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).not.toContain('glass')
+      expect(nav.className).not.toContain('clear')
 
       toSidebarBackgroundRow()
       await screen.findByText('Settings')
@@ -2416,20 +2424,32 @@ describe('MainMenuView', () => {
       for (let i = 0; i < 5; i++) wheel(-10) // to 'Menü-Hintergrund' (5)
       confirmDial()
 
+      // 1: Schwarz → Halbdurchsichtig
       expect(getSettings().sidebarBackground).toBe('translucent')
       const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
-      expect(row?.textContent).toContain('Durchsichtig')
-      // 08.09 user change: 'translucent' only changes the panel's look (the
+      expect(rowValue(row)).toBe('Halbdurchsichtig')
+      // 08.09 user change (incl. v2): only the panel's look changes (the
       // glass class) — the layout stays solid (no underflow), so no view
       // modifier is added
       expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).toContain('glass')
+      expect(nav.className).not.toContain('clear')
 
-      confirmDial() // back to solid
+      // 2: Halbdurchsichtig → Durchsichtig (100% transparent, v2)
+      confirmDial()
+      expect(getSettings().sidebarBackground).toBe('clear')
+      expect(rowValue(row)).toBe('Durchsichtig')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(nav.className).toContain('clear')
+      expect(nav.className).not.toContain('glass')
+
+      // 3: Durchsichtig → Schwarz
+      confirmDial()
       expect(getSettings().sidebarBackground).toBe('solid')
-      expect(row?.textContent).toContain('Schwarz')
+      expect(rowValue(row)).toBe('Schwarz')
       expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).not.toContain('glass')
+      expect(nav.className).not.toContain('clear')
     })
 
     it('keeps the solid carousel geometry in translucent mode (cards clipped at the menu edge, not under it)', async () => {
@@ -2457,6 +2477,31 @@ describe('MainMenuView', () => {
       )
     })
 
+    it('keeps the solid carousel geometry in clear mode (cards clipped at the menu edge, not under it)', async () => {
+      // v2: the 100% transparent mode clips the cards at the menu edge just
+      // like 'solid' and 'translucent' — only the panel background is gone
+      // (.clear instead of .glass on the nav)
+      updateSettings({ sidebarBackground: 'clear' })
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+      const nav = container.querySelector('nav') as HTMLElement
+      const carousel = container.querySelector('.carousel') as HTMLElement
+      expect(carousel).not.toBeNull()
+      expect(nav.className).toContain('clear')
+      expect(nav.className).not.toContain('glass')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(carousel.className).not.toContain('underflow')
+
+      // toggling to another mode changes nothing about the carousel layout
+      act(() => {
+        updateSettings({ sidebarBackground: 'translucent' })
+      })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
+      expect((container.querySelector('.carousel') as HTMLElement).className).not.toContain(
+        'underflow',
+      )
+    })
+
     it('the settings list keeps the solid layout in translucent mode (no underflow inset)', async () => {
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
@@ -2466,12 +2511,12 @@ describe('MainMenuView', () => {
       expect(list.parentElement?.className).not.toContain('settingsUnderflow')
     })
 
-    it('translucent and solid render the identical carousel layout (same dial centering geometry)', async () => {
-      // geometry contract: both modes drive the carousel with underflowPx=0
+    it('all three modes render the identical carousel layout (same dial centering geometry)', async () => {
+      // geometry contract: all modes drive the carousel with underflowPx=0
       // (the default dialScrollLeft path, bit-exact the solid formula —
       // pinned in carouselWindow.test.ts), so card positioning, the
       // centering target and the scroll clamps are identical; the only DOM
-      // difference is the sidebar's glass class
+      // difference is the sidebar's background class
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
       const layout = () =>
@@ -2481,6 +2526,10 @@ describe('MainMenuView', () => {
           (container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement).className,
         ].join('|')
       const translucentLayout = layout()
+      act(() => {
+        updateSettings({ sidebarBackground: 'clear' })
+      })
+      expect(layout()).toBe(translucentLayout)
       act(() => {
         updateSettings({ sidebarBackground: 'solid' })
       })

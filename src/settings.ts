@@ -41,10 +41,14 @@ export interface Settings {
   // clears it again (explicit re-opt-in — see useMiraServer.retarget).
   hybridDisabled: boolean
   // bug54: the main-menu sidebar background — 'solid' (opaque black,
-  // default) or 'translucent' (semi-transparent glass; the carousel keeps
-  // the solid geometry — the cards are clipped at the menu edge and never
-  // visible under it, only the panel's look differs; 08.09 user change)
-  sidebarBackground: 'solid' | 'translucent'
+  // default), 'translucent' (semi-transparent glass, labelled
+  // "Halbdurchsichtig") or 'clear' (100% transparent — no visible panel
+  // background at all, only the menu entries, labelled "Durchsichtig").
+  // All modes keep the solid carousel geometry: the cards are clipped at
+  // the menu edge and never visible under it (08.09 user change v2). The
+  // enum values keep their pre-v2 names, so stored blobs (only 'solid' /
+  // 'translucent' ever existed) need no migration.
+  sidebarBackground: 'solid' | 'translucent' | 'clear'
 }
 
 export const VOLUME_STEP_MIN = 1
@@ -231,11 +235,16 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     // separate step; no schema version bump — additive field, old builds
     // ignore unknown keys).
     hybridDisabled: partial?.hybridDisabled === true,
-    // bug54: strict like keyInstalled — only the exact 'translucent' string
-    // selects the glass mode. Anything else (hand-edited blobs with foreign
-    // values, blobs predating the field) coerces to 'solid'.
+    // bug54: strict like keyInstalled — only the exact known strings pass.
+    // Anything else (hand-edited blobs with foreign values, blobs predating
+    // the field) coerces to 'solid'. Old blobs only ever held 'solid' or
+    // 'translucent', so the coercion is the (null-op) migration.
     sidebarBackground:
-      partial?.sidebarBackground === 'translucent' ? 'translucent' : 'solid',
+      partial?.sidebarBackground === 'translucent'
+        ? 'translucent'
+        : partial?.sidebarBackground === 'clear'
+          ? 'clear'
+          : 'solid',
   }
 }
 
