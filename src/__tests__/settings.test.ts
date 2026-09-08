@@ -304,6 +304,7 @@ describe('settings store', () => {
 
     it.each([
       ['the exact "translucent" string', 'translucent', 'translucent'],
+      ['the exact "clear" string (v2)', 'clear', 'clear'],
       ['"transparent"', 'transparent', 'solid'],
       ['"SOLID"', 'SOLID', 'solid'],
       ['the number 1', 1, 'solid'],
@@ -316,11 +317,29 @@ describe('settings store', () => {
       expect(getSettings().sidebarBackground).toBe(expected)
     })
 
+    // backward compat: blobs predating v2 only ever held 'solid' or
+    // 'translucent' — the strict coercion above is the (null-op) migration
+    it('keeps an old-blob "translucent" value on reload (no v2 migration needed)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, sidebarBackground: 'translucent' }),
+      )
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('translucent')
+    })
+
     it('round-trips translucent through localStorage', () => {
       updateSettings({ sidebarBackground: 'translucent' })
       expect(getSettings().sidebarBackground).toBe('translucent')
       __resetSettings()
       expect(getSettings().sidebarBackground).toBe('translucent')
+    })
+
+    it('round-trips clear through localStorage', () => {
+      updateSettings({ sidebarBackground: 'clear' })
+      expect(getSettings().sidebarBackground).toBe('clear')
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('clear')
     })
   })
 })
