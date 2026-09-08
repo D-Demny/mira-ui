@@ -372,6 +372,107 @@ describe('useHomeEntities', () => {
       }
     })
 
+    // bug57: a read that started BEFORE the press must not clobber the
+    // optimistic flip — deterministic replay: the state fetch is in flight
+    // (deferred), the press flips optimistically, THEN the stale read
+    // resolves with the pre-press state while the toggle answer is still
+    // pending (without the guard the store flickers back to 'off' here)
+    it('a stale read that started before the press cannot clobber the optimistic flip', async () => {
+      seedSelection([SWITCH])
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () =>
+          HttpResponse.json({ entity_id: SWITCH, state: 'off' }),
+        ),
+      )
+      const first = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(first.result.current[0].state).toBe('off'))
+      first.unmount()
+
+      let releaseStaleRead: () => void = () => {}
+      let releaseToggle: () => void = () => {}
+      const staleReadPending = new Promise<void>((resolve) => {
+        releaseStaleRead = resolve
+      })
+      const togglePending = new Promise<void>((resolve) => {
+        releaseToggle = resolve
+      })
+      let staleReads = 0
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', async () => {
+          staleReads += 1
+          await staleReadPending
+          return HttpResponse.json({ entity_id: SWITCH, state: 'off' }) // STALE
+        }),
+        http.post('*/ha-api/services/switch/toggle', async () => {
+          await togglePending
+          return HttpResponse.json([{ entity_id: SWITCH, state: 'on' }])
+        }),
+      )
+
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      // the fresh read (the mount fetch runs the same path as the 5s poll)
+      // is in flight and parked on the deferred response — staleReads===1
+      // is the in-flight proof (the loading flag is not observable here:
+      // the mount refresh writes it BEFORE the hook subscribes, so the
+      // render snapshot keeps the settled value from the first instance)
+      await waitFor(() => expect(staleReads).toBe(1))
+      expect(result.current[0].state).toBe('off')
+
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('on') // optimistic flip
+
+      // the stale read resolves NOW — with the pre-press state — while the
+      // toggle answer is still pending: it must be discarded, no flicker
+      act(() => {
+        releaseStaleRead()
+      })
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 25)) // let the stale response reach the store
+      })
+      expect(result.current[0].state).toBe('on') // NOT clobbered back to 'off'
+      expect(result.current[0].actuating).toBe(true)
+
+      act(() => {
+        releaseToggle()
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(result.current[0].state).toBe('on') // confirmed by the service answer
+      expect(result.current[0].error).toBeNull()
+    })
+
+    // bug57 (the guard must not over-block): a read that starts AFTER the
+    // last write — e.g. the 5s poll after a finished toggle — must still
+    // land and mirror external changes (phone / wall switch / automation)
+    it('a read that starts after the last write still lands (external change resync)', async () => {
+      seedSelection([SWITCH])
+      let servedState = 'off'
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () =>
+          HttpResponse.json({ entity_id: SWITCH, state: servedState }),
+        ),
+      )
+      const first = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(first.result.current[0].state).toBe('off'))
+      act(() => {
+        first.result.current[0].actuate()
+      })
+      await waitFor(() => expect(first.result.current[0].actuating).toBe(false))
+      expect(first.result.current[0].state).toBe('on') // the toggle settled
+      first.unmount()
+
+      // externally the switch was turned off again (phone / wall switch)
+      servedState = 'off'
+      // a fresh read starts now — AFTER the last write, it must be allowed
+      // to land (the mount fetch runs the same path as the 5s poll)
+      const second = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(second.result.current[0].state).toBe('off'))
+      expect(second.result.current[0].loading).toBe(false)
+      expect(second.result.current[0].error).toBeNull()
+    })
+
     it('scene actuation does not flip the state and resyncs afterwards', async () => {
       seedSelection([SCENE])
       server.use(
