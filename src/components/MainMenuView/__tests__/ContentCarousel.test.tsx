@@ -148,6 +148,9 @@ vi.mock('@/settings', async (importOriginal) => {
       uiScalePct: 100,
       presets: {},
       defaultDeviceId: null,
+      // ticket 9.4: the v3 store always coerces the ha object — the pinned
+      // mock mirrors the pristine default (empty = build-time defaults)
+      ha: { url: '', username: '', password: '', token: '', tokenSource: 'default' },
     }),
   }
 })

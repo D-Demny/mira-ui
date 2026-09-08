@@ -19,8 +19,10 @@ import {
   useSettings,
   VOLUME_STEP_MAX,
   VOLUME_STEP_MIN,
+  type HaSettingsValue,
   type Settings,
 } from '@/settings'
+import { haBaseStatus } from '@/hooks/useHaStatus'
 import { pickArtUrl } from '@/api/client'
 import { remoteArtUrl } from '@/api/miraImg'
 import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorExtract'
@@ -75,6 +77,12 @@ function piRowValue(mode: MiraServerState['mode']): string {
   return 'Standalone'
 }
 
+// ticket 9.4: the short status shown on the 'Home Assistant' settings row —
+// pure (the connection probe lives in the modal only, never in the row)
+function haRowValue(ha: HaSettingsValue): string {
+  return haBaseStatus(ha) === 'configured' ? 'Konfiguriert' : 'Default'
+}
+
 // bug25: root rows of the 'Einstellungen' vertical list
 function buildRootSettingsRows(
   settings: Settings,
@@ -95,6 +103,8 @@ function buildRootSettingsRows(
     { id: 'set-bt', title: 'Bluetooth Pairing', value: '', kind: 'open-link' },
     // epic10 task 4: opens the Raspberry Pi provisioning/connection view
     { id: 'set-pi', title: 'Raspberry Pi', value: piRowValue(piMode), kind: 'open-link' },
+    // ticket 9.4: opens the Home Assistant connection settings view
+    { id: 'set-ha', title: 'Home Assistant', value: haRowValue(settings.ha), kind: 'open-link' },
   ]
 }
 
@@ -241,6 +251,9 @@ export interface MainMenuViewProps {
   // epic10 task 4: the 'Raspberry Pi' settings row opens the provisioning
   // view (rendered by the App's globalOverlays)
   onOpenPiServer?: () => void
+  // ticket 9.4: the 'Home Assistant' settings row opens the connection
+  // settings modal (rendered by the App's globalOverlays)
+  onOpenHaSettings?: () => void
 }
 
 // Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4b, 8.4c).
@@ -256,6 +269,7 @@ export function MainMenuView({
   onOpenLightControl,
   onOpenEntityPicker,
   onOpenPiServer,
+  onOpenHaSettings,
 }: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
   // bug4: non-null while a playlist's track list is open as a sub-menu
@@ -720,6 +734,9 @@ export function MainMenuView({
     } else if (card.id === 'set-pi') {
       // epic10 task 4: the Raspberry Pi provisioning/connection view
       onOpenPiServer?.()
+    } else if (card.id === 'set-ha') {
+      // ticket 9.4: the Home Assistant connection settings view
+      onOpenHaSettings?.()
     } else if (card.id === 'set-default-device') {
       onOpenDefaultDevice?.()
     } else if (card.id === 'set-brightness') {
