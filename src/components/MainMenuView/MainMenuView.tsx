@@ -414,10 +414,23 @@ export function MainMenuView({
   const isAdjustLevel = activeCategoryId === 'settings' && settingsLevel === 'adjust'
   const activeAdjustingRowId = activeCategoryId === 'settings' ? adjustingRowId : null
   const settingsRows = isAdjustLevel ? settingsAdjustRows : settingsRootRows
-  // bug54: the 'Menü-Hintergrund' setting — 'translucent' slides the content
-  // under the sidebar (the glass, cards partially visible underneath),
-  // 'solid' keeps today's strict clipping
+  // bug54: the 'Menü-Hintergrund' setting — 'translucent' renders the sidebar
+  // as a semi-transparent glass panel, 'solid' keeps it opaque
   const translucent = settings.sidebarBackground === 'translucent'
+  // bug54 (08.09.2026 user change): does the mode slide the content carousel
+  // under the sidebar? Per mode:
+  //   'solid': no — strict clipping at the sidebar's right edge
+  //   'translucent': no — the changed acceptance criteria require the cards
+  //   to be INVISIBLE under the menu: they are clipped at the menu edge
+  //   exactly like 'solid' (same viewport, same card geometry, same dial
+  //   centering); only the panel's look differs (.glass, the app background
+  //   shows through where no card is)
+  //   (future) 'blur': yes — Bug58 needs the cards to actually pass under
+  //   the menu so they can be blurred there
+  // The underflow mechanism (negative content-pane margin, the carousel's
+  // .underflow padding, the CarouselGeometry underflow centering) stays in
+  // the code GATED by this flag.
+  const slidesUnderSidebar = false
 
   const categories = useMemo(() => {
     // ticket 9.3: every user-selected entity is a home carousel card, in
@@ -1050,8 +1063,9 @@ export function MainMenuView({
         [
           styles.view,
           focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
-          // bug54: the translucent modifier slides the content under the sidebar
-          translucent ? styles.viewTranslucent : '',
+          // bug54: the underflow modifier slides the content under the sidebar
+          // (gated — no mode applies it, see slidesUnderSidebar above)
+          slidesUnderSidebar ? styles.viewUnderflow : '',
         ]
           .filter(Boolean)
           .join(' ')
@@ -1074,11 +1088,12 @@ export function MainMenuView({
         {displayedCategory.id === 'settings' ? (
           // bug25: the settings pane is a vertical list; the sidebar preview
           // always shows the root rows, the confirmed pane the open level.
-          // bug54: the wrapper keeps the list out from under the glass in
-          // translucent mode (display:contents in solid mode — no change)
+          // bug54: in underflow mode (gated — see slidesUnderSidebar) the
+          // wrapper keeps the list out from under the glass (display:contents
+          // otherwise — no layout change)
           <div
             className={
-              translucent
+              slidesUnderSidebar
                 ? `${styles.settingsWrap} ${styles.settingsUnderflow}`
                 : styles.settingsWrap
             }
@@ -1118,9 +1133,12 @@ export function MainMenuView({
             // bug47: dial ticks scroll instantly, taps/confirms/switches keep
             // the smooth scroll (the hook tags the last focus change)
             focusScrollBehavior={focus.contentMoveKind === 'dial' ? 'auto' : 'smooth'}
-            // bug54: in translucent mode the carousel viewport spans the
-            // full screen — the geometry underflow is the sidebar width
-            underflowPx={translucent ? SIDEBAR_WIDTH : 0}
+            // bug54: in underflow mode (gated — no mode enables it, see
+            // slidesUnderSidebar above) the carousel viewport spans the full
+            // screen — the geometry underflow is the sidebar width. Both
+            // 'solid' and 'translucent' pass 0: the solid geometry
+            // (cards clipped at the sidebar's right edge).
+            underflowPx={slidesUnderSidebar ? SIDEBAR_WIDTH : 0}
           />
         )}
       </main>

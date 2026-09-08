@@ -1011,12 +1011,16 @@ describe('bug47 R2 (F1/F2): dial mode is read-free and centers arithmetically', 
   })
 })
 
-// bug54: the translucent menu background — underflowPx > 0 means the
-// carousel viewport spans the FULL screen (the content pane slides under the
-// 250px sidebar). The dial centering must use the underflow geometry (first
-// card's rest position at 266, left boundary at the sidebar's right edge,
-// centering target in the visible zone at 525) and the scroll port must
-// apply the .underflow padding.
+// bug54: the underflow geometry — underflowPx > 0 means the carousel
+// viewport spans the FULL screen (the content pane slides under the 250px
+// sidebar). The dial centering must use the underflow geometry (first card's
+// rest position at 266, left boundary at the sidebar's right edge, centering
+// target in the visible zone at 525) and the scroll port must apply the
+// .underflow padding.
+// bug54 (08.09.2026 user change): no menu background mode currently passes a
+// positive underflowPx — 'translucent' was changed to the solid layout (cards
+// clipped at the menu edge). This suite pins the GATED mechanism that the
+// upcoming 'blur' mode (Bug58) will re-enable.
 describe('bug54: underflow geometry (translucent menu background)', () => {
   beforeEach(() => {
     vi.spyOn(Element.prototype, 'scrollIntoView')

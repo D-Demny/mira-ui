@@ -81,13 +81,17 @@
   overflow: hidden;
 }
 
-// bug54: translucent menu background — the content pane slides under the
-// sidebar: the negative margin pulls its left edge back to the screen's left
-// (x=0..800 instead of x=250..800), so the pane's overflow:hidden clips at
-// the SCREEN edge instead of the sidebar's right edge and the carousel can
-// scroll under the glass. The sidebar keeps z-index 20, so it paints above
-// the pane.
-.viewTranslucent {
+// bug54: underflow layout — the content pane slides under the sidebar: the
+// negative margin pulls its left edge back to the screen's left (x=0..800
+// instead of x=250..800), so the pane's overflow:hidden clips at the SCREEN
+// edge instead of the sidebar's right edge and the carousel can scroll under
+// the glass. The sidebar keeps z-index 20, so it paints above the pane.
+// bug54 (08.09.2026 user change): no mode applies this anymore — 'translucent'
+// was changed to clip the cards at the sidebar's right edge like 'solid'
+// (cards invisible under the menu). The rule stays GATED for the upcoming
+// 'blur' mode (Bug58), which needs the carousel to pass under the menu to
+// blur the cards there.
+.viewUnderflow {
   .contentPane {
     margin-left: -$sidebar-width;
   }

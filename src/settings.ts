@@ -41,8 +41,9 @@ export interface Settings {
   // clears it again (explicit re-opt-in — see useMiraServer.retarget).
   hybridDisabled: boolean
   // bug54: the main-menu sidebar background — 'solid' (opaque black,
-  // default) or 'translucent' (semi-transparent glass the carousel slides
-  // under)
+  // default) or 'translucent' (semi-transparent glass; the carousel keeps
+  // the solid geometry — the cards are clipped at the menu edge and never
+  // visible under it, only the panel's look differs; 08.09 user change)
   sidebarBackground: 'solid' | 'translucent'
 }
 

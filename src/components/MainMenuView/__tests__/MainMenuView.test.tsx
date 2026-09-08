@@ -2403,11 +2403,11 @@ describe('MainMenuView', () => {
       expect(row?.textContent).toContain('Schwarz')
     })
 
-    it('confirming the row toggles the store, the row value, and the view modifiers', async () => {
+    it('confirming the row toggles the store, the row value, and the glass modifier', async () => {
       const { container } = render(<MainMenuView />)
       const view = container.firstElementChild as HTMLElement
       const nav = container.querySelector('nav') as HTMLElement
-      expect(view.className).not.toContain('viewTranslucent')
+      expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).not.toContain('glass')
 
       toSidebarBackgroundRow()
@@ -2419,41 +2419,72 @@ describe('MainMenuView', () => {
       expect(getSettings().sidebarBackground).toBe('translucent')
       const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
       expect(row?.textContent).toContain('Durchsichtig')
-      // the view root and the sidebar carry the translucent modifiers
-      expect(view.className).toContain('viewTranslucent')
+      // 08.09 user change: 'translucent' only changes the panel's look (the
+      // glass class) — the layout stays solid (no underflow), so no view
+      // modifier is added
+      expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).toContain('glass')
 
       confirmDial() // back to solid
       expect(getSettings().sidebarBackground).toBe('solid')
       expect(row?.textContent).toContain('Schwarz')
-      expect(view.className).not.toContain('viewTranslucent')
+      expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).not.toContain('glass')
     })
 
-    it('hands the underflow geometry to the carousel in translucent mode (and removes it in solid mode)', async () => {
+    it('keeps the solid carousel geometry in translucent mode (cards clipped at the menu edge, not under it)', async () => {
+      // 08.09 user change: the acceptance criteria flipped — 'translucent'
+      // must NOT reveal the cards under the menu. The carousel keeps the
+      // solid layout: no .underflow padding on the scroll port, no negative
+      // margin on the content pane (.viewUnderflow), so the pane's
+      // overflow:hidden clips the cards at the sidebar's right edge exactly
+      // like solid mode
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
-      // the Home carousel is rendered — the underflow padding puts the scroll
-      // port under the sidebar (the .underflow modifier)
+      const view = container.firstElementChild as HTMLElement
       const carousel = container.querySelector('.carousel') as HTMLElement
       expect(carousel).not.toBeNull()
-      expect(carousel.className).toContain('underflow')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(carousel.className).not.toContain('underflow')
 
+      // toggling back to solid changes nothing about the carousel layout
       act(() => {
         updateSettings({ sidebarBackground: 'solid' })
       })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
       expect((container.querySelector('.carousel') as HTMLElement).className).not.toContain(
         'underflow',
       )
     })
 
-    it('the settings list wrapper gets the underflow inset in translucent mode', async () => {
+    it('the settings list keeps the solid layout in translucent mode (no underflow inset)', async () => {
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       await screen.findByText('Settings')
       const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
-      expect(list.parentElement?.className).toContain('settingsUnderflow')
+      expect(list.parentElement?.className).not.toContain('settingsUnderflow')
+    })
+
+    it('translucent and solid render the identical carousel layout (same dial centering geometry)', async () => {
+      // geometry contract: both modes drive the carousel with underflowPx=0
+      // (the default dialScrollLeft path, bit-exact the solid formula —
+      // pinned in carouselWindow.test.ts), so card positioning, the
+      // centering target and the scroll clamps are identical; the only DOM
+      // difference is the sidebar's glass class
+      updateSettings({ sidebarBackground: 'translucent' })
+      const { container } = render(<MainMenuView />)
+      const layout = () =>
+        [
+          (container.firstElementChild as HTMLElement).className,
+          (container.querySelector('.carousel') as HTMLElement).className,
+          (container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement).className,
+        ].join('|')
+      const translucentLayout = layout()
+      act(() => {
+        updateSettings({ sidebarBackground: 'solid' })
+      })
+      expect(layout()).toBe(translucentLayout)
     })
   })
 
