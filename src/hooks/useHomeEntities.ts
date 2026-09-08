@@ -164,6 +164,26 @@ const inFlightStates = new Map<string, Promise<void>>()
 // ids for which a refresh has been started — the state store alone is NOT a
 // signal (stateOf() creates entries during render, before any fetch)
 const knownEntities = new Set<string>()
+// bug57: stale-read protection — a monotonic write revision per entity.
+// Every actuation write (optimistic flip, service answer, error revert)
+// bumps it. A state read captures the revision at fetch start and may only
+// land if no actuation write happened in the meantime: a read that started
+// before a press can no longer clobber the optimistic flip, while reads that
+// start AFTER the last write (5 s poll, fresh mount, the resync inside
+// actuateEntity) keep mirroring external changes (phone / wall switch /
+// automation). Reads never bump (in-flight reads are deduped per entity, so
+// they can never overlap), and the `actuating: false` write at the end of an
+// actuation deliberately does NOT bump (the resync read started earlier must
+// still be allowed to land).
+const writeRevisions = new Map<string, number>()
+
+function writeRevision(entityId: string): number {
+  return writeRevisions.get(entityId) ?? 0
+}
+
+function bumpWriteRevision(entityId: string): void {
+  writeRevisions.set(entityId, writeRevision(entityId) + 1)
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null
 const listeners = new Set<() => void>()
 
@@ -196,9 +216,15 @@ function refreshEntity(entityId: string, initial: boolean): Promise<void> {
   const existing = inFlightStates.get(entityId)
   if (existing) return existing
   knownEntities.add(entityId)
+  // bug57: the revision this read starts with — see `writeRevisions`
+  const readRevision = writeRevision(entityId)
   const promise = (async () => {
     try {
       const entity = await fetchHaEntityState(entityId)
+      // stale read: an actuation write happened while the fetch was in
+      // flight — that write owns the state, the fetched (older) state is
+      // discarded so it cannot clobber the optimistic flip
+      if (readRevision !== writeRevision(entityId)) return
       entityStates.set(entityId, {
         ...stateOf(entityId),
         state: entity.state,
@@ -209,6 +235,9 @@ function refreshEntity(entityId: string, initial: boolean): Promise<void> {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to reach Home Assistant'
       console.warn('useHomeEntities error:', message)
+      // a failed STALE read reports nothing the user can act on — the
+      // newer actuation write owns the error state
+      if (readRevision !== writeRevision(entityId)) return
       entityStates.set(entityId, { ...stateOf(entityId), loading: false, error: message })
     } finally {
       inFlightStates.delete(entityId)
@@ -244,6 +273,9 @@ async function actuateEntity(entityId: string) {
   const domain = domainOf(entityId)
   const previous = store.state
   const flipped = optimisticState(domain, previous)
+  // bug57: the actuation owns the state from here on — any read that started
+  // earlier is stale from this point on
+  bumpWriteRevision(entityId)
   entityStates.set(entityId, {
     ...store,
     actuating: true,
@@ -254,7 +286,8 @@ async function actuateEntity(entityId: string) {
   try {
     if (domain === 'scene') {
       // scenes are stateless — the service answer is not trustworthy, so
-      // resync from the states endpoint afterwards
+      // resync from the states endpoint afterwards (its read starts AFTER
+      // the actuation write above, so the bug57 guard lets it land)
       await activateHaEntity({ entityId, domain })
       await refreshEntity(entityId, false)
     } else {
@@ -262,6 +295,8 @@ async function actuateEntity(entityId: string) {
       const found = updated.find((s) => s.entity_id === entityId)
       if (found) {
         // the service answers with the entity's new state — trust it
+        // bug57: an actuation write — stale reads are discarded from here on
+        bumpWriteRevision(entityId)
         entityStates.set(entityId, {
           ...stateOf(entityId),
           state: found.state,
@@ -269,18 +304,26 @@ async function actuateEntity(entityId: string) {
         })
       } else {
         // no entity in the service response — resync from the states endpoint
+        // (its read starts AFTER the flip write above, so the bug57 guard
+        // lets it land — the actuation's finally does not bump)
         await refreshEntity(entityId, false)
       }
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to activate entity'
     console.warn('useHomeEntities actuate error:', message)
+    // bug57: the revert is an actuation write — stale reads are discarded
+    bumpWriteRevision(entityId)
     if (previous !== null) {
       entityStates.set(entityId, { ...stateOf(entityId), state: previous })
     }
     entityStates.set(entityId, { ...stateOf(entityId), error: message })
   } finally {
-    entityStates.set(entityId, { ...stateOf(entityId), actuating: false })
+    // bug57: deliberately NO bump here — the resync read (scene / missing
+    // entity in the service answer) started before this write and must be
+    // allowed to land. The actuation is fully settled now, so a loading
+    // flag left behind by a discarded initial read is cleared with it
+    entityStates.set(entityId, { ...stateOf(entityId), actuating: false, loading: false })
     emit()
   }
 }
@@ -430,6 +473,7 @@ export function __resetHomeEntityStores() {
   inFlightStates.clear()
   knownEntities.clear()
   entityStates.clear()
+  writeRevisions.clear()
   catalog.entries = []
   catalog.loading = false
   catalog.error = null

@@ -82,6 +82,78 @@ describe('useHomeLight', () => {
     warn.mockRestore()
   })
 
+  // bug57: same race class as useHomeEntities — a state read that starts
+  // BEFORE the toggle must not clobber the optimistic flip — deterministic
+  // replay: the state fetch is in flight (deferred), the toggle flips
+  // optimistically, THEN the stale read resolves with the pre-toggle state
+  // while the toggle answer is still pending (without the guard the store
+  // flickers back to 'off' here)
+  it('a stale read that started before the toggle cannot clobber the optimistic flip', async () => {
+    const LIGHT_ID = HOME_LIGHTS[0].entityId
+    server.use(
+      http.get('*/ha-api/states/light.*', () =>
+        HttpResponse.json({ entity_id: LIGHT_ID, state: 'off' }),
+      ),
+    )
+    const first = renderHook(() => useHomeLight())
+    await waitFor(() => expect(first.result.current.state).toBe('off'))
+    first.unmount()
+
+    let releaseStaleRead: () => void = () => {}
+    let releaseToggle: () => void = () => {}
+    const staleReadPending = new Promise<void>((resolve) => {
+      releaseStaleRead = resolve
+    })
+    const togglePending = new Promise<void>((resolve) => {
+      releaseToggle = resolve
+    })
+    let staleReads = 0
+    server.use(
+      http.get('*/ha-api/states/light.*', async () => {
+        staleReads += 1
+        await staleReadPending
+        return HttpResponse.json({ entity_id: LIGHT_ID, state: 'off' }) // STALE
+      }),
+      http.post('*/ha-api/services/light/toggle', async () => {
+        await togglePending
+        return HttpResponse.json([{ entity_id: LIGHT_ID, state: 'on' }])
+      }),
+    )
+
+    const { result } = renderHook(() => useHomeLight())
+    // the fresh read (same path as the 5s poll) is in flight and parked on
+    // the deferred response — staleReads===1 is the in-flight proof (the
+    // loading flag is not observable here: the mount refresh writes it
+    // BEFORE the hook subscribes, so the render snapshot keeps the settled
+    // value from the first instance)
+    await waitFor(() => expect(staleReads).toBe(1))
+    expect(result.current.state).toBe('off')
+
+    act(() => {
+      void result.current.toggle()
+    })
+    expect(result.current.state).toBe('on') // optimistic flip
+    expect(result.current.toggling).toBe(true)
+
+    // the stale read resolves NOW — with the pre-toggle state — while the
+    // toggle answer is still pending: it must be discarded, no flicker
+    act(() => {
+      releaseStaleRead()
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 25)) // let the stale response reach the store
+    })
+    expect(result.current.state).toBe('on') // NOT clobbered back to 'off'
+    expect(result.current.toggling).toBe(true)
+
+    act(() => {
+      releaseToggle()
+    })
+    await waitFor(() => expect(result.current.toggling).toBe(false))
+    expect(result.current.state).toBe('on') // confirmed by the service answer
+    expect(result.current.error).toBeNull()
+  })
+
   it('keeps multiple hook instances in sync (shared store)', async () => {
     server.use(
       http.get('*/ha-api/states/light.*', () =>

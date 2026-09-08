@@ -62,6 +62,25 @@ const POLL_MS = 5000
 const stores = new Map<string, HomeLightStore>()
 const listeners = new Set<() => void>()
 const inFlight = new Map<string, Promise<void>>()
+// bug57: same stale-read protection as useHomeEntities — a monotonic write
+// revision per entity, bumped by every actuation write (optimistic flip,
+// service answer, error revert). A read captures the revision at fetch
+// start and only lands if no actuation write happened in the meantime, so
+// a pre-toggle read can never clobber the optimistic flip, while reads
+// that start after the last write (5 s poll, fresh mount, the resync inside
+// toggle) keep mirroring external changes. Reads never bump (in-flight
+// reads are deduped per entity) and the `toggling: false` write at the end
+// of a toggle deliberately does NOT bump (the resync read started earlier
+// must still be allowed to land).
+const writeRevisions = new Map<string, number>()
+
+function writeRevision(entityId: string): number {
+  return writeRevisions.get(entityId) ?? 0
+}
+
+function bumpWriteRevision(entityId: string): void {
+  writeRevisions.set(entityId, writeRevision(entityId) + 1)
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function storeOf(entityId: string): HomeLightStore {
@@ -96,9 +115,14 @@ function refresh(entityId: string, initial: boolean): Promise<void> {
   }
   const existing = inFlight.get(entityId)
   if (existing) return existing
+  // bug57: the revision this read starts with — see `writeRevisions`
+  const readRevision = writeRevision(entityId)
   const promise = (async () => {
     try {
       const entity = await fetchHaEntityState(entityId)
+      // stale read: a toggle write happened while the fetch was in flight —
+      // that write owns the state, the fetched (older) state is discarded
+      if (readRevision !== writeRevision(entityId)) return
       const capabilities = lightCapabilities(entity)
       stores.set(entityId, {
         ...storeOf(entityId),
@@ -111,6 +135,8 @@ function refresh(entityId: string, initial: boolean): Promise<void> {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to reach Home Assistant'
       console.warn('useHomeLight error:', message)
+      // a failed STALE read reports nothing the user can act on
+      if (readRevision !== writeRevision(entityId)) return
       stores.set(entityId, { ...storeOf(entityId), loading: false, error: message })
     } finally {
       inFlight.delete(entityId)
@@ -125,26 +151,43 @@ async function toggle(entityId: string) {
   const store = storeOf(entityId)
   if (store.toggling) return
   const previous = store.state
+  // bug57: the toggle owns the state from here on — any read that started
+  // earlier is stale from this point on
+  bumpWriteRevision(entityId)
   stores.set(entityId, { ...store, toggling: true, error: null })
-  if (previous) stores.set(entityId, { ...storeOf(entityId), state: previous === 'on' ? 'off' : 'on' })
+  if (previous) {
+    // bug57: an actuation write — stale reads are discarded from here on
+    bumpWriteRevision(entityId)
+    stores.set(entityId, { ...storeOf(entityId), state: previous === 'on' ? 'off' : 'on' })
+  }
   emit()
   try {
     const updated = await toggleHaEntity(entityId)
     if (updated) {
       // the toggle service answers with the entity's new state — trust it
+      // bug57: an actuation write — stale reads are discarded from here on
+      bumpWriteRevision(entityId)
       stores.set(entityId, { ...storeOf(entityId), state: toLightState(updated.state) })
     } else {
       // no entity in the service response — resync from the states endpoint
+      // (its read starts AFTER the flip write above, so the bug57 guard
+      // lets it land — the toggle's finally does not bump)
       await refresh(entityId, false)
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to toggle light'
     console.warn('useHomeLight toggle error:', message)
+    // bug57: the revert is an actuation write — stale reads are discarded
+    bumpWriteRevision(entityId)
     const current = storeOf(entityId)
     if (previous) stores.set(entityId, { ...current, state: previous })
     stores.set(entityId, { ...storeOf(entityId), error: message })
   } finally {
-    stores.set(entityId, { ...storeOf(entityId), toggling: false })
+    // bug57: deliberately NO bump here — the resync read (missing entity in
+    // the service answer) started before this write and must be allowed to
+    // land. The toggle is fully settled now, so a loading flag left behind
+    // by a discarded initial read is cleared with it
+    stores.set(entityId, { ...storeOf(entityId), toggling: false, loading: false })
     emit()
   }
 }
@@ -180,6 +223,7 @@ export function __resetHomeLightStore() {
   listeners.clear()
   inFlight.clear()
   stores.clear()
+  writeRevisions.clear()
 }
 
 // test/debug introspection (bug45 option C: cache stats readout) — the store
