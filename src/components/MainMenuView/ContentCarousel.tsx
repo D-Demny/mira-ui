@@ -153,12 +153,16 @@ interface ContentCarouselProps {
   // so standalone usage (tests, other views) is unchanged.
   focusScrollBehavior?: 'auto' | 'smooth'
   // bug54: by how many px the carousel viewport extends UNDERNEATH a fixed
-  // overlay (the translucent sidebar). 0 (default) keeps the solid layout
-  // exactly as before; a positive value shifts the dial centering geometry
-  // (full-screen viewport, first card's rest position and the left boundary
-  // at the overlay's right edge, centering target in the visible zone) and
-  // applies the .underflow padding so the scroll port starts under the
-  // overlay.
+  // overlay (the sidebar). 0 (default) keeps the solid layout exactly as
+  // before; a positive value shifts the dial centering geometry (full-screen
+  // viewport, first card's rest position and the left boundary at the
+  // overlay's right edge, centering target in the visible zone) and applies
+  // the .underflow padding so the scroll port starts under the overlay.
+  // bug54 (08.09.2026 user change): currently no menu background mode passes
+  // a positive value — 'translucent' was changed to the solid layout (cards
+  // clipped at the menu edge, never visible under it). The mechanism stays
+  // GATED for the upcoming 'blur' mode (Bug58), which needs the cards to
+  // pass under the menu.
   underflowPx?: number
 }
 

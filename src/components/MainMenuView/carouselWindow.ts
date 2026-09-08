@@ -32,23 +32,30 @@ export const CARD_GAP = 24
 // ContentCarousel.module.scss
 export const CAROUSEL_EDGE_PADDING = 16
 // bug54: the main-menu sidebar width in px (SCSS source of truth:
-// $sidebar-width in styles/_variables.scss). In the translucent menu
-// background mode the carousel viewport extends underneath the sidebar by
-// exactly this width — keep in sync with the SCSS variable.
+// $sidebar-width in styles/_variables.scss). In underflow mode (gated — see
+// slidesUnderSidebar in MainMenuView.tsx; no mode enables it after the 08.09
+// user change, the upcoming 'blur' mode / Bug58 will) the carousel viewport
+// extends underneath the sidebar by exactly this width — keep in sync with
+// the SCSS variable.
 export const SIDEBAR_WIDTH = 250
 
 // bug54: the geometry of the viewport the centering math is written for.
 // Omitted (the default) means today's solid layout: the viewport starts at
 // the sidebar's right edge, the first card's rest position is the edge
-// padding, and the centering target is the viewport's middle. In the
-// translucent menu background mode the viewport spans the FULL screen
-// (the content pane slides under the sidebar): the first card's rest
+// padding, and the centering target is the viewport's middle. The explicit
+// geometry below is the "underflow" layout — the viewport spans the FULL
+// screen (the content pane slides under the sidebar): the first card's rest
 // position is the sidebar width + edge padding, the FOCUSED card's left
 // edge may never cross the sidebar's right edge (minVisibleX — the Bug50
 // boundary: the focused card is always fully visible, all other cards may
 // slide under the glass), and the centering target is the middle of the
 // VISIBLE zone right of the sidebar (the card is centered where it can
 // actually be seen).
+// bug54 (08.09.2026 user change): no menu background mode enables the
+// underflow layout anymore — 'translucent' was changed to the solid
+// geometry (cards are clipped at the menu edge, never visible under it).
+// The geometry stays in the code GATED: the upcoming 'blur' mode (Bug58)
+// needs the cards to pass under the menu and will use it.
 export interface CarouselGeometry {
   // rest position of the first card (scroll coordinates); default 16
   leftInset: number

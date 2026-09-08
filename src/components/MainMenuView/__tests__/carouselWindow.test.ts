@@ -332,14 +332,18 @@ describe('dialScrollLeft (bug47 R2, F2)', () => {
   })
 })
 
-// bug54: the translucent menu background — the carousel viewport spans the
-// FULL screen (the content pane slides under the 250px sidebar), so the
-// centering geometry shifts: the first card's rest position is the sidebar
-// width + the edge padding (266), the FOCUSED card's left edge may never
-// cross the sidebar's right edge (minVisibleX 250 — the Bug50 boundary
-// stays intact: the focused card is always fully visible), and the
-// centering target is the middle of the VISIBLE zone (250 + (800-250)/2 =
-// 525 on the 800px device screen).
+// bug54: the underflow geometry — the carousel viewport spans the FULL
+// screen (the content pane slides under the 250px sidebar), so the centering
+// geometry shifts: the first card's rest position is the sidebar width + the
+// edge padding (266), the FOCUSED card's left edge may never cross the
+// sidebar's right edge (minVisibleX 250 — the Bug50 boundary stays intact:
+// the focused card is always fully visible), and the centering target is the
+// middle of the VISIBLE zone (250 + (800-250)/2 = 525 on the 800px device
+// screen).
+// bug54 (08.09.2026 user change): no menu background mode uses this geometry
+// anymore — 'translucent' was changed to the solid layout (cards clipped at
+// the menu edge, dial centering identical to solid). These tests keep the
+// GATED underflow path pinned for the upcoming 'blur' mode (Bug58).
 describe('bug54: translucent geometry (CarouselGeometry)', () => {
   const VIEWPORT_W = 800 // the full device screen (the pane slides under)
   const UNDERFLOW = 250 // the sidebar width (SIDEBAR_WIDTH)

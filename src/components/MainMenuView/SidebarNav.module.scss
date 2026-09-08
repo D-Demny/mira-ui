@@ -14,12 +14,14 @@
   overflow: hidden;
 }
 
-// bug54: translucent menu background — semi-transparent overlay so the
-// carousel cards sliding under the sidebar stay partially visible (the
-// ticket's Nocturne reference). NO backdrop-filter: the target Chromium 69
-// has no backdrop-filter (Chrome 76+) — the ticket's explicit fallback is a
-// clean semi-transparent color. The solid mode keeps the 0.95 background
-// above (this class only overrides it).
+// bug54: translucent menu background — semi-transparent panel: the app
+// background shows through where no card is. Since the 08.09 user change the
+// carousel keeps the solid geometry (cards are clipped at the sidebar's right
+// edge and never visible underneath), so the translucency is the panel's own
+// look — identical clipping to solid, only the opacity differs. NO
+// backdrop-filter: the target Chromium 69 has no backdrop-filter (Chrome 76+)
+// — the ticket's explicit fallback is a clean semi-transparent color. The
+// solid mode keeps the 0.95 background above (this class only overrides it).
 .glass {
   background: rgba(18, 18, 18, 0.65);
 }
