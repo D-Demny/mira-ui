@@ -519,16 +519,254 @@ describe('useHomeEntities', () => {
       expect(switchCalls).toBe(1)
     })
 
-    it('polls while mounted and stops polling after unmount', async () => {
+    // bug57 v2: the poll interval is 3s (was 5s) and only runs while the
+    // Home carousel is visible (pollActive)
+    it('polls every 3s while visible (pollActive) and stops polling after unmount', async () => {
       const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
       const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
-      const { result, unmount } = renderHook(() => useHomeSelectedEntities())
+      const { result, unmount } = renderHook(() => useHomeSelectedEntities(true))
       await waitFor(() => expect(result.current.every((v) => !v.loading)).toBe(true))
-      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5000)
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000)
       unmount()
       expect(clearIntervalSpy).toHaveBeenCalled()
       setIntervalSpy.mockRestore()
       clearIntervalSpy.mockRestore()
+    })
+
+    it('does not start the poll timer while hidden (pollActive=false)', async () => {
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      // assert BEFORE awaiting — testing-library's waitFor polls through its
+      // own setInterval, which the global spy would count as well
+      expect(setIntervalSpy).not.toHaveBeenCalled()
+      await waitFor(() => expect(result.current.every((v) => !v.loading)).toBe(true))
+      setIntervalSpy.mockRestore()
+    })
+
+    // bug57 v2: the poll runs only while the Home carousel is visible
+    // (pollActive). Hidden: no requests at all. On (re-)visibility: an
+    // immediate fresh read (no waiting for the first 3s tick), then exactly
+    // one poll per 3s that mirrors external changes (HA app / wall switch).
+    it('polls every 3s only while visible; hidden = no requests, re-visible = immediate fresh read', async () => {
+      seedSelection([SWITCH])
+      vi.useFakeTimers()
+      let reads = 0
+      let servedState = 'off'
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () => {
+          reads += 1
+          return HttpResponse.json({ entity_id: SWITCH, state: servedState })
+        }),
+      )
+      const { result, rerender, unmount } = renderHook(
+        ({ visible }) => useHomeSelectedEntities(visible),
+        { initialProps: { visible: false } },
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(reads).toBe(1) // the mount fetch only
+      expect(result.current[0].state).toBe('off')
+
+      // hidden for 10s — not a single poll request
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(reads).toBe(1)
+
+      // the Home carousel becomes visible: an immediate fresh read (no
+      // waiting for the 3s tick), then exactly one poll per 3s
+      rerender({ visible: true })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(reads).toBe(2) // the immediate read on visibility
+
+      // the user changed the switch in the HA app — the first 3s tick
+      // picks it up (the "external change" the user reported as slow)
+      servedState = 'on'
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(reads).toBe(3)
+      expect(result.current[0].state).toBe('on')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(reads).toBe(4)
+
+      unmount()
+      vi.useRealTimers()
+    })
+
+    // bug57 v2: the Build #109 re-press suspicion check — a press that lands
+    // while the previous actuation's service answer is still pending is
+    // rejected by the actuating guard (no second POST goes out), so a stale
+    // service answer can never arrive after a newer flip: interleaved
+    // actuations are structurally impossible. (The actuation's answer
+    // sequence check in actuateEntity makes the answer path safe on its own
+    // as well.)
+    it('a re-press while an actuation is in flight is rejected (no interleaved answers)', async () => {
+      seedSelection([SWITCH])
+      let toggleCalls = 0
+      let releaseToggle1: () => void = () => {}
+      const toggle1Pending = new Promise<void>((resolve) => {
+        releaseToggle1 = resolve
+      })
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () =>
+          HttpResponse.json({ entity_id: SWITCH, state: 'off' }),
+        ),
+        http.post('*/ha-api/services/switch/toggle', async () => {
+          toggleCalls += 1
+          if (toggleCalls === 1) {
+            await toggle1Pending
+            return HttpResponse.json([{ entity_id: SWITCH, state: 'on' }])
+          }
+          return HttpResponse.json([{ entity_id: SWITCH, state: 'off' }])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('off'))
+
+      // press 1: off → on, POST#1 in flight
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].state).toBe('on')
+      expect(result.current[0].actuating).toBe(true)
+
+      // press 2 (kurz danach) while POST#1 is still pending: rejected —
+      // the store is untouched and no second POST goes out
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].state).toBe('on')
+      expect(result.current[0].actuating).toBe(true)
+
+      // POST#1's answer arrives — confirmed, settled
+      act(() => {
+        releaseToggle1()
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(result.current[0].state).toBe('on')
+      expect(toggleCalls).toBe(1)
+
+      // now a press works again (the actuation is settled)
+      act(() => {
+        result.current[0].actuate()
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(toggleCalls).toBe(2)
+      expect(result.current[0].state).toBe('off')
+    })
+
+    // bug57 v2: the actual Build #109 re-press flicker — a poll read that
+    // starts AFTER the optimistic flip (so the v1 revision check lets it
+    // through) but while the actuation's service call is still in flight
+    // fetches HA's state BEFORE the POST is processed (still the
+    // pre-actuation state) and would clobber the flip. Exact user timeline:
+    // press 1 off→on (settles), press 2 on→off (POST#2 slow, ~3s), the 3s
+    // poll tick lands while POST#2 is in flight and HA still serves 'on' →
+    // the stale poll answer must be discarded; POST#2's own answer then
+    // confirms 'off'.
+    it('a poll read that starts during an in-flight actuation cannot clobber the flip (Build #109)', async () => {
+      seedSelection([SWITCH])
+      vi.useFakeTimers()
+      let toggleCalls = 0
+      let pollGets = 0
+      let releasePollRead: () => void = () => {}
+      const pollReadPending = new Promise<void>((resolve) => {
+        releasePollRead = resolve
+      })
+      let releaseToggle1: () => void = () => {}
+      const toggle1Pending = new Promise<void>((resolve) => {
+        releaseToggle1 = resolve
+      })
+      let releaseToggle2: () => void = () => {}
+      const toggle2Pending = new Promise<void>((resolve) => {
+        releaseToggle2 = resolve
+      })
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', async () => {
+          pollGets += 1
+          if (pollGets === 1) {
+            // the mount fetch — instant
+            return HttpResponse.json({ entity_id: SWITCH, state: 'off' })
+          }
+          // every later GET (the poll) is deferred and serves the PRE-POST
+          // state — HA has not processed POST#2 yet
+          await pollReadPending
+          return HttpResponse.json({ entity_id: SWITCH, state: 'on' })
+        }),
+        http.post('*/ha-api/services/switch/toggle', async () => {
+          toggleCalls += 1
+          if (toggleCalls === 1) {
+            await toggle1Pending
+            return HttpResponse.json([{ entity_id: SWITCH, state: 'on' }])
+          }
+          await toggle2Pending
+          return HttpResponse.json([{ entity_id: SWITCH, state: 'off' }])
+        }),
+      )
+
+      const { result, unmount } = renderHook(() => useHomeSelectedEntities(true))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('off')
+      expect(pollGets).toBe(1) // the mount fetch (the visibility read deduped on it)
+
+      // press 1: off → on — the POST settles fast
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].state).toBe('on') // optimistic flip
+      act(() => {
+        releaseToggle1()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].actuating).toBe(false) // settled
+
+      // press 2 (kurz danach): on → off — POST#2 is slow (the user's ~3s)
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].state).toBe('off') // optimistic flip
+      expect(result.current[0].actuating).toBe(true)
+
+      // the 3s poll tick fires while POST#2 is still in flight — the GET
+      // goes out and HA still answers with the pre-POST state ('on')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(pollGets).toBe(2) // the poll GET went out during the actuation
+
+      // the stale poll answer arrives — it MUST be discarded, the card
+      // stays 'off' (without the guard it flickers back to 'An' here)
+      act(() => {
+        releasePollRead()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('off')
+      expect(result.current[0].actuating).toBe(true)
+
+      // POST#2's answer arrives (~3s after the press) — confirms 'off'
+      act(() => {
+        releaseToggle2()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('off')
+      expect(result.current[0].actuating).toBe(false)
+      expect(result.current[0].error).toBeNull()
+      unmount()
+      vi.useRealTimers()
     })
 
     it('exposes store stats', async () => {

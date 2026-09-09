@@ -1580,6 +1580,69 @@ describe('MainMenuView', () => {
     })
   })
 
+  // bug57 v2: the 3s HA poll runs only while the Home carousel is the
+  // visible (confirmed) category — no daemon traffic in the other menus,
+  // and (re-)entering 'Home' triggers an immediate fresh read (no waiting
+  // for the next 3s tick)
+  describe('bug57 v2: HA poll gated on the Home carousel visibility', () => {
+    it('polls only while Home is visible: other categories = no requests, re-entering Home = immediate read + 3s rhythm', async () => {
+      vi.useFakeTimers()
+      let stateGets = 0
+      server.use(
+        http.get('*/ha-api/states/light.*', ({ request }) => {
+          stateGets += 1
+          const path = new URL(request.url).pathname
+          const entityId = decodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
+          return HttpResponse.json({ entity_id: entityId, state: 'off', attributes: {} })
+        }),
+      )
+      const { unmount } = render(<MainMenuView />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      // Home is the initial (visible) category: one mount fetch per selected
+      // light (the visibility read dedupes on the in-flight mount reads)
+      const afterMount = stateGets
+      expect(afterMount).toBe(HOME_LIGHTS.length)
+
+      // Home visible for 6.5s: exactly two poll ticks at the 3s rhythm
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6500)
+      })
+      expect(stateGets).toBe(afterMount + 2 * HOME_LIGHTS.length)
+
+      // switch to Playlists: the poll stops — no further state requests
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      const afterSwitch = stateGets
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6500)
+      })
+      expect(stateGets).toBe(afterSwitch)
+
+      // back to Home: an immediate fresh read for every selected light,
+      // then the 3s rhythm resumes
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(stateGets).toBe(afterSwitch + HOME_LIGHTS.length)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(stateGets).toBe(afterSwitch + 2 * HOME_LIGHTS.length)
+
+      unmount()
+      vi.useRealTimers()
+    })
+  })
+
   describe('bug4: track sub-menu back behavior', () => {
     it('back inside the track list returns to the playlist list without exiting', async () => {
       const onExit = vi.fn()

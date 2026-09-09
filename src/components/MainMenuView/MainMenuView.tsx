@@ -290,7 +290,10 @@ export function MainMenuView({
   // ticket 9.3: the user-selected entities in one hook (the same hook the
   // Home sub-menu uses); the categories memo keys on the scalar snapshot
   // below, never on the fresh per-render view objects (bug8.1)
-  const selectedEntities = useHomeSelectedEntities()
+  // bug57 v2: the 3s HA poll runs only while the Home carousel is actually
+  // the confirmed (visible) category — no daemon traffic in the other menus;
+  // (re-)entering 'home' triggers an immediate fresh read inside the hook
+  const selectedEntities = useHomeSelectedEntities(activeCategoryId === 'home')
   const settings = useSettings()
   // epic10: Pi helper-server feature detection — starts the capabilities
   // poll while the main menu is mounted. The artwork pre-decode below uses

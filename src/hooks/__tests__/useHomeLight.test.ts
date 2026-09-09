@@ -236,7 +236,10 @@ describe('useHomeLight', () => {
     expect(result.current[0].state).toBe('off')
   })
 
-  it('polls the state while mounted and stops polling after unmount', async () => {
+  // bug57 v2: the poll interval is 3s (was 5s); the poll runs while a
+  // consumer is mounted (the light-control popup — mounted = visible), so
+  // it is already gated on visibility by the mount/subscription
+  it('polls the state every 3s while mounted and stops polling after unmount', async () => {
     server.use(
       http.get('*/ha-api/states/light.*', () =>
         HttpResponse.json({ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'off' }),
@@ -246,11 +249,90 @@ describe('useHomeLight', () => {
     const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
     const { result, unmount } = renderHook(() => useHomeLight())
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5000)
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000)
     unmount()
     expect(clearIntervalSpy).toHaveBeenCalled()
     setIntervalSpy.mockRestore()
     clearIntervalSpy.mockRestore()
+  })
+
+  // bug57 v2: same race class as useHomeEntities — a poll read that starts
+  // AFTER the optimistic flip (the v1 revision check lets it through) but
+  // while the toggle's service call is still in flight fetches HA's state
+  // BEFORE the POST is processed (still the pre-toggle state) and would
+  // clobber the flip.
+  it('a poll read that starts during an in-flight toggle cannot clobber the flip (bug57 v2)', async () => {
+    const LIGHT_ID = HOME_LIGHTS[0].entityId
+    vi.useFakeTimers()
+    let stateGets = 0
+    let releasePollRead: () => void = () => {}
+    const pollReadPending = new Promise<void>((resolve) => {
+      releasePollRead = resolve
+    })
+    let releaseToggle: () => void = () => {}
+    const togglePending = new Promise<void>((resolve) => {
+      releaseToggle = resolve
+    })
+    server.use(
+      http.get('*/ha-api/states/light.*', async () => {
+        stateGets += 1
+        if (stateGets === 1) {
+          // the mount fetch — instant
+          return HttpResponse.json({ entity_id: LIGHT_ID, state: 'off' })
+        }
+        // the poll GET — deferred, and HA has not processed the POST yet
+        await pollReadPending
+        return HttpResponse.json({ entity_id: LIGHT_ID, state: 'off' })
+      }),
+      http.post('*/ha-api/services/light/toggle', async () => {
+        await togglePending
+        return HttpResponse.json([{ entity_id: LIGHT_ID, state: 'on' }])
+      }),
+    )
+
+    const { result, unmount } = renderHook(() => useHomeLight())
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.state).toBe('off')
+    expect(stateGets).toBe(1) // the mount fetch
+
+    // toggle: off → on, the POST is slow
+    act(() => {
+      void result.current.toggle()
+    })
+    expect(result.current.state).toBe('on') // optimistic flip
+    expect(result.current.toggling).toBe(true)
+
+    // the 3s poll tick fires while the POST is still in flight
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000)
+    })
+    expect(stateGets).toBe(2) // the poll GET went out during the toggle
+
+    // the stale poll answer arrives — it MUST be discarded, the store stays
+    // at the flipped value
+    act(() => {
+      releasePollRead()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.state).toBe('on') // NOT clobbered back to 'off'
+    expect(result.current.toggling).toBe(true)
+
+    // the toggle answer arrives — confirms 'on'
+    act(() => {
+      releaseToggle()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.state).toBe('on')
+    expect(result.current.toggling).toBe(false)
+    expect(result.current.error).toBeNull()
+    unmount()
+    vi.useRealTimers()
   })
 
   it('has unique entity ids in HOME_LIGHTS', () => {
