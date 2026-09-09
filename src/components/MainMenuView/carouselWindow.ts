@@ -108,6 +108,48 @@ export function dialScrollLeft(
   return Math.max(0, Math.min(center - centerTarget, maxScroll, leftBoundary))
 }
 
+// bug58 T3: the card indices that overlap the sidebar area in underflow mode
+// (the 'blur' menu background). ContentCarousel blurs exactly these cards
+// (.blurred, `filter: blur`) while they sit under the translucent glass and
+// REMOVES the filter as soon as they leave — a `filter` creates a compositing
+// layer per affected element, which is expensive on the weak S905D2, so
+// permanently blurred cards are not acceptable (Bug58 Technical Base Finding).
+// Pure arithmetic from the SAME constants as dialScrollLeft() — the card's
+// screen x is leftInset + i * pitch - scrollLeft, and the scroll offset is
+// the DIAL TARGET for the current focus (not a measured value) — so deriving
+// the set in the render phase stays read-free (bug47/bug48: per-frame layout
+// reads/DOM writes are a no-go). Only a few cards can overlap at all (the
+// covered area is underflowPx + CARD_WIDTH wide ≈ 3 card pitches), and the
+// focused card never does (minVisibleX keeps it fully right of the edge).
+export function sidebarOverlap(
+  count: number,
+  focusedIndex: number,
+  viewportW: number,
+  underflowPx: number,
+): Set<number> {
+  // solid layout (underflowPx 0): the "sidebar area" has zero width, so no
+  // card can overlap it — never derive a set from the geometry in that case
+  if (underflowPx <= 0) return new Set<number>()
+  const pitch = CARD_WIDTH + CARD_GAP
+  const leftInset = CAROUSEL_EDGE_PADDING + underflowPx
+  const scrollLeft = dialScrollLeft(count, focusedIndex, viewportW, {
+    leftInset,
+    minVisibleX: underflowPx,
+    centerTarget: underflowPx + (viewportW - underflowPx) / 2,
+  })
+  // card i overlaps [0, underflowPx) iff its screen x lies in the open
+  // interval (-CARD_WIDTH, underflowPx); solve the two inequalities for the
+  // small candidate range instead of scanning the whole list (at most ~3)
+  const lo = Math.floor((scrollLeft - leftInset - CARD_WIDTH) / pitch)
+  const hi = Math.ceil((scrollLeft - leftInset + underflowPx) / pitch)
+  const out = new Set<number>()
+  for (let i = Math.max(0, lo); i <= Math.min(count - 1, hi); i++) {
+    const x = leftInset + i * pitch - scrollLeft
+    if (x < underflowPx && x + CARD_WIDTH > 0) out.add(i)
+  }
+  return out
+}
+
 // the physical scroll position of the carousel (measured after render); used
 // by the viewport safety guard (bug18). width === 0 (e.g. in jsdom) disables
 // the guard so the pure index window applies.

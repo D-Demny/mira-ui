@@ -1,6 +1,12 @@
 // keep in sync with CARD_ART_SIZE in ContentCarousel.tsx (bug2: 170px)
 $card-art-size: 170px;
 
+// bug58 T3: per-card blur radius for the cards sitting under the sidebar
+// glass. Fallback stage 1 (Bug58 "Performance Acceptance"): if the compositing
+// cost shows up on the weak S905D2, REDUCE this radius before removing the
+// feature — a `filter` forces its own compositing layer per affected card.
+$card-blur-radius: 12px;
+
 // bug2.1: 24px container gap + 16px edge padding so cards never touch the edges
 // bug50: the margin-based flex-gap-x mixin instead of flex `gap` — the target
 // Chromium 69 ignores flex gap (Chrome 84+), and with raw `gap` the on-device
@@ -61,6 +67,19 @@ $card-art-size: 170px;
 .cardFocused {
   opacity: 1;
   transform: scale(1.06);
+}
+
+// bug58 T3: cards currently under the translucent sidebar glass get the
+// STRONG per-card blur (Bug58: cards "stark geblurred" while they sit under
+// the menu). `filter: blur` — deliberately NOT backdrop-filter (CR69: filter
+// has shipped since Chrome 53, the target is Chromium 69; backdrop-filter is
+// out). The class is applied PER CARD by ContentCarousel.tsx and REMOVED as
+// soon as the card leaves the sidebar area: each `filter` creates a
+// compositing layer, so permanently blurred cards are not acceptable on the
+// weak S905D2 (Bug58 Technical Base Finding / Performance Acceptance — see
+// $card-blur-radius for the fallback stage).
+.blurred {
+  filter: blur($card-blur-radius);
 }
 
 .meta {
