@@ -288,7 +288,7 @@ describe('settings store', () => {
     })
   })
 
-  describe('sidebarBackground (bug54)', () => {
+  describe('sidebarBackground (bug54/bug58)', () => {
     it('defaults to solid on a fresh install', () => {
       expect(getSettings().sidebarBackground).toBe('solid')
     })
@@ -305,8 +305,11 @@ describe('settings store', () => {
     it.each([
       ['the exact "translucent" string', 'translucent', 'translucent'],
       ['the exact "clear" string (v2)', 'clear', 'clear'],
+      ['the exact "blur" string (bug58)', 'blur', 'blur'],
       ['"transparent"', 'transparent', 'solid'],
       ['"SOLID"', 'SOLID', 'solid'],
+      ['"Unschärfe" (a German label, not an enum value)', 'Unschärfe', 'solid'],
+      ['"BLUR"', 'BLUR', 'solid'],
       ['the number 1', 1, 'solid'],
       ['true', true, 'solid'],
       ['null', null, 'solid'],
@@ -341,5 +344,16 @@ describe('settings store', () => {
       __resetSettings()
       expect(getSettings().sidebarBackground).toBe('clear')
     })
+
+    it('round-trips blur (bug58) through localStorage', () => {
+      updateSettings({ sidebarBackground: 'blur' })
+      expect(getSettings().sidebarBackground).toBe('blur')
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('blur')
+    })
+
+    // backward compat: blobs predating bug58 never held 'blur' — a missing
+    // field stays 'solid' (no migration needed; the strict coercion above is
+    // the null-op migration), so the pre-bug58 tests keep running unchanged
   })
 })

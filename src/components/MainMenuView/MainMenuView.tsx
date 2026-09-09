@@ -75,14 +75,17 @@ function piRowValue(mode: MiraServerState['mode']): string {
   return 'Standalone'
 }
 
-// bug54 v2 (08.09): the three 'Menü-Hintergrund' options with their row
-// labels. The enum values keep their pre-v2 names (backward compat of
+// bug54 v2 (08.09) / bug58: the four 'Menü-Hintergrund' options with their
+// row labels, in cycle order (Schwarz → Halbdurchsichtig → Durchsichtig →
+// Unschärfe). The enum values keep their pre-v2 names (backward compat of
 // stored blobs); v2 relabelled 'translucent' ('Durchsichtig' →
-// 'Halbdurchsichtig') and added 'clear' (100% transparent, 'Durchsichtig').
+// 'Halbdurchsichtig') and added 'clear' (100% transparent,
+// 'Durchsichtig'); bug58 adds the fourth option 'blur' ('Unschärfe').
 const SIDEBAR_BG_LABELS: Record<Settings['sidebarBackground'], string> = {
   solid: 'Schwarz',
   translucent: 'Halbdurchsichtig',
   clear: 'Durchsichtig',
+  blur: 'Unschärfe',
 }
 
 // bug25: root rows of the 'Einstellungen' vertical list
@@ -427,13 +430,16 @@ export function MainMenuView({
   const isAdjustLevel = activeCategoryId === 'settings' && settingsLevel === 'adjust'
   const activeAdjustingRowId = activeCategoryId === 'settings' ? adjustingRowId : null
   const settingsRows = isAdjustLevel ? settingsAdjustRows : settingsRootRows
-  // bug54 v2: the 'Menü-Hintergrund' setting — 'translucent' renders the
-  // sidebar as a semi-transparent glass panel, 'clear' as a fully
-  // transparent background (no visible panel, only the menu entries),
-  // 'solid' keeps it opaque. All three keep the solid carousel geometry
-  // (cards clipped at the menu edge — see slidesUnderSidebar below)
+  // bug54 v2 / bug58: the 'Menü-Hintergrund' setting — 'translucent' and
+  // 'blur' render the sidebar as a semi-transparent glass panel (bug58's
+  // 'Unschärfe' reuses the .glass look — ticket Task 4 — so no new
+  // SidebarNav prop value is needed; the cards passing under it, blurred,
+  // come with the underflow task), 'clear' as a fully transparent background
+  // (no visible panel, only the menu entries), 'solid' keeps it opaque. All
+  // four keep the solid carousel geometry for now (cards clipped at the menu
+  // edge — see slidesUnderSidebar below)
   const sidebarNavBackground =
-    settings.sidebarBackground === 'translucent'
+    settings.sidebarBackground === 'translucent' || settings.sidebarBackground === 'blur'
       ? 'glass'
       : settings.sidebarBackground === 'clear'
         ? 'clear'
@@ -764,15 +770,17 @@ export function MainMenuView({
       // the focused row adjusts the level directly (handleWheelContent)
       updateSettings({ autoBrightness: !settings.autoBrightness })
     } else if (card.id === 'set-sidebar-bg') {
-      // bug54 v2: cycle the menu background
-      // (Schwarz → Halbdurchsichtig → Durchsichtig → Schwarz)
+      // bug54 v2 / bug58: cycle the menu background
+      // (Schwarz → Halbdurchsichtig → Durchsichtig → Unschärfe → Schwarz)
       updateSettings({
         sidebarBackground:
           settings.sidebarBackground === 'solid'
             ? 'translucent'
             : settings.sidebarBackground === 'translucent'
               ? 'clear'
-              : 'solid',
+              : settings.sidebarBackground === 'clear'
+                ? 'blur'
+                : 'solid',
       })
     } else if (
       // bug25: dial-confirm on a slider row toggles its adjust mode; while
