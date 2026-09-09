@@ -2511,9 +2511,11 @@ describe('MainMenuView', () => {
       expect(getSettings().sidebarBackground).toBe('blur')
       expect(rowValue(row)).toBe('Unschärfe')
       // T1/T4: the panel look is the glass one (blur reuses .glass — no own
-      // class, SidebarNav unchanged) and the layout still stays solid (the
-      // underflow + per-card blur are the following tasks)
-      expect(view.className).not.toContain('viewUnderflow')
+      // class, SidebarNav unchanged); T2: the underflow layout is ACTIVE —
+      // the content pane spans the full screen and the carousel slides under
+      // the sidebar (carousel + settings-list assertions in the dedicated
+      // test below; the per-card blur follows in T3)
+      expect(view.className).toContain('viewUnderflow')
       expect(nav.className).toContain('glass')
       expect(nav.className).not.toContain('clear')
 
@@ -2585,13 +2587,14 @@ describe('MainMenuView', () => {
       expect(list.parentElement?.className).not.toContain('settingsUnderflow')
     })
 
-    it('all four modes render the identical carousel layout (same dial centering geometry)', async () => {
-      // geometry contract: all modes drive the carousel with underflowPx=0
-      // (the default dialScrollLeft path, bit-exact the solid formula —
-      // pinned in carouselWindow.test.ts), so card positioning, the
-      // centering target and the scroll clamps are identical; the only DOM
-      // difference is the sidebar's background class. bug58's 'blur' keeps
-      // this geometry in T1 (the underflow layout + per-card blur follow)
+    it('the three non-blur modes render the identical solid carousel layout (blur underflows)', async () => {
+      // geometry contract: 'solid' / 'translucent' / 'clear' drive the
+      // carousel with underflowPx=0 (the default dialScrollLeft path,
+      // bit-exact the solid formula — pinned in carouselWindow.test.ts), so
+      // card positioning, the centering target and the scroll clamps are
+      // identical; the only DOM difference is the sidebar's background
+      // class. bug58 T2: 'blur' DIVERGES — underflowPx=SIDEBAR_WIDTH (the
+      // cards pass under the sidebar), pinned in the dedicated test below.
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
       const layout = () =>
@@ -2600,19 +2603,54 @@ describe('MainMenuView', () => {
           (container.querySelector('.carousel') as HTMLElement).className,
           (container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement).className,
         ].join('|')
-      const translucentLayout = layout()
+      const solidLayout = layout()
       act(() => {
         updateSettings({ sidebarBackground: 'clear' })
       })
-      expect(layout()).toBe(translucentLayout)
-      act(() => {
-        updateSettings({ sidebarBackground: 'blur' })
-      })
-      expect(layout()).toBe(translucentLayout)
+      expect(layout()).toBe(solidLayout)
       act(() => {
         updateSettings({ sidebarBackground: 'solid' })
       })
-      expect(layout()).toBe(translucentLayout)
+      expect(layout()).toBe(solidLayout)
+      // blur diverges: the underflow geometry is active (see below)
+      act(() => {
+        updateSettings({ sidebarBackground: 'blur' })
+      })
+      expect(layout()).not.toBe(solidLayout)
+      expect((container.firstElementChild as HTMLElement).className).toContain('viewUnderflow')
+      expect((container.querySelector('.carousel') as HTMLElement).className).toContain('underflow')
+    })
+
+    it('enables the under-the-menu geometry in blur mode (cards pass under the sidebar)', async () => {
+      // bug58 T2: 'Unschärfe' re-activates the Bug54-gated underflow
+      // mechanism — the content pane spans the full screen (.viewUnderflow,
+      // clipped at the SCREEN edge), the carousel viewport starts under the
+      // sidebar (underflowPx=SIDEBAR_WIDTH → the .underflow padding + the
+      // underflow dial centering geometry) and the settings list keeps its
+      // left inset (.settingsUnderflow). The per-card blur itself follows in
+      // T3.
+      updateSettings({ sidebarBackground: 'blur' })
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+      const carousel = container.querySelector('.carousel') as HTMLElement
+      expect(carousel).not.toBeNull()
+      expect(view.className).toContain('viewUnderflow')
+      expect(carousel.className).toContain('underflow')
+
+      // the settings list gets the underflow inset (display:block + padding)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
+      expect(list.parentElement?.className).toContain('settingsUnderflow')
+
+      // toggling to a non-blur mode disables the underflow again (solid
+      // layout: no pane margin, no carousel padding, display:contents list)
+      act(() => {
+        updateSettings({ sidebarBackground: 'translucent' })
+      })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
+      expect(list.parentElement?.className).not.toContain('settingsUnderflow')
     })
   })
 
