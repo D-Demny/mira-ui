@@ -30,8 +30,6 @@ import { PiKeyboardOverlay, type PiKeyboardField } from '@/components/SettingsSh
 import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TransferPrompt } from '@/components/TransferPrompt'
-
-import { FpsOverlay } from '@/components/FpsOverlay'
 import { TrackInfo } from '@/components/TrackInfo'
 import { UpdateCard } from '@/components/UpdateCard'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
@@ -1425,16 +1423,6 @@ function AppInner() {
   )
 }
 
-// Bug58 T5 (DEBUG ONLY — this branch is deleted after the S905D2 measurement,
-// never merged into main): the temporary rAF FPS overlay. Rendered as a sibling
-// of AppInner so it appears in every view branch at once; position:fixed +
-// z-index 10000 (above DevScreens' 9999) keep it on top of all views, and a
-// sibling placement keeps it outside the zoomed player wrapper (bug38).
 export default function App() {
-  return (
-    <>
-      <AppInner />
-      <FpsOverlay />
-    </>
-  )
+  return <AppInner />
 }
