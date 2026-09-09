@@ -154,6 +154,17 @@ interface ContentCarouselProps {
   onCardHold?: (card: MenuCard, index: number) => void
   // index of the dial-focused card (rendered with a focus outline + centered)
   focusedIndex?: number
+  // bug58 T4: the index the BLUR set is derived from — deliberately decoupled
+  // from focusedIndex. In MainMenuView the UI focus can sit in the SIDEBAR
+  // pane (dialing the menu rows) while the carousel keeps its last position:
+  // there focusedIndex is undefined, but the cards under the glass must keep
+  // their blur — the blur state must not depend on the active pane (device
+  // report Build #110/#111). MainMenuView always passes the content index;
+  // it stays put during sidebar dialing (a preview switch resets it to 0,
+  // which matches the carousel's card-0 remount), so the set is stable.
+  // Standalone usage without this prop falls back to focusedIndex — exactly
+  // like before T4.
+  blurIndex?: number
   // bug47: how the last focus change arrived — 'dial' (wheel tick) scrolls
   // the focus in instantly (a smooth animation would restart on every 35 ms
   // tick and keep the scroll 50+ cards behind the focus), 'jump' (tap,
@@ -180,6 +191,7 @@ export function ContentCarousel({
   onCardTap,
   onCardHold,
   focusedIndex,
+  blurIndex,
   focusScrollBehavior = 'smooth',
   underflowPx = 0,
 }: ContentCarouselProps) {
@@ -286,43 +298,61 @@ export function ContentCarousel({
   // + the fixed card/gap/padding constants + the once-measured viewport
   // width, clamped to the ends exactly like inline:'center' (same centering,
   // no drift — Bug15/18/41 windowing stays intact). Without a measurable
-  // viewport (jsdom) it falls back to the native call.
-  useEffect(() => {
+  // viewport (jsdom) it falls back to the native call. The write itself stays
+  // read-free: it is a plain arithmetic assignment (bug47's reflow worry was
+  // scrollIntoView's internal geometry measurement, not this).
+  // bug58 T4: the dial branch is a LAYOUT effect — it runs after the DOM
+  // commit and BEFORE the browser paints, so the .blurred classes (committed
+  // in this same render) and the scrollLeft write land in the SAME frame. As
+  // a passive useEffect it ran after the paint: exactly one planned frame per
+  // tick in which the blur set and the scroll position were a card (194 px)
+  // apart — the visible edge flicker of the device report (Build #110/#111).
+  useLayoutEffect(() => {
+    if (focusScrollBehavior !== 'auto') return
     if (focusedIndex == null) return
     const card = focusedCardRef.current
     if (!card) return
-    if (focusScrollBehavior === 'auto') {
-      const carousel = carouselRef.current
-      if (!carousel) return
-      if (viewportWidthRef.current <= 0) {
-        // zero at mount (jsdom / first paint pending): measure once now — a
-        // single layout read, never again (the width is constant afterwards)
-        viewportWidthRef.current = carousel.clientWidth
-      }
-      if (viewportWidthRef.current <= 0) {
-        card.scrollIntoView({ behavior: 'auto', inline: 'center' })
-        return
-      }
-      const viewportW = viewportWidthRef.current
-      // bug54/bug58: blur mode — the viewport spans the full screen
-      // (underflowPx under the sidebar), so the centering geometry shifts:
-      // the first card's rest position sits at sidebar width + edge padding,
-      // the focused card's left edge may never cross the sidebar's right
-      // edge (the Bug50 boundary), and the centering target is the middle of
-      // the visible zone. underflowPx 0 passes no geometry — today's exact
-      // arithmetic.
-      const geo: CarouselGeometry | undefined =
-        underflowPx > 0
-          ? {
-              leftInset: CAROUSEL_EDGE_PADDING + underflowPx,
-              minVisibleX: underflowPx,
-              centerTarget: underflowPx + (viewportW - underflowPx) / 2,
-            }
-          : undefined
-      carousel.scrollLeft = dialScrollLeft(cards.length, focusedIndex, viewportW, geo)
+    const carousel = carouselRef.current
+    if (!carousel) return
+    if (viewportWidthRef.current <= 0) {
+      // zero at mount (jsdom / first paint pending): measure once now — a
+      // single layout read, never again (the width is constant afterwards)
+      viewportWidthRef.current = carousel.clientWidth
+    }
+    if (viewportWidthRef.current <= 0) {
+      card.scrollIntoView({ behavior: 'auto', inline: 'center' })
       return
     }
-    card.scrollIntoView({ behavior: 'smooth', inline: 'center' })
+    const viewportW = viewportWidthRef.current
+    // bug54/bug58: blur mode — the viewport spans the full screen
+    // (underflowPx under the sidebar), so the centering geometry shifts:
+    // the first card's rest position sits at sidebar width + edge padding,
+    // the focused card's left edge may never cross the sidebar's right
+    // edge (the Bug50 boundary), and the centering target is the middle of
+    // the visible zone. underflowPx 0 passes no geometry — today's exact
+    // arithmetic.
+    const geo: CarouselGeometry | undefined =
+      underflowPx > 0
+        ? {
+            leftInset: CAROUSEL_EDGE_PADDING + underflowPx,
+            minVisibleX: underflowPx,
+            centerTarget: underflowPx + (viewportW - underflowPx) / 2,
+          }
+        : undefined
+    carousel.scrollLeft = dialScrollLeft(cards.length, focusedIndex, viewportW, geo)
+  }, [focusedIndex, categoryId, focusScrollBehavior, cards.length, underflowPx])
+
+  // bug47: the SMOOTH branch (taps, confirms, category switches) stays a
+  // passive effect — its animation runs after the paint anyway, so there is
+  // no same-frame requirement with the blur classes (bug58 T4 moved only the
+  // dial branch to a layout effect). Same dependency list as before the split.
+  useEffect(() => {
+    if (focusScrollBehavior !== 'auto') {
+      const card = focusedCardRef.current
+      if (focusedIndex != null && card) {
+        card.scrollIntoView({ behavior: 'smooth', inline: 'center' })
+      }
+    }
   }, [focusedIndex, categoryId, focusScrollBehavior, cards.length, underflowPx])
 
   // bug5/bug6/bug18: mount only [start, end) plus invisible width spacers for
@@ -340,30 +370,40 @@ export function ContentCarousel({
   const leadingWidth = leadingSpacerWidth(start)
   const trailingWidth = trailingSpacerWidth(cards.length - end)
 
-  // bug58 T3: in the 'blur' menu background exactly the cards that currently
-  // overlap the sidebar area get the strong per-card blur (.blurred) while
-  // under the translucent glass; the filter is REMOVED as soon as a card
-  // leaves the area (`filter` creates a compositing layer per card — a
-  // permanently blurred card is not acceptable on the weak S905D2). The set
-  // is derived arithmetically from the DIAL state — sidebarOverlap() reuses
-  // the same constants and the focus's TARGET offset as dialScrollLeft(), so
-  // neither this render nor the dial tick reads layout (bug47/bug48: per-
-  // frame layout reads are a no-go). viewportWidthRef holds the once-measured
-  // width (the device pane is fixed); while it is still 0 (jsdom first paint)
-  // no card is blurred for that one frame. The smooth-scroll path
-  // (scrollIntoView, taps/jumps) only updates the blur state with the next
-  // dial tick — deliberate v1 behavior, the dial ticks are the scrolling case.
-  // Reading the ref in the render body is intentional (the accepted
-  // react-hooks/refs false positive for this established pattern, cf.
-  // cardHoldRoutingRef in MainMenuView.tsx): the value is written only in
-  // mount/layout and one-shot effects — never per frame — and the dial target
-  // on every tick is computed from this same width, so a render that skipped
-  // the blur set would desync the blur state from the dial scroll.
+  // bug58 T3/T4: in the 'blur' menu background exactly the cards that are
+  // MORE THAN HALF under the translucent glass (the card's center has crossed
+  // the sidebar's right edge — sidebarOverlap's T4 center rule) get the strong
+  // per-card blur (.blurred); the filter is REMOVED as soon as a card leaves
+  // that zone (`filter` creates a compositing layer per card — a permanently
+  // blurred card is not acceptable on the weak S905D2). The set is derived
+  // arithmetically from the DIAL state — sidebarOverlap() reuses the same
+  // constants and the index's TARGET offset as dialScrollLeft(), so neither
+  // this render nor the dial tick reads layout (bug47/bug48: per-frame layout
+  // reads are a no-go). viewportWidthRef holds the once-measured width (the
+  // device pane is fixed); while it is still 0 (jsdom first paint) no card is
+  // blurred for that one frame. The smooth-scroll path (scrollIntoView,
+  // taps/jumps) only updates the blur state with the next dial tick —
+  // deliberate v1 behavior, the dial ticks are the scrolling case.
+  // bug58 T4: the set follows blurIndex ?? focusedIndex, NOT focusedIndex
+  // alone — in MainMenuView the UI focus can sit in the sidebar pane while
+  // the carousel keeps its position (focusedIndex undefined), and the cards
+  // under the glass must stay blurred; the dial scroll below stays keyed on
+  // focusedIndex exactly as before. Reading the ref in the render body is
+  // intentional (the accepted react-hooks/refs false positive for this
+  // established pattern, cf. cardHoldRoutingRef in MainMenuView.tsx): the
+  // value is written only in mount/layout and one-shot effects — never per
+  // frame — and the dial target on every tick is computed from this same
+  // width, so a render that skipped the blur set would desync the blur state
+  // from the dial scroll.
   // eslint-disable-next-line react-hooks/refs
   const measuredViewportW = viewportWidthRef.current
+  // bug58 T4: the blur index — always the content focus in MainMenuView (even
+  // while the UI focus sits in the sidebar pane), focusedIndex for standalone
+  // usage without the prop
+  const blurTarget = blurIndex ?? focusedIndex
   const blurredCards =
-    underflowPx > 0 && focusedIndex != null && measuredViewportW > 0
-      ? sidebarOverlap(cards.length, focusedIndex, measuredViewportW, underflowPx)
+    underflowPx > 0 && blurTarget != null && measuredViewportW > 0
+      ? sidebarOverlap(cards.length, blurTarget, measuredViewportW, underflowPx)
       : NO_BLUR
 
   return (
