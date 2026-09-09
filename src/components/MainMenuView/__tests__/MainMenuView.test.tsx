@@ -2443,7 +2443,7 @@ describe('MainMenuView', () => {
     })
   })
 
-  describe('bug54: configurable menu background (Schwarz / Halbdurchsichtig / Durchsichtig)', () => {
+  describe('bug54/bug58: configurable menu background (Schwarz / Halbdurchsichtig / Durchsichtig / Unschärfe)', () => {
     // the 'Menü-Hintergrund' row is APPENDED to the 'Settings' sub-level
     // (Einstellungen → Settings, index 5) — existing row indices stay stable
     function toSidebarBackgroundRow() {
@@ -2473,7 +2473,7 @@ describe('MainMenuView', () => {
       expect(row?.textContent).toContain('Schwarz')
     })
 
-    it('confirming the row cycles all three options (store, row value, sidebar modifier)', async () => {
+    it('confirming the row cycles all four options (store, row value, sidebar modifier)', async () => {
       const { container } = render(<MainMenuView />)
       const view = container.firstElementChild as HTMLElement
       const nav = container.querySelector('nav') as HTMLElement
@@ -2506,7 +2506,18 @@ describe('MainMenuView', () => {
       expect(nav.className).toContain('clear')
       expect(nav.className).not.toContain('glass')
 
-      // 3: Durchsichtig → Schwarz
+      // 3: Durchsichtig → Unschärfe (bug58)
+      confirmDial()
+      expect(getSettings().sidebarBackground).toBe('blur')
+      expect(rowValue(row)).toBe('Unschärfe')
+      // T1/T4: the panel look is the glass one (blur reuses .glass — no own
+      // class, SidebarNav unchanged) and the layout still stays solid (the
+      // underflow + per-card blur are the following tasks)
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(nav.className).toContain('glass')
+      expect(nav.className).not.toContain('clear')
+
+      // 4: Unschärfe → Schwarz (full cycle closed)
       confirmDial()
       expect(getSettings().sidebarBackground).toBe('solid')
       expect(rowValue(row)).toBe('Schwarz')
@@ -2574,12 +2585,13 @@ describe('MainMenuView', () => {
       expect(list.parentElement?.className).not.toContain('settingsUnderflow')
     })
 
-    it('all three modes render the identical carousel layout (same dial centering geometry)', async () => {
+    it('all four modes render the identical carousel layout (same dial centering geometry)', async () => {
       // geometry contract: all modes drive the carousel with underflowPx=0
       // (the default dialScrollLeft path, bit-exact the solid formula —
       // pinned in carouselWindow.test.ts), so card positioning, the
       // centering target and the scroll clamps are identical; the only DOM
-      // difference is the sidebar's background class
+      // difference is the sidebar's background class. bug58's 'blur' keeps
+      // this geometry in T1 (the underflow layout + per-card blur follow)
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
       const layout = () =>
@@ -2591,6 +2603,10 @@ describe('MainMenuView', () => {
       const translucentLayout = layout()
       act(() => {
         updateSettings({ sidebarBackground: 'clear' })
+      })
+      expect(layout()).toBe(translucentLayout)
+      act(() => {
+        updateSettings({ sidebarBackground: 'blur' })
       })
       expect(layout()).toBe(translucentLayout)
       act(() => {

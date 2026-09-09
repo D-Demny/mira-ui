@@ -20,14 +20,19 @@
 // the sidebar's right edge and never visible underneath), so the
 // translucency is the panel's own look — identical clipping to solid, only
 // the opacity differs. NO backdrop-filter: the target Chromium 69 has no
-// backdrop-filter (Chrome 76+) — the ticket's explicit fallback is a clean
-// semi-transparent color. The solid mode keeps the 0.95 background above
-// (this class only overrides it).
+// backdrop-filter (Chrome 76+, CR69) — the ticket's explicit fallback is a
+// clean semi-transparent color. The solid mode keeps the 0.95 background
+// above (this class only overrides it).
 // v2 raised the transparency (~20% → ~30%, per the user's on-screen
 // impression): the background should show through more clearly while the
 // menu stays readable. The EXACT alpha is a visual acceptance by the user
 // (started at 0.55, down from 0.65) — adjust it if the on-device verdict
 // differs.
+// bug58: "Unschärfe" (enum 'blur') REUSES this look (ticket Task 4):
+// MainMenuView maps 'blur' → 'glass', so no separate .blur class exists and
+// SidebarNav stays unchanged — when the underflow layout + per-card
+// filter: blur(Npx) land, the blurred cards will show through this same
+// translucent panel. Still NO backdrop-filter (CR69).
 .glass {
   background: rgba(18, 18, 18, 0.55);
 }
