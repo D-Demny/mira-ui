@@ -158,11 +158,10 @@ interface ContentCarouselProps {
   // viewport, first card's rest position and the left boundary at the
   // overlay's right edge, centering target in the visible zone) and applies
   // the .underflow padding so the scroll port starts under the overlay.
-  // bug54 (08.09.2026 user change): currently no menu background mode passes
-  // a positive value — 'translucent' was changed to the solid layout (cards
-  // clipped at the menu edge, never visible under it). The mechanism stays
-  // GATED for the upcoming 'blur' mode (Bug58), which needs the cards to
-  // pass under the menu.
+  // bug54 (08.09.2026 user change) / bug58: only the 'blur' mode passes a
+  // positive value (SIDEBAR_WIDTH — the cards pass under the menu and get
+  // blurred there); 'solid', 'translucent' and 'clear' keep the solid layout
+  // (cards clipped at the menu edge, never visible under it).
   underflowPx?: number
 }
 
@@ -297,7 +296,7 @@ export function ContentCarousel({
         return
       }
       const viewportW = viewportWidthRef.current
-      // bug54: translucent mode — the viewport spans the full screen
+      // bug54/bug58: blur mode — the viewport spans the full screen
       // (underflowPx under the sidebar), so the centering geometry shifts:
       // the first card's rest position sits at sidebar width + edge padding,
       // the focused card's left edge may never cross the sidebar's right

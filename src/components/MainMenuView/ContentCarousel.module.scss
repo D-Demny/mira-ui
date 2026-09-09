@@ -25,7 +25,7 @@ $card-art-size: 170px;
   }
 }
 
-// bug54: translucent menu background — the carousel viewport spans the FULL
+// bug54/bug58: blur menu background — the carousel viewport spans the FULL
 // screen (the content pane slides under the sidebar, MainMenuView.module
 // .scss), so the left edge padding becomes the sidebar width + the regular
 // edge padding: the first card's rest position sits just right of the

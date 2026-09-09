@@ -32,11 +32,10 @@ export const CARD_GAP = 24
 // ContentCarousel.module.scss
 export const CAROUSEL_EDGE_PADDING = 16
 // bug54: the main-menu sidebar width in px (SCSS source of truth:
-// $sidebar-width in styles/_variables.scss). In underflow mode (gated — see
-// slidesUnderSidebar in MainMenuView.tsx; no mode enables it after the 08.09
-// user change, the upcoming 'blur' mode / Bug58 will) the carousel viewport
-// extends underneath the sidebar by exactly this width — keep in sync with
-// the SCSS variable.
+// $sidebar-width in styles/_variables.scss). In underflow mode (the 'blur'
+// menu background, Bug58 T2 — see slidesUnderSidebar in MainMenuView.tsx)
+// the carousel viewport extends underneath the sidebar by exactly this
+// width — keep in sync with the SCSS variable.
 export const SIDEBAR_WIDTH = 250
 
 // bug54: the geometry of the viewport the centering math is written for.
@@ -51,11 +50,11 @@ export const SIDEBAR_WIDTH = 250
 // slide under the glass), and the centering target is the middle of the
 // VISIBLE zone right of the sidebar (the card is centered where it can
 // actually be seen).
-// bug54 (08.09.2026 user change): no menu background mode enables the
-// underflow layout anymore — 'translucent' was changed to the solid
-// geometry (cards are clipped at the menu edge, never visible under it).
-// The geometry stays in the code GATED: the upcoming 'blur' mode (Bug58)
-// needs the cards to pass under the menu and will use it.
+// bug54 (08.09.2026 user change) / bug58 T2: only the 'blur' menu background
+// enables the underflow layout — 'solid', 'translucent' and 'clear' use the
+// solid geometry (cards are clipped at the menu edge, never visible under
+// it). The 'blur' mode needs the cards to pass under the menu to be blurred
+// there.
 export interface CarouselGeometry {
   // rest position of the first card (scroll coordinates); default 16
   leftInset: number

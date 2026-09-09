@@ -45,11 +45,12 @@ export interface Settings {
   // "Halbdurchsichtig"), 'clear' (100% transparent — no visible panel
   // background at all, only the menu entries, labelled "Durchsichtig") or
   // 'blur' (bug58, labelled "Unschärfe" — the FOURTH option: the cards pass
-  // under the translucent menu strongly blurred. Until the underflow layout
-  // + per-card blur land, its panel look is the same glass as 'translucent').
-  // All modes currently keep the solid carousel geometry: the cards are
+  // under the translucent menu strongly blurred; the per-card blur follows —
+  // until then they show through the glass panel unblurred).
+  // The three non-blur modes keep the solid carousel geometry: the cards are
   // clipped at the menu edge and never visible under it (08.09 user change
-  // v2; bug58's blur mode re-enables the gated underflow in a later task).
+  // v2); 'blur' re-enabled the gated underflow (bug58 T2) so the cards pass
+  // under the menu.
   // The enum values keep their pre-v2 names, so stored blobs (only 'solid' /
   // 'translucent' ever existed) need no migration.
   sidebarBackground: 'solid' | 'translucent' | 'clear' | 'blur'

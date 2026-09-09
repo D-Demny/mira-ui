@@ -433,11 +433,12 @@ export function MainMenuView({
   // bug54 v2 / bug58: the 'Menü-Hintergrund' setting — 'translucent' and
   // 'blur' render the sidebar as a semi-transparent glass panel (bug58's
   // 'Unschärfe' reuses the .glass look — ticket Task 4 — so no new
-  // SidebarNav prop value is needed; the cards passing under it, blurred,
-  // come with the underflow task), 'clear' as a fully transparent background
-  // (no visible panel, only the menu entries), 'solid' keeps it opaque. All
-  // four keep the solid carousel geometry for now (cards clipped at the menu
-  // edge — see slidesUnderSidebar below)
+  // SidebarNav prop value is needed; in blur mode the cards now actually
+  // pass under it, unblurred for now — the per-card blur follows),
+  // 'clear' as a fully transparent background
+  // (no visible panel, only the menu entries), 'solid' keeps it opaque. The
+  // three non-blur modes keep the solid carousel geometry (cards clipped at
+  // the menu edge — see slidesUnderSidebar below)
   const sidebarNavBackground =
     settings.sidebarBackground === 'translucent' || settings.sidebarBackground === 'blur'
       ? 'glass'
@@ -454,12 +455,17 @@ export function MainMenuView({
   //   shows through where no card is)
   //   'clear': no — 100% transparent background (v2); same clipping as the
   //   other modes, only no visible panel background at all
-  //   (future) 'blur': yes — Bug58 needs the cards to actually pass under
-  //   the menu so they can be blurred there
-  // The underflow mechanism (negative content-pane margin, the carousel's
-  // .underflow padding, the CarouselGeometry underflow centering) stays in
-  // the code GATED by this flag.
-  const slidesUnderSidebar = false
+  //   'blur': yes (bug58 T2) — Bug58 needs the cards to actually pass under
+  //   the menu so they can be blurred there (the per-card blur follows in
+  //   T3; until then they show through the .glass panel unblurred). The
+  //   content pane spans the full screen (clipped at the SCREEN edge), the
+  //   carousel viewport starts under the sidebar (underflowPx=SIDEBAR_WIDTH)
+  //   with the underflow dial centering geometry, and the settings list
+  //   keeps a left inset of the sidebar width (.settingsUnderflow).
+  // This flag gates the underflow mechanism (negative content-pane margin,
+  // the carousel's .underflow padding, the CarouselGeometry underflow
+  // centering) — only 'blur' applies it.
+  const slidesUnderSidebar = settings.sidebarBackground === 'blur'
 
   const categories = useMemo(() => {
     // ticket 9.3: every user-selected entity is a home carousel card, in
@@ -1100,8 +1106,8 @@ export function MainMenuView({
         [
           styles.view,
           focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
-          // bug54: the underflow modifier slides the content under the sidebar
-          // (gated — no mode applies it, see slidesUnderSidebar above)
+          // bug54/bug58: the underflow modifier slides the content under the
+          // sidebar (applied in 'blur' mode only — see slidesUnderSidebar)
           slidesUnderSidebar ? styles.viewUnderflow : '',
         ]
           .filter(Boolean)
@@ -1125,9 +1131,9 @@ export function MainMenuView({
         {displayedCategory.id === 'settings' ? (
           // bug25: the settings pane is a vertical list; the sidebar preview
           // always shows the root rows, the confirmed pane the open level.
-          // bug54: in underflow mode (gated — see slidesUnderSidebar) the
-          // wrapper keeps the list out from under the glass (display:contents
-          // otherwise — no layout change)
+          // bug54/bug58: in underflow mode ('blur' only — see
+          // slidesUnderSidebar) the wrapper keeps the list out from under the
+          // glass (display:contents otherwise — no layout change)
           <div
             className={
               slidesUnderSidebar
@@ -1170,9 +1176,9 @@ export function MainMenuView({
             // bug47: dial ticks scroll instantly, taps/confirms/switches keep
             // the smooth scroll (the hook tags the last focus change)
             focusScrollBehavior={focus.contentMoveKind === 'dial' ? 'auto' : 'smooth'}
-            // bug54: in underflow mode (gated — no mode enables it, see
-            // slidesUnderSidebar above) the carousel viewport spans the full
-            // screen — the geometry underflow is the sidebar width. All three
+            // bug54/bug58: in underflow mode ('blur' — see slidesUnderSidebar
+            // above) the carousel viewport spans the full screen — the
+            // geometry underflow is the sidebar width. The three other
             // background modes ('solid' / 'translucent' / 'clear') pass 0:
             // the solid geometry (cards clipped at the sidebar's right edge).
             underflowPx={slidesUnderSidebar ? SIDEBAR_WIDTH : 0}
