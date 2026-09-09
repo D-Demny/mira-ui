@@ -31,6 +31,7 @@ import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TransferPrompt } from '@/components/TransferPrompt'
 
+import { FpsOverlay } from '@/components/FpsOverlay'
 import { TrackInfo } from '@/components/TrackInfo'
 import { UpdateCard } from '@/components/UpdateCard'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
@@ -69,7 +70,7 @@ const UPDATE_POPUP_ENABLED = false
 const TRANSFER_DISMISS_KEY = 'mira.transferDismissedAt'
 const TRANSFER_DISMISS_MS = 2 * 60 * 60 * 1000
 
-export default function App() {
+function AppInner() {
   const auth = useAuth()
   const { status: realStatus, loading, connected, setupProgress } = useObserver()
   const notify = useNotify()
@@ -1420,6 +1421,20 @@ export default function App() {
       {/* the settings sheet and every other overlay stays a fixed 100% (bug38) — it
           renders as a sibling of the zoomed player wrapper, never inside it */}
       {globalOverlays}
+    </>
+  )
+}
+
+// Bug58 T5 (DEBUG ONLY — this branch is deleted after the S905D2 measurement,
+// never merged into main): the temporary rAF FPS overlay. Rendered as a sibling
+// of AppInner so it appears in every view branch at once; position:fixed +
+// z-index 10000 (above DevScreens' 9999) keep it on top of all views, and a
+// sibling placement keeps it outside the zoomed player wrapper (bug38).
+export default function App() {
+  return (
+    <>
+      <AppInner />
+      <FpsOverlay />
     </>
   )
 }
