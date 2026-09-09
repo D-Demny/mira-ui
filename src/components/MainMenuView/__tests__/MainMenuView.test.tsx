@@ -1996,9 +1996,12 @@ describe('MainMenuView', () => {
       expect(view.style.getPropertyValue('--menu-glow-b')).toBe(settings.accent.b)
     })
 
-    it('transitions to the new card color when the dial focus moves', async () => {
+    it('transitions to the new card color once the dial burst ends', async () => {
       seedColorCache('http://img/r.jpg', [245, 192, 74])
       seedColorCache('http://img/liked.jpg', [120, 60, 180])
+      // first track of the Liked Songs sub-menu (opened on confirm) — same
+      // seeded palette so the post-freeze commit is the expected value
+      seedColorCache('http://img/lk.jpg', [120, 60, 180])
       const { container } = render(<MainMenuView />)
       const view = container.firstElementChild as HTMLElement
 
@@ -2010,6 +2013,15 @@ describe('MainMenuView', () => {
       // Liked Songs card, whose seeded cover drives the ambient colors
       wheel(-10)
       wheel(-10)
+      // bug58: while dial ticks are in progress (contentMoveKind 'dial') the
+      // previously committed ambient values stay frozen — no per-tick rewrite
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([245, 192, 74]))
+
+      // confirming the focused card is a 'jump' move (opens the track
+      // sub-menu), which releases the freeze: the ambient colors commit from
+      // the newly focused track's seeded artwork
+      confirmDial()
+      await screen.findByText('Faded')
       expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([120, 60, 180]))
       expect(view.style.getPropertyValue('--menu-glow-a')).toBe(rgba([120, 60, 180], 0.5))
     })

@@ -1,7 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
-// PERF-A/B (temp): dial-scroll experiment flags (Bug58)
-import { usePerfFlags } from '@/perfFlags'
 import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import type { MenuCard } from './mockData'
 import { carouselCardAreEqual } from './carouselCardCompare'
@@ -201,8 +199,6 @@ export function ContentCarousel({
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const lastCategoryIdRef = useRef(categoryId)
   const lastActiveTrackKeyRef = useRef(activeTrackKey)
-  // PERF-A/B (temp): comp-scroll experiment flag (Bug58) — see the className below
-  const perfFlags = usePerfFlags()
   // bug18: measured physical scroll position, feeding the viewport safety
   // guard (smooth path only — the dial path bypasses the guard, see below)
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics | null>(null)
@@ -410,25 +406,26 @@ export function ContentCarousel({
       ? sidebarOverlap(cards.length, blurTarget, measuredViewportW, underflowPx)
       : NO_BLUR
 
-  // PERF-A/B (temp): comp-scroll — opt-in compositing hint for the scroll port
-  // (.compScroll in ContentCarousel.module.scss), on only while the flag is set
-  // PERF-A/B (temp): anim-carousel — .animCarousel sets `scroll-behavior:
-  // smooth` on the SAME scroll port. The dial branch above keeps its
-  // arithmetic `carousel.scrollLeft = dialScrollLeft(...)` write (allowed,
-  // read-free); with the flag on Chromium interpolates that programmatic
-  // write into a native smooth scroll — browser-side animation, no JS loop,
-  // no per-tick layout read. This is deliberately the cheap variant: calling
-  // scrollIntoView({ behavior: 'smooth' }) inside the dial branch again on
-  // every tick must NOT be revived (bug47, commits de4d3f5 / 2516c47):
-  // scrollIntoView measures the focus card's geometry internally, i.e. a
-  // forced reflow per 35 ms tick — exactly what bug47 removed from the dial
-  // path. CR69 note: scroll-behavior is supported since Chrome 61, no modern
-  // CSS needed.
+  // bug58 (PERMANENT — shipped after on-device A/B, SCN run ~35 fps on
+  // S905D2 vs ~14 base): two always-on classes on the scroll port.
+  // - compScroll = compositing hint for the scroll port (.compScroll in
+  //   ContentCarousel.module.scss: translateZ + will-change).
+  // - animCarousel = .animCarousel sets `scroll-behavior: smooth` on the SAME
+  //   scroll port, so the dial branch's arithmetic
+  //   `carousel.scrollLeft = dialScrollLeft(...)` write is natively
+  //   interpolated by Chromium (browser-side animation, no JS loop, read-free).
+  //   CR69 note: scroll-behavior is supported since Chrome 61, no modern CSS
+  //   needed.
+  // WARNING: calling scrollIntoView({ behavior: 'smooth' }) inside the dial
+  // branch again on every tick must NOT be revived (bug47, commits de4d3f5 /
+  // 2516c47): scrollIntoView measures the focus card's geometry internally,
+  // i.e. a forced reflow per 35 ms tick — exactly what bug47 removed from the
+  // dial path.
   const carouselClass = [
     styles.carousel,
     underflowPx > 0 ? styles.underflow : '',
-    perfFlags.compScroll ? styles.compScroll : '',
-    perfFlags.animCarousel ? styles.animCarousel : '',
+    styles.compScroll,
+    styles.animCarousel,
   ]
     .filter(Boolean)
     .join(' ')
