@@ -40,7 +40,9 @@ interface Props {
 }
 
 function HomeMenuViewImpl({ onOpenEntityPicker }: Props) {
-  const entities = useHomeSelectedEntities()
+  // bug57 v2: this view IS the home list — mounted = visible, so the 3s HA
+  // poll is active for the whole lifetime of the view
+  const entities = useHomeSelectedEntities(true)
 
   const hasManage = typeof onOpenEntityPicker === 'function'
 
