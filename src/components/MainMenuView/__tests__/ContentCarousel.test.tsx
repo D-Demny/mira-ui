@@ -1230,17 +1230,21 @@ describe('bug54: underflow geometry (translucent menu background)', () => {
   })
 })
 
-// bug58 T3: in the 'blur' menu background exactly the cards that sit under
-// the translucent sidebar glass carry a strong per-card blur (.blurred,
-// `filter: blur`) — and LOSE it again as soon as they leave the area (a
-// filter forces its own compositing layer; permanent blurs are not
+// bug58 T3/T4: in the 'blur' menu background exactly the cards that are MORE
+// THAN HALF under the translucent sidebar glass carry a strong per-card blur
+// (.blurred, `filter: blur`) — and LOSE it again as soon as they leave the
+// area (a filter forces its own compositing layer; permanent blurs are not
 // acceptable on the weak S905D2). The set is pure arithmetic from the dial
-// state (sidebarOverlap), so the tick path stays read-free.
+// state (sidebarOverlap), so the tick path stays read-free. T4 (device report
+// Build #110/#111): "under the glass" means the card's CENTER crossed the
+// sidebar's right edge — a card with only a ~4 px sliver under it (98 % still
+// visible) is NOT blurred anymore (the visible false positive on device).
 // Worked example (count 50, viewport 800, underflow 250): pitch = 170 + 24 =
 // 194, leftInset = 16 + 250 = 266. At focus 4 the dial offset is 602, so card
-// i sits at screen x = 266 + 194i - 602: card 1 at -142 (visible sliver
-// [0..28) under the glass), card 2 at 52, card 3 at 246 (its left 4 px under
-// the edge) — while the focused card 4 sits at 440, fully right of it.
+// i sits at screen x = 266 + 194i - 602: card 1 at -142 (center -57, more than
+// half under), card 2 at 52 (center 137, more than half under), card 3 at 246
+// — its center (331) is still RIGHT of the edge: it stays SHARP. The focused
+// card 4 sits at 440, fully right of it.
 describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', () => {
   beforeEach(() => {
     vi.spyOn(Element.prototype, 'scrollIntoView')
@@ -1295,14 +1299,20 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     return { reads, left }
   }
 
-  it('pure: the overlap set per focus — at most ~3 cards, the focused card never inside', () => {
+  it('pure: the overlap set per focus — at most 2 cards (T4 center rule), the focused card never inside', () => {
     // focus 0: card 0 rests at screen x 266 — already right of the edge
     expect(sidebarOverlap(50, 0, SCREEN_W, UNDERFLOW_PX).size).toBe(0)
-    expect([...sidebarOverlap(50, 1, SCREEN_W, UNDERFLOW_PX)]).toEqual([0])
-    expect([...sidebarOverlap(50, 3, SCREEN_W, UNDERFLOW_PX)]).toEqual([0, 1, 2])
-    expect([...sidebarOverlap(50, 4, SCREEN_W, UNDERFLOW_PX)]).toEqual([1, 2, 3])
-    // right end: clamped to maxScroll, cards 45/46/47 still sit under the glass
-    expect([...sidebarOverlap(50, 49, SCREEN_W, UNDERFLOW_PX)]).toEqual([45, 46, 47])
+    // focus 1: card 0 slid to x 246 — only a ~4px sliver is under the glass,
+    // its center (331) is still right of the edge: NOT blurred (T4; [0] in T3)
+    expect([...sidebarOverlap(50, 1, SCREEN_W, UNDERFLOW_PX)]).toEqual([])
+    // focus 2: card 0 at x 52 — more than half under the glass
+    expect([...sidebarOverlap(50, 2, SCREEN_W, UNDERFLOW_PX)]).toEqual([0])
+    expect([...sidebarOverlap(50, 3, SCREEN_W, UNDERFLOW_PX)]).toEqual([0, 1])
+    // focus 4: card 3 at x 246 stays sharp — its center (331) never crosses
+    // the edge; exactly the false positive of the device report (Build #110)
+    expect([...sidebarOverlap(50, 4, SCREEN_W, UNDERFLOW_PX)]).toEqual([1, 2])
+    // right end: clamped to maxScroll, only cards 45/46 are more than half under
+    expect([...sidebarOverlap(50, 49, SCREEN_W, UNDERFLOW_PX)]).toEqual([45, 46])
     // edge cases: empty list, and the solid layout (zero-width area) never overlap
     expect(sidebarOverlap(0, 0, SCREEN_W, UNDERFLOW_PX).size).toBe(0)
     expect([...sidebarOverlap(50, 3, SCREEN_W, 0)]).toEqual([])
@@ -1345,8 +1355,9 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     expect(scrollIntoView).not.toHaveBeenCalled()
     expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
 
-    // tick 2 (→ focus 4): rendered WITH the measured viewport — cards 1/2/3
-    // sit under the glass (screen x -142 / 52 / 246), focused card 4 at 440 does not
+    // tick 2 (→ focus 4): rendered WITH the measured viewport — only cards 1/2
+    // are MORE THAN HALF under the glass (screen x -142 / 52, centers -57 / 137
+    // left of the 250 edge); card 3 at x 246 keeps its sharpness (center 331)
     rerender(
       <ContentCarousel
         cards={MANY}
@@ -1356,13 +1367,15 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
         underflowPx={UNDERFLOW_PX}
       />,
     )
-    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(3)
-    for (const title of ['Blur 1', 'Blur 2', 'Blur 3']) {
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
+    for (const title of ['Blur 1', 'Blur 2']) {
       expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
     }
-    // card 0 has fully left the area (screen x -336, off-screen); focused and
-    // right-side cards are untouched
+    // card 0 has fully left the area (screen x -336, off-screen); card 3 is the
+    // T4 false positive — only its left ~4 px are under the glass, so it stays
+    // sharp; focused and right-side cards are untouched
     expect(screen.getByText('Blur 0').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 3').closest('article')).not.toHaveClass('blurred')
     expect(screen.getByText('Blur 4').closest('article')).not.toHaveClass('blurred')
     expect(screen.getByText('Blur 5').closest('article')).not.toHaveClass('blurred')
     expect(reads.width).toBe(1) // still read-free
@@ -1380,10 +1393,81 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     )
     expect(screen.getByText('Blur 1').closest('article')).not.toHaveClass('blurred')
     expect(screen.getByText('Blur 2').closest('article')).toHaveClass('blurred')
-    expect(screen.getByText('Blur 4').closest('article')).toHaveClass('blurred')
+    expect(screen.getByText('Blur 3').closest('article')).toHaveClass('blurred')
+    expect(screen.getByText('Blur 4').closest('article')).not.toHaveClass('blurred') // T4 center rule: only a sliver under, stays sharp
     expect(screen.getByText('Blur 5').closest('article')).not.toHaveClass('blurred') // focused: never blurred
-    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(3)
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
     expect(reads.width).toBe(1)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('Fix A: the blur follows blurIndex — survives an undefined focusedIndex (sidebar-pane focus) and resets on a category switch', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        blurIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+
+    // tick 1 (→ focus 4): the one-shot viewport measure lands in the ref only
+    // AFTER this render, so no .blurred yet — but the dial write is the pure
+    // arithmetic (never scrollIntoView)
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={4}
+        blurIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(reads.width).toBe(1) // measured once, never again (read-free dial path)
+    expect(left.value).toBe(dialScrollLeft(50, 4, SCREEN_W, GEO))
+
+    // tick 2: the UI focus moves into the SIDEBAR pane — focusedIndex goes
+    // undefined (MainMenuView's ternary) while blurIndex stays 4. The cards
+    // under the glass must KEEP their blur (device report Build #110/#111),
+    // and no scroll write or re-measure happens: the dial branch is keyed on
+    // focusedIndex only
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        blurIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
+    for (const title of ['Blur 1', 'Blur 2']) {
+      expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
+    }
+    expect(left.value).toBe(dialScrollLeft(50, 4, SCREEN_W, GEO)) // no scroll write
+    expect(reads.width).toBe(1) // no re-measure
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    // tick 3: a sidebar preview switch — categoryId changes and the content
+    // index resets to 0 (the carousel's card-0 remount), so the blur set is
+    // empty again even though focusedIndex is still undefined
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="other"
+        blurIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
+    expect(left.value).toBe(0) // the category purge reset the scroll to card 0
     expect(scrollIntoView).not.toHaveBeenCalled()
   })
 

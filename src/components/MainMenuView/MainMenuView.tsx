@@ -1173,6 +1173,17 @@ export function MainMenuView({
             // the dial hold (dimmable light → dim view, everything else press)
             onCardHold={handleCardHold}
             focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+            // bug58 T4: the BLUR set follows the content index UNCONDITIONALLY
+            // (no activePane ternary). While the UI focus sits in the sidebar
+            // pane (dialing the menu rows), focusedIndex above is undefined —
+            // but the cards under the glass must keep their blur, so the blur
+            // state must not depend on the active pane (device report Build
+            // #110/#111). focus.contentIndex stays a valid number in both
+            // panes (the hook clamps it to [0, contentCount) — it never goes
+            // undefined) and stays put during sidebar dialing: a preview
+            // switch resets it to 0, which matches the carousel's card-0
+            // remount on that categoryId change.
+            blurIndex={focus.contentIndex}
             // bug47: dial ticks scroll instantly, taps/confirms/switches keep
             // the smooth scroll (the hook tags the last focus change)
             focusScrollBehavior={focus.contentMoveKind === 'dial' ? 'auto' : 'smooth'}

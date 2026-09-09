@@ -121,6 +121,14 @@ export function dialScrollLeft(
 // reads/DOM writes are a no-go). Only a few cards can overlap at all (the
 // covered area is underflowPx + CARD_WIDTH wide ≈ 3 card pitches), and the
 // focused card never does (minVisibleX keeps it fully right of the edge).
+// bug58 T4 (device report Build #110/#111): "under the glass" means the
+// card's CENTER has crossed the sidebar's right edge — a card is blurred only
+// once MORE THAN HALF of it sits under the sidebar (x + CARD_WIDTH/2 <
+// underflowPx, strict). The T3 any-pixel rule (x < underflowPx) fully blurred
+// a card whose leftmost ~4 px were under the edge while ~98 % was still
+// visible — the visible false positive on device. The stricter set also caps
+// the concurrently blurred compositing layers at 2 instead of 3 (an FPS
+// bonus on the weak S905D2).
 export function sidebarOverlap(
   count: number,
   focusedIndex: number,
@@ -137,15 +145,19 @@ export function sidebarOverlap(
     minVisibleX: underflowPx,
     centerTarget: underflowPx + (viewportW - underflowPx) / 2,
   })
-  // card i overlaps [0, underflowPx) iff its screen x lies in the open
-  // interval (-CARD_WIDTH, underflowPx); solve the two inequalities for the
-  // small candidate range instead of scanning the whole list (at most ~3)
+  // card i is under the glass iff its center lies left of the edge
+  // (x + CARD_WIDTH/2 < underflowPx, T4) and any part is still on screen
+  // (x + CARD_WIDTH > 0 — a fully-left card is off-screen). Solve the two
+  // inequalities for the small candidate range instead of scanning the whole
+  // list. The [lo, hi] window was derived for the any-pixel rule (x <
+  // underflowPx) and still encloses the stricter T4 set — a card whose center
+  // crossed the edge has x < underflowPx too — so it stays untouched.
   const lo = Math.floor((scrollLeft - leftInset - CARD_WIDTH) / pitch)
   const hi = Math.ceil((scrollLeft - leftInset + underflowPx) / pitch)
   const out = new Set<number>()
   for (let i = Math.max(0, lo); i <= Math.min(count - 1, hi); i++) {
     const x = leftInset + i * pitch - scrollLeft
-    if (x < underflowPx && x + CARD_WIDTH > 0) out.add(i)
+    if (x + CARD_WIDTH / 2 < underflowPx && x + CARD_WIDTH > 0) out.add(i)
   }
   return out
 }
