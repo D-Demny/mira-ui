@@ -8,6 +8,7 @@ import {
   CAROUSEL_EDGE_PADDING,
   dialScrollLeft,
   leadingSpacerWidth,
+  sidebarOverlap,
   trailingSpacerWidth,
   windowRange,
   type CarouselGeometry,
@@ -18,6 +19,10 @@ import styles from './ContentCarousel.module.scss'
 // cover art size for carousel cards (bug2: was 200, reduced for breathing room)
 const CARD_ART_SIZE = 170
 
+// bug58 T3: no card blurred — the shared empty set when underflowPx is 0
+// (the three legacy menu backgrounds) or no focus/viewport is available yet
+const NO_BLUR = new Set<number>()
+
 // bug53: pointer movement beyond this distance cancels the hold — a
 // drag/swipe (useSwipeGestures territory) is never a hold and must not open
 // the dim view
@@ -27,6 +32,7 @@ function CarouselCardImpl({
   card,
   index,
   isFocused,
+  blurred = false,
   interactive,
   onCardTap,
   onCardHold,
@@ -98,7 +104,9 @@ function CarouselCardImpl({
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? card.title : undefined}
-      className={isFocused ? `${styles.card} ${styles.cardFocused}` : styles.card}
+      className={[styles.card, isFocused ? styles.cardFocused : '', blurred ? styles.blurred : '']
+        .filter(Boolean)
+        .join(' ')}
       onClick={interactive ? handleTap : undefined}
       onPointerDown={interactive ? handlePointerDown : undefined}
       onPointerMove={interactive ? handlePointerMove : undefined}
@@ -332,6 +340,32 @@ export function ContentCarousel({
   const leadingWidth = leadingSpacerWidth(start)
   const trailingWidth = trailingSpacerWidth(cards.length - end)
 
+  // bug58 T3: in the 'blur' menu background exactly the cards that currently
+  // overlap the sidebar area get the strong per-card blur (.blurred) while
+  // under the translucent glass; the filter is REMOVED as soon as a card
+  // leaves the area (`filter` creates a compositing layer per card — a
+  // permanently blurred card is not acceptable on the weak S905D2). The set
+  // is derived arithmetically from the DIAL state — sidebarOverlap() reuses
+  // the same constants and the focus's TARGET offset as dialScrollLeft(), so
+  // neither this render nor the dial tick reads layout (bug47/bug48: per-
+  // frame layout reads are a no-go). viewportWidthRef holds the once-measured
+  // width (the device pane is fixed); while it is still 0 (jsdom first paint)
+  // no card is blurred for that one frame. The smooth-scroll path
+  // (scrollIntoView, taps/jumps) only updates the blur state with the next
+  // dial tick — deliberate v1 behavior, the dial ticks are the scrolling case.
+  // Reading the ref in the render body is intentional (the accepted
+  // react-hooks/refs false positive for this established pattern, cf.
+  // cardHoldRoutingRef in MainMenuView.tsx): the value is written only in
+  // mount/layout and one-shot effects — never per frame — and the dial target
+  // on every tick is computed from this same width, so a render that skipped
+  // the blur set would desync the blur state from the dial scroll.
+  // eslint-disable-next-line react-hooks/refs
+  const measuredViewportW = viewportWidthRef.current
+  const blurredCards =
+    underflowPx > 0 && focusedIndex != null && measuredViewportW > 0
+      ? sidebarOverlap(cards.length, focusedIndex, measuredViewportW, underflowPx)
+      : NO_BLUR
+
   return (
     <div
       className={underflowPx > 0 ? `${styles.carousel} ${styles.underflow}` : styles.carousel}
@@ -355,6 +389,7 @@ export function ContentCarousel({
             card={card}
             index={index}
             isFocused={focusedIndex === index}
+            blurred={blurredCards.has(index)}
             interactive={onCardTap != null}
             onCardTap={onCardTap}
             onCardHold={onCardHold}

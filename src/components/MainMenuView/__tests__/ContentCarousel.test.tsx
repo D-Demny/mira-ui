@@ -161,6 +161,7 @@ import {
   CARD_WIDTH,
   CAROUSEL_EDGE_PADDING,
   dialScrollLeft,
+  sidebarOverlap,
   windowRange,
 } from '../carouselWindow'
 import type { MenuCard } from '../mockData'
@@ -587,6 +588,12 @@ describe('bug8.2: carousel card memo comparator', () => {
 
   it('re-renders when the interactivity changes', () => {
     expect(carouselCardAreEqual(base, { ...base, interactive: false })).toBe(false)
+  })
+
+  it('bug58 T3: re-renders when the blur flag flips (the card crossed the sidebar edge)', () => {
+    expect(carouselCardAreEqual(base, { ...base, blurred: true })).toBe(false)
+    // ...and stays quiet while the card keeps its blur state
+    expect(carouselCardAreEqual({ ...base, blurred: true }, { ...base, blurred: true })).toBe(true)
   })
 })
 
@@ -1219,6 +1226,187 @@ describe('bug54: underflow geometry (translucent menu background)', () => {
     expect(carouselEl(container).className).toContain('underflow')
 
     rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} />)
+    expect(carouselEl(container).className).not.toContain('underflow')
+  })
+})
+
+// bug58 T3: in the 'blur' menu background exactly the cards that sit under
+// the translucent sidebar glass carry a strong per-card blur (.blurred,
+// `filter: blur`) — and LOSE it again as soon as they leave the area (a
+// filter forces its own compositing layer; permanent blurs are not
+// acceptable on the weak S905D2). The set is pure arithmetic from the dial
+// state (sidebarOverlap), so the tick path stays read-free.
+// Worked example (count 50, viewport 800, underflow 250): pitch = 170 + 24 =
+// 194, leftInset = 16 + 250 = 266. At focus 4 the dial offset is 602, so card
+// i sits at screen x = 266 + 194i - 602: card 1 at -142 (visible sliver
+// [0..28) under the glass), card 2 at 52, card 3 at 246 (its left 4 px under
+// the edge) — while the focused card 4 sits at 440, fully right of it.
+describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', () => {
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, 'scrollIntoView')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // 50 cards: long enough for windowing (same shape as the bug47 R2 / bug54 suites)
+  const MANY: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `b-${i}`,
+    title: `Blur ${i}`,
+    subtitle: '',
+  }))
+  const SCREEN_W = 800 // the device's full screen (blur mode spans it)
+  const UNDERFLOW_PX = 250 // the sidebar width
+  const GEO = {
+    leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW_PX, // 266
+    minVisibleX: UNDERFLOW_PX,
+    centerTarget: UNDERFLOW_PX + (SCREEN_W - UNDERFLOW_PX) / 2, // 525
+  }
+
+  function carouselEl(container: HTMLElement): HTMLElement {
+    return container.querySelector('.carousel') as HTMLElement
+  }
+
+  // instrument the carousel: count layout reads, capture scrollLeft writes
+  function instrument(el: HTMLElement): {
+    reads: { width: number; left: number }
+    left: { value: number }
+  } {
+    const reads = { width: 0, left: 0 }
+    const left = { value: -1 }
+    Object.defineProperty(el, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        reads.width++
+        return SCREEN_W
+      },
+    })
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      get: () => {
+        reads.left++
+        return left.value
+      },
+      set: (v: number) => {
+        left.value = v
+      },
+    })
+    return { reads, left }
+  }
+
+  it('pure: the overlap set per focus — at most ~3 cards, the focused card never inside', () => {
+    // focus 0: card 0 rests at screen x 266 — already right of the edge
+    expect(sidebarOverlap(50, 0, SCREEN_W, UNDERFLOW_PX).size).toBe(0)
+    expect([...sidebarOverlap(50, 1, SCREEN_W, UNDERFLOW_PX)]).toEqual([0])
+    expect([...sidebarOverlap(50, 3, SCREEN_W, UNDERFLOW_PX)]).toEqual([0, 1, 2])
+    expect([...sidebarOverlap(50, 4, SCREEN_W, UNDERFLOW_PX)]).toEqual([1, 2, 3])
+    // right end: clamped to maxScroll, cards 45/46/47 still sit under the glass
+    expect([...sidebarOverlap(50, 49, SCREEN_W, UNDERFLOW_PX)]).toEqual([45, 46, 47])
+    // edge cases: empty list, and the solid layout (zero-width area) never overlap
+    expect(sidebarOverlap(0, 0, SCREEN_W, UNDERFLOW_PX).size).toBe(0)
+    expect([...sidebarOverlap(50, 3, SCREEN_W, 0)]).toEqual([])
+    // invariant: minVisibleX keeps the focused card fully right of the edge
+    for (const f of [0, 1, 3, 25, 49]) {
+      expect(sidebarOverlap(50, f, SCREEN_W, UNDERFLOW_PX).has(f)).toBe(false)
+    }
+  })
+
+  it('DOM: blur mode — exactly the cards under the sidebar carry .blurred; focused and right-side cards do not', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+
+    // tick 1 (→ focus 3): the one-shot viewport measure lands in the ref only
+    // AFTER this render (jsdom saw 0 at mount; on device the mount-time layout
+    // effect already holds the real width), so no .blurred yet — and the dial
+    // write is the pure arithmetic, never scrollIntoView
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={3}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(reads.width).toBe(1) // measured once, never again (read-free dial path)
+    expect(reads.left).toBe(0)
+    expect(left.value).toBe(dialScrollLeft(50, 3, SCREEN_W, GEO))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
+
+    // tick 2 (→ focus 4): rendered WITH the measured viewport — cards 1/2/3
+    // sit under the glass (screen x -142 / 52 / 246), focused card 4 at 440 does not
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(3)
+    for (const title of ['Blur 1', 'Blur 2', 'Blur 3']) {
+      expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
+    }
+    // card 0 has fully left the area (screen x -336, off-screen); focused and
+    // right-side cards are untouched
+    expect(screen.getByText('Blur 0').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 4').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 5').closest('article')).not.toHaveClass('blurred')
+    expect(reads.width).toBe(1) // still read-free
+
+    // tick 3 (→ focus 5): card 1 leaves the area and LOSES .blurred again —
+    // that is exactly what makes the per-card filter acceptable on-device
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={5}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(screen.getByText('Blur 1').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 2').closest('article')).toHaveClass('blurred')
+    expect(screen.getByText('Blur 4').closest('article')).toHaveClass('blurred')
+    expect(screen.getByText('Blur 5').closest('article')).not.toHaveClass('blurred') // focused: never blurred
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(3)
+    expect(reads.width).toBe(1)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('DOM: the legacy modes (underflowPx 0) never blur a card', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+      />,
+    )
+    instrument(carouselEl(container)) // the viewport may measure — the gate stays closed
+
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={3}
+        focusScrollBehavior="auto"
+      />,
+    )
+    expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
     expect(carouselEl(container).className).not.toContain('underflow')
   })
 })
