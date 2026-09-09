@@ -117,6 +117,89 @@ function settleToggle(entityId: string, seq: number): void {
   const pending = pendingToggles.get(entityId)
   if (pending !== undefined && pending.seq === seq) pending.settled = true
 }
+// bug57 v3: transition hold — after an optimistic flip, HA keeps reporting
+// the PRE-flip state while the light is still fading (Build #110: press
+// 'Aus', the card flickers back to 'An' for 0.5–1 s). A read or service
+// answer whose value DIVERGES from the flipped target within
+// TRANSITION_HOLD_MS of the flip is a transition intermediate state: it is
+// discarded and a single confirming re-read (deduped per entity) is
+// scheduled at the window's end, so the true post-fade state lands without
+// waiting for the next 3 s poll. A value EQUAL to the target always lands —
+// it confirms the flip and cancels a pending confirming re-read. Divergent
+// values AFTER the window land normally: a genuine external change (wall
+// switch / phone) is delayed by at most the hold, worst case poll 3 s +
+// hold 1.5 s. The hold is set by an optimistic flip only (never by a read),
+// error reverts clear it (the revert is authoritative), and the v1 (write
+// revisions) + v2 (pending settle) guards run FIRST — the hold filters what
+// survives them.
+const TRANSITION_HOLD_MS = 1500
+
+interface TransitionHold {
+  target: HomeLightState
+  until: number
+}
+const transitionHolds = new Map<string, TransitionHold>()
+const confirmTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function clearConfirmTimer(entityId: string): void {
+  const timer = confirmTimers.get(entityId)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    confirmTimers.delete(entityId)
+  }
+}
+
+// bug57 v3: a NEW optimistic flip replaces any pending hold — the newer
+// flip owns the state, so the older actuation's confirming re-read is dropped
+function setTransitionHold(entityId: string, target: HomeLightState): void {
+  clearConfirmTimer(entityId)
+  transitionHolds.set(entityId, { target, until: Date.now() + TRANSITION_HOLD_MS })
+}
+
+// bug57 v3: clears hold + pending confirming re-read — the error revert is
+// authoritative and no report may be filtered against a state the light did
+// not actually reach
+function clearTransitionHold(entityId: string): void {
+  transitionHolds.delete(entityId)
+  clearConfirmTimer(entityId)
+}
+
+// bug57 v3: applies the transition hold to a value about to land (a read or
+// a service answer). Returns true when the value must be DISCARDED
+// (divergent within the hold window) — a confirming re-read is scheduled
+// exactly once at the window's end. False = the value lands; an expired hold
+// is dropped with it, and a value equal to the target cancels a pending
+// confirming re-read (it already confirmed the flip).
+function applyTransitionHold(entityId: string, value: HomeLightState): boolean {
+  const hold = transitionHolds.get(entityId)
+  if (hold === undefined) return false
+  const now = Date.now()
+  if (now >= hold.until) {
+    // the window is over — a divergent value is a genuine external change,
+    // it lands normally; drop the expired hold (and its stale re-read)
+    transitionHolds.delete(entityId)
+    clearConfirmTimer(entityId)
+    return false
+  }
+  if (value === hold.target) {
+    // confirmation of the flipped state — nothing to hold back, and a
+    // pending confirming re-read is now redundant
+    clearConfirmTimer(entityId)
+    return false
+  }
+  // divergent mid-fade report — discard it; schedule the confirming re-read
+  // ONCE (deduped: an already-pending timer is kept as-is)
+  if (confirmTimers.get(entityId) === undefined) {
+    const timer = setTimeout(() => {
+      confirmTimers.delete(entityId)
+      // a plain state read — the v1/v2 guards still apply to it, and by the
+      // time it lands the hold window is over, so its value always lands
+      void refresh(entityId, false)
+    }, hold.until - now)
+    confirmTimers.set(entityId, timer)
+  }
+  return true
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function storeOf(entityId: string): HomeLightStore {
@@ -169,9 +252,12 @@ function refresh(entityId: string, initial: boolean): Promise<void> {
       // in flight — HA may have served the pre-POST state
       if (!startedAfterSettle) return
       const capabilities = lightCapabilities(entity)
+      const next = toLightState(entity.state)
+      // bug57 v3: mid-fade report — see applyTransitionHold
+      if (applyTransitionHold(entityId, next)) return
       stores.set(entityId, {
         ...storeOf(entityId),
-        state: toLightState(entity.state),
+        state: next,
         loading: false,
         error: null,
         dimmable: capabilities.dimmable,
@@ -212,7 +298,11 @@ async function toggle(entityId: string) {
   if (previous) {
     // bug57: an actuation write — stale reads are discarded from here on
     bumpWriteRevision(entityId)
-    stores.set(entityId, { ...storeOf(entityId), state: previous === 'on' ? 'off' : 'on' })
+    const next = previous === 'on' ? 'off' : 'on'
+    stores.set(entityId, { ...storeOf(entityId), state: next })
+    // bug57 v3: the light now fades toward `next` — HA keeps reporting the
+    // old state during the fade; hold divergent reports for TRANSITION_HOLD_MS
+    setTransitionHold(entityId, next)
   }
   emit()
   try {
@@ -222,7 +312,12 @@ async function toggle(entityId: string) {
       // but only if this answer belongs to the NEWEST toggle
       if (toggleSeq(entityId) !== mySeq) return
       settleToggle(entityId, mySeq)
-      stores.set(entityId, { ...storeOf(entityId), state: toLightState(updated.state) })
+      const next = toLightState(updated.state)
+      // bug57 v3: mid-fade report (HA still says the old state while the
+      // light fades) — held back, a confirming re-read follows at the
+      // window's end
+      if (applyTransitionHold(entityId, next)) return
+      stores.set(entityId, { ...storeOf(entityId), state: next })
     } else {
       // no entity in the service response — resync from the states endpoint
       // (settles first, the resync read starts after the settlement — the
@@ -237,6 +332,9 @@ async function toggle(entityId: string) {
     // a NEWER toggle owns the state — its writes (not this older toggle's
     // revert) decide; skip the revert entirely
     if (toggleSeq(entityId) !== mySeq) return
+    // bug57 v3: the revert is authoritative — clear any mid-fade hold so no
+    // report gets filtered against a flip that never happened
+    clearTransitionHold(entityId)
     // bug57: the revert is an actuation write — stale reads are discarded
     bumpWriteRevision(entityId)
     const current = storeOf(entityId)
@@ -291,6 +389,10 @@ export function __resetHomeLightStore() {
   writeRevisions.clear()
   pendingToggles.clear()
   toggleSeqs.clear()
+  // bug57 v3: transition holds + their confirming re-read timers
+  for (const timer of confirmTimers.values()) clearTimeout(timer)
+  confirmTimers.clear()
+  transitionHolds.clear()
 }
 
 // test/debug introspection (bug45 option C: cache stats readout) — the store

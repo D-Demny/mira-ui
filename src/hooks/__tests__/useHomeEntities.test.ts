@@ -444,10 +444,13 @@ describe('useHomeEntities', () => {
     })
 
     // bug57 (the guard must not over-block): a read that starts AFTER the
-    // last write — e.g. the 5s poll after a finished toggle — must still
-    // land and mirror external changes (phone / wall switch / automation)
+    // last write — e.g. the 3s poll after a finished toggle — must still
+    // land and mirror external changes (phone / wall switch / automation).
+    // bug57 v3: reads within TRANSITION_HOLD_MS of a flip are intentionally
+    // held back, so this read starts only AFTER the hold window has expired.
     it('a read that starts after the last write still lands (external change resync)', async () => {
       seedSelection([SWITCH])
+      vi.useFakeTimers()
       let servedState = 'off'
       server.use(
         http.get('*/ha-api/states/switch.wasserpumpe', () =>
@@ -455,22 +458,40 @@ describe('useHomeEntities', () => {
         ),
       )
       const first = renderHook(() => useHomeSelectedEntities())
-      await waitFor(() => expect(first.result.current[0].state).toBe('off'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(first.result.current[0].state).toBe('off')
       act(() => {
         first.result.current[0].actuate()
       })
-      await waitFor(() => expect(first.result.current[0].actuating).toBe(false))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(first.result.current[0].actuating).toBe(false)
       expect(first.result.current[0].state).toBe('on') // the toggle settled
       first.unmount()
 
       // externally the switch was turned off again (phone / wall switch)
       servedState = 'off'
-      // a fresh read starts now — AFTER the last write, it must be allowed
-      // to land (the mount fetch runs the same path as the 5s poll)
+      // bug57 v3: the flip's transition hold is still active — advance PAST
+      // it so the fresh read below starts after the hold window (the test's
+      // intent is the post-toggle poll, which always lands)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      // a fresh read starts now — AFTER the last write AND after the hold,
+      // it must be allowed to land (the mount fetch runs the same path as
+      // the 3s poll)
       const second = renderHook(() => useHomeSelectedEntities())
-      await waitFor(() => expect(second.result.current[0].state).toBe('off'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(second.result.current[0].state).toBe('off')
       expect(second.result.current[0].loading).toBe(false)
       expect(second.result.current[0].error).toBeNull()
+      second.unmount()
+      vi.useRealTimers()
     })
 
     it('scene actuation does not flip the state and resyncs afterwards', async () => {
@@ -765,6 +786,282 @@ describe('useHomeEntities', () => {
       expect(result.current[0].state).toBe('off')
       expect(result.current[0].actuating).toBe(false)
       expect(result.current[0].error).toBeNull()
+      unmount()
+      vi.useRealTimers()
+    })
+
+    // bug57 v3: the Build #110 mid-fade flicker — HA keeps reporting the
+    // PRE-flip state while the light/entity is still fading, so even the
+    // actuation's OWN service answer can carry the old state (v1/v2 let it
+    // through: it starts after the flip and after the settlement). The
+    // transition hold discards that divergent report within 1500 ms of the
+    // flip and a single confirming re-read at the window's end lands the
+    // true post-fade state — without waiting for the next 3 s poll.
+    it('a mid-fade service answer is held back and a confirming re-read lands at hold end (bug57 v3)', async () => {
+      seedSelection([SWITCH])
+      vi.useFakeTimers()
+      let stateGets = 0
+      let releaseToggle: () => void = () => {}
+      const togglePending = new Promise<void>((resolve) => {
+        releaseToggle = resolve
+      })
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () => {
+          stateGets += 1
+          // GET#1 (mount): the pre-flip state. GET#2 (the confirming
+          // re-read at the hold's end): the transition is done, HA reports
+          // the flipped state
+          return HttpResponse.json({ entity_id: SWITCH, state: stateGets === 1 ? 'off' : 'on' })
+        }),
+        http.post('*/ha-api/services/switch/toggle', async () => {
+          await togglePending
+          // mid-fade: HA has processed the POST but still reports the
+          // pre-flip state
+          return HttpResponse.json([{ entity_id: SWITCH, state: 'off' }])
+        }),
+      )
+
+      const { result, unmount } = renderHook(() => useHomeSelectedEntities())
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('off')
+      expect(stateGets).toBe(1)
+
+      // flip off → on
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].state).toBe('on') // optimistic flip
+      expect(result.current[0].actuating).toBe(true)
+
+      // the service answer arrives ~500 ms in — still mid-fade ('off')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500)
+      })
+      act(() => {
+        releaseToggle()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      // without the hold it would flicker back to 'off' here
+      expect(result.current[0].state).toBe('on')
+      expect(result.current[0].actuating).toBe(false)
+
+      // nothing else may be fetched yet — exactly ONE confirming re-read,
+      // firing at the window's end (t = 1500)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400)
+      })
+      expect(stateGets).toBe(1)
+      expect(result.current[0].state).toBe('on')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(700) // → t = 1600, the re-read lands
+      })
+      expect(stateGets).toBe(2)
+      expect(result.current[0].state).toBe('on') // confirmed post-fade
+
+      unmount()
+      vi.useRealTimers()
+    })
+
+    // bug57 v3: the hold must NOT over-block — a divergent value that is
+    // reported AFTER the 1500 ms window (a genuine external change, e.g. the
+    // next 3 s poll) lands normally
+    it('a divergent read after the hold window still lands (external change, bug57 v3)', async () => {
+      seedSelection([SWITCH])
+      vi.useFakeTimers()
+      let stateGets = 0
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () => {
+          stateGets += 1
+          // GET#1 (mount): 'off'. GET#2 (the 3 s poll, after the hold
+          // expired): externally switched off again during the transition
+          return HttpResponse.json({ entity_id: SWITCH, state: stateGets === 1 ? 'off' : 'off' })
+        }),
+      )
+
+      const { result, unmount } = renderHook(() => useHomeSelectedEntities(true))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('off')
+      expect(stateGets).toBe(1)
+
+      // flip off → on — the service answer (generic echo) confirms instantly
+      act(() => {
+        result.current[0].actuate()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('on') // confirmed
+      expect(result.current[0].actuating).toBe(false)
+
+      // the 3 s poll tick (t = 3000, AFTER the 1500 ms hold) serves the
+      // external 'off' — it must land (self-correction)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(stateGets).toBe(2)
+      expect(result.current[0].state).toBe('off')
+
+      unmount()
+      vi.useRealTimers()
+    })
+
+    // bug57 v3: an external change that happens DURING the hold (wall
+    // switch / phone) is picked up by the confirming re-read at the window's
+    // end — no waiting for the next 3 s poll
+    it('an external change during the hold lands via the confirming re-read (bug57 v3)', async () => {
+      seedSelection([SWITCH])
+      vi.useFakeTimers()
+      let stateGets = 0
+      let releaseToggle: () => void = () => {}
+      const togglePending = new Promise<void>((resolve) => {
+        releaseToggle = resolve
+      })
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () => {
+          stateGets += 1
+          // the switch is really ON (pre-flip 'on', and externally switched
+          // on again mid-fade)
+          return HttpResponse.json({ entity_id: SWITCH, state: 'on' })
+        }),
+        http.post('*/ha-api/services/switch/toggle', async () => {
+          await togglePending
+          // mid-fade: HA still reports the pre-flip state ('on')
+          return HttpResponse.json([{ entity_id: SWITCH, state: 'on' }])
+        }),
+      )
+
+      const { result, rerender, unmount } = renderHook(
+        ({ visible }) => useHomeSelectedEntities(visible),
+        { initialProps: { visible: false } },
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('on')
+      expect(stateGets).toBe(1)
+
+      // flip on → off (the user wanted it off)
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].state).toBe('off') // optimistic flip
+
+      // the service answer arrives ~500 ms in — mid-fade, still 'on'
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500)
+      })
+      act(() => {
+        releaseToggle()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('off') // held back, no flicker
+
+      // ~800 ms in: the user flips it back on at the wall — the immediate
+      // visibility read (carousel re-opens) reports 'on' — divergent within
+      // the hold → held back as well (the confirming re-read is deduped)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300) // → t = 800
+      })
+      rerender({ visible: true })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(stateGets).toBe(2)
+      expect(result.current[0].state).toBe('off') // still held
+
+      // at the window's end (t = 1500) the confirming re-read lands 'on' —
+      // the external change is adopted right after the hold
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(700)
+      })
+      expect(stateGets).toBe(3)
+      expect(result.current[0].state).toBe('on')
+
+      unmount()
+      vi.useRealTimers()
+    })
+
+    // bug57 v3: a value equal to the flipped target is a confirmation — it
+    // lands immediately AND cancels the pending confirming re-read (no
+    // redundant fetch at the window's end)
+    it('a confirming read before the hold ends cancels the pending re-read (bug57 v3)', async () => {
+      seedSelection([SWITCH])
+      vi.useFakeTimers()
+      let stateGets = 0
+      let releaseToggle: () => void = () => {}
+      const togglePending = new Promise<void>((resolve) => {
+        releaseToggle = resolve
+      })
+      server.use(
+        http.get('*/ha-api/states/switch.wasserpumpe', () => {
+          stateGets += 1
+          // GET#1 (mount): 'off'. GET#2 (the visibility read at ~800 ms):
+          // the transition finished early — the flipped state is confirmed
+          return HttpResponse.json({ entity_id: SWITCH, state: stateGets === 1 ? 'off' : 'on' })
+        }),
+        http.post('*/ha-api/services/switch/toggle', async () => {
+          await togglePending
+          // mid-fade: still the pre-flip state
+          return HttpResponse.json([{ entity_id: SWITCH, state: 'off' }])
+        }),
+      )
+
+      const { result, rerender, unmount } = renderHook(
+        ({ visible }) => useHomeSelectedEntities(visible),
+        { initialProps: { visible: false } },
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('off')
+
+      // flip off → on
+      act(() => {
+        result.current[0].actuate()
+      })
+      expect(result.current[0].state).toBe('on') // optimistic flip
+
+      // the service answer arrives ~500 ms in — mid-fade ('off'): held back,
+      // a confirming re-read is scheduled for t = 1500
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500)
+      })
+      act(() => {
+        releaseToggle()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(result.current[0].state).toBe('on') // held back, no flicker
+
+      // ~800 ms in: the visibility read confirms 'on' — it lands AND cancels
+      // the pending re-read
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300) // → t = 800
+      })
+      rerender({ visible: true })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(stateGets).toBe(2)
+      expect(result.current[0].state).toBe('on')
+
+      // past the window's end (and well before the next 3 s poll tick at
+      // ~3800): no further fetch happens — the re-read was cancelled
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1700) // → t = 2500
+      })
+      expect(stateGets).toBe(2)
+      expect(result.current[0].state).toBe('on')
+
       unmount()
       vi.useRealTimers()
     })

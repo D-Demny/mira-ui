@@ -226,6 +226,89 @@ function settleActuation(entityId: string, seq: number): void {
   const pending = pendingActuations.get(entityId)
   if (pending !== undefined && pending.seq === seq) pending.settled = true
 }
+// bug57 v3: transition hold — after an optimistic flip, HA keeps reporting
+// the PRE-flip state while the entity is still transitioning (lights fading
+// off take ~0.5–1 s; Build #110: press 'Aus', the card flickers back to
+// 'An'). A read or service answer whose value DIVERGES from the flipped
+// target within TRANSITION_HOLD_MS of the flip is a transition intermediate
+// state: it is discarded and a single confirming re-read (deduped per
+// entity) is scheduled at the window's end, so the true post-transition
+// state lands without waiting for the next 3 s poll. A value EQUAL to the
+// target always lands — it confirms the flip and cancels a pending
+// confirming re-read. Divergent values AFTER the window land normally: a
+// genuine external change (wall switch / phone) is delayed by at most the
+// hold, worst case poll 3 s + hold 1.5 s. The hold is set by an optimistic
+// flip only (never by a read; no flip = no hold, e.g. scenes), error reverts
+// clear it (the revert is authoritative), and the v1 (write revisions) +
+// v2 (pending settle) guards run FIRST — the hold filters what survives them.
+const TRANSITION_HOLD_MS = 1500
+
+interface TransitionHold {
+  target: string
+  until: number
+}
+const transitionHolds = new Map<string, TransitionHold>()
+const confirmTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function clearConfirmTimer(entityId: string): void {
+  const timer = confirmTimers.get(entityId)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    confirmTimers.delete(entityId)
+  }
+}
+
+// bug57 v3: a NEW optimistic flip replaces any pending hold — the newer
+// actuation owns the state, so the older one's confirming re-read is dropped
+function setTransitionHold(entityId: string, target: string): void {
+  clearConfirmTimer(entityId)
+  transitionHolds.set(entityId, { target, until: Date.now() + TRANSITION_HOLD_MS })
+}
+
+// bug57 v3: clears hold + pending confirming re-read — the error revert is
+// authoritative and no report may be filtered against a state the entity did
+// not actually reach
+function clearTransitionHold(entityId: string): void {
+  transitionHolds.delete(entityId)
+  clearConfirmTimer(entityId)
+}
+
+// bug57 v3: applies the transition hold to a value about to land (a read or
+// a service answer). Returns true when the value must be DISCARDED
+// (divergent within the hold window) — a confirming re-read is scheduled
+// exactly once at the window's end. False = the value lands; an expired hold
+// is dropped with it, and a value equal to the target cancels a pending
+// confirming re-read (it already confirmed the flip).
+function applyTransitionHold(entityId: string, value: string): boolean {
+  const hold = transitionHolds.get(entityId)
+  if (hold === undefined) return false
+  const now = Date.now()
+  if (now >= hold.until) {
+    // the window is over — a divergent value is a genuine external change,
+    // it lands normally; drop the expired hold (and its stale re-read)
+    transitionHolds.delete(entityId)
+    clearConfirmTimer(entityId)
+    return false
+  }
+  if (value === hold.target) {
+    // confirmation of the flipped state — nothing to hold back, and a
+    // pending confirming re-read is now redundant
+    clearConfirmTimer(entityId)
+    return false
+  }
+  // divergent mid-fade report — discard it; schedule the confirming re-read
+  // ONCE (deduped: an already-pending timer is kept as-is)
+  if (confirmTimers.get(entityId) === undefined) {
+    const timer = setTimeout(() => {
+      confirmTimers.delete(entityId)
+      // a plain state read — the v1/v2 guards still apply to it, and by the
+      // time it lands the hold window is over, so its value always lands
+      void refreshEntity(entityId, false)
+    }, hold.until - now)
+    confirmTimers.set(entityId, timer)
+  }
+  return true
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null
 // bug57 v2: polling is decoupled from subscription — it runs only while at
 // least one hook instance has explicitly activated it (the Home carousel is
@@ -282,6 +365,8 @@ function refreshEntity(entityId: string, initial: boolean): Promise<void> {
       // bug57 v2: the read started while the actuation's service call was
       // still in flight — HA may have served the pre-POST state
       if (!startedAfterSettle) return
+      // bug57 v3: mid-fade report — see applyTransitionHold
+      if (applyTransitionHold(entityId, entity.state)) return
       entityStates.set(entityId, {
         ...stateOf(entityId),
         state: entity.state,
@@ -348,6 +433,10 @@ async function actuateEntity(entityId: string) {
     error: null,
     ...(flipped !== null ? { state: flipped } : {}),
   })
+  // bug57 v3: the entity now transitions toward `flipped` — HA keeps
+  // reporting the pre-flip state during the fade (lights dimming off take
+  // ~0.5–1 s, Build #110); hold divergent reports for TRANSITION_HOLD_MS
+  if (flipped !== null) setTransitionHold(entityId, flipped)
   emit()
   try {
     if (domain === 'scene') {
@@ -366,6 +455,10 @@ async function actuateEntity(entityId: string) {
         // only if this answer belongs to the NEWEST actuation
         if (actuationSeq(entityId) !== mySeq) return
         settleActuation(entityId, mySeq)
+        // bug57 v3: mid-fade report (HA still says the old state while the
+        // entity transitions) — held back, a confirming re-read follows at
+        // the window's end
+        if (applyTransitionHold(entityId, found.state)) return
         entityStates.set(entityId, {
           ...stateOf(entityId),
           state: found.state,
@@ -386,6 +479,9 @@ async function actuateEntity(entityId: string) {
     // a NEWER actuation owns the state — its writes (not this older
     // actuation's revert) decide; skip the revert entirely
     if (actuationSeq(entityId) !== mySeq) return
+    // bug57 v3: the revert is authoritative — clear any mid-fade hold so no
+    // report gets filtered against a flip that never happened
+    clearTransitionHold(entityId)
     // bug57: the revert is an actuation write — stale reads are discarded
     bumpWriteRevision(entityId)
     if (previous !== null) {
@@ -584,6 +680,10 @@ export function __resetHomeEntityStores() {
   writeRevisions.clear()
   pendingActuations.clear()
   actuationSeqs.clear()
+  // bug57 v3: transition holds + their confirming re-read timers
+  for (const timer of confirmTimers.values()) clearTimeout(timer)
+  confirmTimers.clear()
+  transitionHolds.clear()
   catalog.entries = []
   catalog.loading = false
   catalog.error = null
