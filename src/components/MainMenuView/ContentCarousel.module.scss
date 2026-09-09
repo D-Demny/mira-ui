@@ -31,6 +31,25 @@ $card-blur-radius: 12px;
   }
 }
 
+// PERF-A/B (temp) — Bug58 comp-scroll experiment (debug/fps-bug58 only, never
+// merged into main): force the scroll port onto its own compositing layer and
+// hint it as transform-active. Temporary — strip together with the other
+// PERF-A/B markers when the branch is deleted.
+.compScroll {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+// PERF-A/B (temp) — Bug58 anim-carousel experiment (debug/fps-bug58 only, never
+// merged into main): let the browser itself interpolate the arithmetic dial
+// scrollLeft writes as a smooth scroll — no JS loop, no per-tick layout read
+// (see ContentCarousel.tsx for why this must NOT become a per-tick
+// scrollIntoView). CR69-safe: scroll-behavior is supported since Chrome 61.
+// Temporary — strip together with the other PERF-A/B markers.
+.animCarousel {
+  scroll-behavior: smooth;
+}
+
 // bug54/bug58: blur menu background — the carousel viewport spans the FULL
 // screen (the content pane slides under the sidebar, MainMenuView.module
 // .scss), so the left edge padding becomes the sidebar width + the regular

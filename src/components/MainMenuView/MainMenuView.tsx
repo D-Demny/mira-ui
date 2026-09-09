@@ -33,6 +33,9 @@ import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
 import { warmArt } from './warmedArt'
 import { entityArt } from './homeEntityArt'
+// PERF-A/B (temp): dial-scroll experiment flags (Bug58)
+import { usePerfFlags } from '@/perfFlags'
+import { downsizeSpotifyUrl } from './spotifyImage'
 import styles from './MainMenuView.module.scss'
 
 // bug25: the lyric sync offset range mirrors the player SettingsSheet
@@ -357,6 +360,10 @@ export function MainMenuView({
   // track's echo, and keep each remaining entry's position in the ORIGINAL
   // next_tracks list (Spotify queue index, the active track being 0) so
   // bug26's in-queue skip offset stays correct after the list shrinks.
+  // PERF-A/B (temp): runtime perf experiment flags (Bug58) — stable object
+  // identity while a flag stays unchanged, so the memos below can key on it
+  const perfFlags = usePerfFlags()
+
   const nowPlayingSnapshot = useMemo(() => {
     if (!nowPlaying) return null
     const queue: {
@@ -377,24 +384,30 @@ export function MainMenuView({
       ) {
         continue
       }
+      const rawArt = track.image_url || undefined
       queue.push({
         id: track.track_id || track.uri,
         title: track.name,
         subtitle: track.artist,
-        art: track.image_url || undefined,
+        // PERF-A/B (temp): lowres-art — swap the 640px Spotify CDN url for the
+        // smaller 300px twin (other urls untouched), only while the flag is on
+        art: rawArt ? (perfFlags.lowresArt ? downsizeSpotifyUrl(rawArt) : rawArt) : undefined,
         uri: track.uri,
         position: i + 1,
       })
     }
+    const activeArt = nowPlaying.track_image || undefined
     return {
       id: nowPlaying.track_id,
       title: nowPlaying.track_name,
       subtitle: nowPlaying.track_artist,
-      art: nowPlaying.track_image || undefined,
+      // PERF-A/B (temp): lowres-art — same 640→300 rewrite as the queue entries above
+      art: activeArt ? (perfFlags.lowresArt ? downsizeSpotifyUrl(activeArt) : activeArt) : undefined,
       uri: nowPlaying.track_uri,
       queue,
     }
-    // deliberately keyed on the scalar fields above, not on nowPlaying identity
+    // deliberately keyed on the scalar fields above, not on nowPlaying identity;
+    // perfFlags (PERF-A/B temp) is added so a runtime flag toggle re-derives the arts
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     nowPlaying?.track_id,
@@ -403,6 +416,7 @@ export function MainMenuView({
     nowPlaying?.track_image,
     nowPlaying?.track_uri,
     nowPlayingQueueKey,
+    perfFlags,
   ])
 
   // bug41: stable identity of the currently playing track (uri first, id as
@@ -1065,7 +1079,7 @@ export function MainMenuView({
     }
   }, [categories, displayedCategory, focus.activePane, focus.contentIndex, remoteBlur])
 
-  const viewStyle = {
+  const freshMenuStyle = {
     ...(ambientAccent
       ? {
           // bug24: ambient colors derived from the focused card's artwork
@@ -1080,6 +1094,31 @@ export function MainMenuView({
           '--menu-bg': displayedCategory.bg,
         }),
   } as CSSProperties
+
+  // PERF-A/B (temp): static-bg — while dial ticks are in progress
+  // (contentMoveKind 'dial'), keep the PREVIOUSLY committed --menu-bg /
+  // --menu-glow-a/b values instead of rewriting them every tick; once the
+  // move kind stops being 'dial' the fresh values flow through and get
+  // committed again. Small guard over a ref of the last committed value —
+  // the styling computation above is untouched. The ref is read/written in
+  // the render body deliberately (accepted pattern here, cf. viewportWidthRef
+  // in ContentCarousel.tsx): the value only feeds the style object below and
+  // never drives React state, so a concurrent double-invocation would just
+  // commit the same freshMenuStyle twice — no render dependency on it.
+  const lastCommittedMenuStyleRef = useRef<CSSProperties | null>(null)
+  let viewStyle: CSSProperties
+  if (
+    perfFlags.staticBg &&
+    focus.contentMoveKind === 'dial' &&
+    // eslint-disable-next-line react-hooks/refs -- PERF-A/B temp static-bg, see hunk comment above
+    lastCommittedMenuStyleRef.current !== null
+  ) {
+    // eslint-disable-next-line react-hooks/refs -- PERF-A/B temp static-bg, see hunk comment above
+    viewStyle = lastCommittedMenuStyleRef.current
+  } else {
+    lastCommittedMenuStyleRef.current = freshMenuStyle
+    viewStyle = freshMenuStyle
+  }
 
   useSwipeGestures(viewRef, {
     // right swipe enters the content pane, left swipe returns to the sidebar
