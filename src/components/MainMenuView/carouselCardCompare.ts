@@ -19,6 +19,13 @@ export interface CarouselCardProps {
   onCardHold?: (card: MenuCard, index: number) => void
   // attaches the focused card element to the parent's ref (for scrollIntoView)
   registerRef?: (el: HTMLElement | null) => void
+  // bug59: registers THIS card's element in the parent's per-index registry
+  // (the live-blur rAF loop blurs/deblurs DOM nodes by index). ONE stable
+  // parent callback — `index` comes from the child's own prop, so there are
+  // no per-index closures to cache/keep. Deliberately NOT compared by the
+  // memo comparator below (a flip of it must never force a re-render; the
+  // loop owns the classes while it runs)
+  registerCardEl?: (index: number, el: HTMLElement | null) => void
 }
 
 // bug8.2: a card re-renders only when its focus state or its data changes, so a

@@ -157,11 +157,13 @@ import { MainMenuView } from '../MainMenuView'
 import { ContentCarousel } from '../ContentCarousel'
 import { carouselCardAreEqual } from '../carouselCardCompare'
 import {
+  ANIM_SETTLE_MS,
   CARD_GAP,
   CARD_WIDTH,
   CAROUSEL_EDGE_PADDING,
   dialScrollLeft,
   sidebarOverlap,
+  sidebarOverlapAt,
   windowRange,
 } from '../carouselWindow'
 import type { MenuCard } from '../mockData'
@@ -1230,6 +1232,25 @@ describe('bug54: underflow geometry (translucent menu background)', () => {
   })
 })
 
+// bug59 test harness: a deterministic clock + rAF queue for the live-blur
+// loop. performance.now() is frozen at a fixed base so ANIM_SETTLE_MS windows
+// are advanced explicitly; requestAnimationFrame/cancelAnimationFrame are
+// queued instead of fired, so a dial tick (the layout-effect scroll write)
+// arms the loop and schedules its frame WITHOUT any frame running until
+// step()/settle() is called — exactly the in-flight window the feature covers.
+function mockLiveBlurClock() {
+  let t = 1_000_000
+  const queue: FrameRequestCallback[] = []
+  let nextId = 0
+  vi.spyOn(performance, 'now').mockImplementation(() => t)
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { queue.push(cb); return ++nextId })
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  const advance = (ms: number) => { t += ms }
+  const step = () => act(() => { const q = queue.splice(0, queue.length); for (const cb of q) cb(t) })
+  const settle = () => { advance(ANIM_SETTLE_MS + 1); step() }
+  return { advance, step, settle, queueLength: () => queue.length }
+}
+
 // bug58 T3/T4: in the 'blur' menu background exactly the cards that are MORE
 // THAN HALF under the translucent sidebar glass carry a strong per-card blur
 // (.blurred, `filter: blur`) — and LOSE it again as soon as they leave the
@@ -1252,6 +1273,7 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   // 50 cards: long enough for windowing (same shape as the bug47 R2 / bug54 suites)
@@ -1335,6 +1357,10 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     const { reads, left } = instrument(carouselEl(container))
     const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
     scrollIntoView.mockClear()
+    // bug59: while a smooth animation is in flight the rAF loop owns the
+    // .blurred classes exclusively — settle the (mocked) clock before any
+    // assertion on committed blur classes so the settled handoff has run
+    const clock = mockLiveBlurClock()
 
     // tick 1 (→ focus 3): the one-shot viewport measure lands in the ref only
     // AFTER this render (jsdom saw 0 at mount; on device the mount-time layout
@@ -1367,6 +1393,9 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
         underflowPx={UNDERFLOW_PX}
       />,
     )
+    // bug59: one settled frame hands the classes back to React — at this
+    // (settled) offset the render-derived set is what must be in the DOM
+    clock.settle()
     expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
     for (const title of ['Blur 1', 'Blur 2']) {
       expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
@@ -1391,6 +1420,9 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
         underflowPx={UNDERFLOW_PX}
       />,
     )
+    // bug59: the next tick re-armed the loop — settle before asserting so the
+    // committed classes are again React's render-derived (settled) set
+    clock.settle()
     expect(screen.getByText('Blur 1').closest('article')).not.toHaveClass('blurred')
     expect(screen.getByText('Blur 2').closest('article')).toHaveClass('blurred')
     expect(screen.getByText('Blur 3').closest('article')).toHaveClass('blurred')
@@ -1415,6 +1447,10 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     const { reads, left } = instrument(carouselEl(container))
     const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
     scrollIntoView.mockClear()
+    // bug59: the live-blur loop owns the .blurred classes while a smooth
+    // animation is in flight — settle the (mocked) clock before asserting on
+    // committed blur classes
+    const clock = mockLiveBlurClock()
 
     // tick 1 (→ focus 4): the one-shot viewport measure lands in the ref only
     // AFTER this render, so no .blurred yet — but the dial write is the pure
@@ -1446,6 +1482,10 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
         underflowPx={UNDERFLOW_PX}
       />,
     )
+    // bug59: the loop never re-armed on this tick (dial branch bailed on the
+    // undefined focusedIndex) — one settled frame hands the classes back to
+    // React, which derives them from blurIndex (not focusedIndex)
+    clock.settle()
     expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
     for (const title of ['Blur 1', 'Blur 2']) {
       expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
@@ -1466,6 +1506,9 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
         underflowPx={UNDERFLOW_PX}
       />,
     )
+    // bug59: the category purge re-armed the loop (another smooth move back to
+    // 0) — settle before asserting so the cleared state is the settled handoff
+    clock.settle()
     expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
     expect(left.value).toBe(0) // the category purge reset the scroll to card 0
     expect(scrollIntoView).not.toHaveBeenCalled()
@@ -1492,5 +1535,228 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     )
     expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
     expect(carouselEl(container).className).not.toContain('underflow')
+  })
+})
+
+// bug59: while a smooth dial animation is in flight, React commits NO blur at
+// all (the liveBlur gate renders NO_BLUR) — a rAF loop owns the .blurred
+// classes exclusively and follows the PHYSICAL scrollLeft (sidebarOverlapAt)
+// every frame. Once ANIM_SETTLE_MS has passed since the last scroll write AND
+// the physical offset sits within 1px of the target, the loop clears its
+// classes and flips liveBlur off; React re-renders with the render-derived
+// sidebarOverlap set in that very commit — identical at the settled offset, so
+// the handoff is invisible. These tests pin: the equivalence that makes the
+// handoff invisible (PURE), the in-flight ownership of the classes (IN-FLIGHT),
+// the settled handoff itself (SETTLE-HANDOFF) and the read-free dial path
+// (TICK-PATH INVARIANT).
+describe('bug59: live blur tracking', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // same geometry as the bug58 T3 suite: device screen, full-screen port,
+  // 250 px sidebar underflow
+  const CARDS: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `b59-${i}`,
+    title: `B59 ${i}`,
+    subtitle: '',
+  }))
+  const SCREEN_W = 800
+  const UNDERFLOW_PX = 250
+  const GEO = {
+    leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW_PX, // 266
+    minVisibleX: UNDERFLOW_PX,
+    centerTarget: UNDERFLOW_PX + (SCREEN_W - UNDERFLOW_PX) / 2, // 525
+  }
+
+  function carouselEl(container: HTMLElement): HTMLElement {
+    return container.querySelector('.carousel') as HTMLElement
+  }
+
+  // same instrument as the T3 suite: count layout reads, capture scrollLeft
+  // writes — left.value is the "physical" offset the loop reads per frame
+  function instrument(el: HTMLElement): {
+    reads: { width: number; left: number }
+    left: { value: number }
+  } {
+    const reads = { width: 0, left: 0 }
+    const left = { value: -1 }
+    Object.defineProperty(el, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        reads.width++
+        return SCREEN_W
+      },
+    })
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      get: () => {
+        reads.left++
+        return left.value
+      },
+      set: (v: number) => {
+        left.value = v
+      },
+    })
+    return { reads, left }
+  }
+
+  // the indices of the .blurred cards, mapped from the card titles (B59 <i>)
+  function blurredIndices(container: HTMLElement): number[] {
+    return Array.from(container.querySelectorAll('article.blurred')).map((el) =>
+      Number(/B59 (\d+)/.exec(el.textContent ?? '')?.[1]),
+    )
+  }
+
+  it('PURE: at every settled dial offset the physical set equals the target set (handoff is invisible)', () => {
+    const { container } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    instrument(carouselEl(container))
+    mockLiveBlurClock()
+
+    // the dial target offset IS the settled physical offset (the write lands
+    // exactly) — at it, both functions must yield identical sets: same
+    // constants, same candidate window, same T4 center rule. Cover several
+    // (count, focusedIndex) pairs in underflow mode, including the clamped
+    // ends where dialScrollLeft saturates at maxScroll / the left boundary
+    for (const [count, idxs] of [
+      [50, [0, 1, 2, 3, 4, 5, 10, 25, 49]],
+      [8, [0, 1, 2, 3, 4, 7]],
+    ] as const) {
+      for (const idx of idxs) {
+        const settledOffset = dialScrollLeft(count, idx, SCREEN_W, GEO)
+        expect([...sidebarOverlapAt(settledOffset, count, UNDERFLOW_PX)].sort((a, b) => a - b)).toEqual(
+          [...sidebarOverlap(count, idx, SCREEN_W, UNDERFLOW_PX)].sort((a, b) => a - b),
+        )
+      }
+    }
+  })
+
+  it('IN-FLIGHT: after one dial tick React commits no .blurred; the first frame glues the set to the physical offset', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { left } = instrument(carouselEl(container))
+    const clock = mockLiveBlurClock()
+
+    // one dial tick (→ focus 4): the layout effect writes the target offset and
+    // arms the loop — but NO rAF frame has run yet, so React's commit carries
+    // no .blurred at all (the liveBlur gate renders NO_BLUR while in flight)
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
+    expect(clock.queueLength()).toBe(1) // armed, not yet executed
+
+    // one frame (without settle): the loop reads the PHYSICAL scrollLeft and
+    // writes the set derived from it — not from the render's target index
+    clock.step()
+    const expected = sidebarOverlapAt(left.value, CARDS.length, UNDERFLOW_PX)
+    const dom = blurredIndices(container)
+    expect([...dom].sort((a, b) => a - b)).toEqual([...expected].sort((a, b) => a - b))
+    // T4 center rule from the DOM side: no blurred card has its physical
+    // center right of the sidebar's right edge
+    for (const i of dom) {
+      const x = GEO.leftInset + i * (CARD_WIDTH + CARD_GAP) - left.value
+      expect(x + CARD_WIDTH / 2).toBeLessThan(UNDERFLOW_PX)
+    }
+  })
+
+  it('SETTLE-HANDOFF: after clock.settle() the .blurred set is the target-based sidebarOverlap and the queue drains', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { left } = instrument(carouselEl(container))
+    const clock = mockLiveBlurClock()
+
+    // one dial tick (→ focus 4) arms the loop; settle advances past
+    // ANIM_SETTLE_MS and steps one frame: the physical offset sits on the
+    // target (the write lands exactly), so the loop clears its classes,
+    // flips liveBlur off and schedules no next frame — React re-renders with
+    // the render-derived set in that very commit (the invisible handoff)
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    clock.settle()
+
+    const expected = sidebarOverlap(CARDS.length, 4, SCREEN_W, UNDERFLOW_PX)
+    const dom = blurredIndices(container)
+    expect([...dom].sort((a, b) => a - b)).toEqual([...expected].sort((a, b) => a - b))
+    // the handoff happened at the dial target offset (not mid-animation) ...
+    expect(left.value).toBe(dialScrollLeft(CARDS.length, 4, SCREEN_W, GEO))
+    // ... and the loop is done: no frame left in the queue
+    expect(clock.queueLength()).toBe(0)
+  })
+
+  it('TICK-PATH INVARIANT: dial ticks without rAF frames read scrollLeft zero times (tick path stays read-free)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads } = instrument(carouselEl(container))
+    const clock = mockLiveBlurClock()
+
+    // two dial ticks: the layout-effect path writes scrollLeft arithmetically
+    // and arms the loop — a frame is queued, but NONE runs without step(), so
+    // the loop's per-frame physical read never happens on the tick path
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={3}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={5}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+
+    expect(clock.queueLength()).toBe(1) // armed once, never executed
+    expect(reads.left).toBe(0) // the tick path stays read-free
+    expect(reads.width).toBe(1) // the viewport is still measured exactly once
   })
 })
