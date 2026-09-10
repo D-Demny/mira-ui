@@ -270,6 +270,17 @@ export function ContentCarousel({
   // restarts the animation on every liveBlur flip, which flips it again ...
   const liveBlurRef = useRef(false)
   const [liveBlur, setLiveBlur] = useState(false)
+  // bug59b (A): settle-handoff epoch. Bumped exactly once per handoff by the
+  // loop's settle branch below, so EVERY mounted card re-renders in the ONE
+  // commit that flips liveBlur off: React recomputes every className from the
+  // render-derived target set and the diff commits whatever the DOM needs. A
+  // card whose PREVIOUS committed className already matches the new one would
+  // otherwise get no DOM write at all (attribute unchanged → skipped), letting
+  // any stale imperative class survive — the flip defeats exactly that bail-out
+  // and makes React's set authoritative again. The card body never reads the
+  // value (plumbing only, like registerCardEl); it is stable on every dial
+  // tick, so the bug8.2 per-tick churn stays untouched.
+  const [blurEpoch, setBlurEpoch] = useState(0)
 
   // bug59: ONE stable registry callback (empty deps — never re-created). The
   // card's own `index` prop identifies the slot, so there is no per-index
@@ -526,9 +537,26 @@ export function ContentCarousel({
         performance.now() - lastTickRef.current > ANIM_SETTLE_MS &&
         Math.abs(physical - targetOffsetRef.current) < 1
       if (settled) {
-        for (const el of cardElsRef.current.values()) el.classList.remove(styles.blurred)
+        // bug59b (A): NO full strip here. The settle check above guarantees
+        // the physical offset sits within 1px of the target, and at that
+        // offset sidebarOverlapAt() yields EXACTLY the set React commits in
+        // the same turn (sidebarOverlap — same constants, candidate window,
+        // T4 rule; pinned by the PURE test). Stripping every class (the old
+        // code) left the cards still under the glass sharp for the frame(s)
+        // between this rAF callback and React's handoff commit landing — the
+        // visible flash of Bug59b. Remove ONLY what is stale: classes the
+        // loop itself owns (liveSetRef, incl. the pre-paint arm re-apply
+        // below) on a card that has left the glass at this offset. Everything
+        // else stays in place until the handoff commit rewrites the canonical
+        // classNames — the blurEpoch bump forces every card through that diff,
+        // so React, not this loop, owns the final state.
+        const settledSet = sidebarOverlapAt(physical, cards.length, underflowPx)
+        for (const i of liveSetRef.current) {
+          if (!settledSet.has(i)) cardElsRef.current.get(i)?.classList.remove(styles.blurred)
+        }
         liveSetRef.current = new Set<number>()
         liveBlurRef.current = false
+        setBlurEpoch((e) => e + 1)
         setLiveBlur(false)
         return // no next frame — the liveBlur flip's cleanup cancels the
         // consumed rafId (no-op, safe); React now owns the classes again
@@ -547,6 +575,29 @@ export function ContentCarousel({
     }
     rafId = requestAnimationFrame(frame)
     return cleanup
+  }, [liveBlur, cards.length, underflowPx])
+
+  // bug59b (B): pre-paint re-apply on arm — the symmetric half of Bug59b.
+  // Flipping liveBlur on renders NO_BLUR for every card in this commit (the
+  // render gate below), and the rAF loop above writes its first frame only on
+  // the NEXT frame: the frame(s) between would paint the cards under the glass
+  // sharp again. This LAYOUT effect runs after the scroll-writing effects
+  // (declaration order) and before the browser paints, so it re-adds .blurred
+  // imperatively to the target set for the offset this commit's scroll write
+  // aims at — targetOffsetRef, NOT a scrollLeft read: the tick path stays
+  // read-free (bug47/48), and at arm time the physical offset is still the
+  // pre-animation one anyway. The adds are tracked into liveSetRef so the
+  // loop's diff-based removals and the settle stale-strip treat them as
+  // loop-owned. While liveBlur runs, every React commit renders NO_BLUR for
+  // bailed-out cards (memo) that carry a loop class — the loop's unconditional
+  // per-frame add is still the stomp self-heal; this effect only closes the
+  // arm gap, it does not run per tick (deps unchanged on re-arms).
+  useLayoutEffect(() => {
+    if (!liveBlur) return
+    for (const i of sidebarOverlapAt(targetOffsetRef.current, cards.length, underflowPx)) {
+      cardElsRef.current.get(i)?.classList.add(styles.blurred)
+      liveSetRef.current.add(i)
+    }
   }, [liveBlur, cards.length, underflowPx])
 
   // bug59: unmount cleanup — drop the element registry (the card unmount
@@ -674,6 +725,10 @@ export function ContentCarousel({
             // stable callback (see registerCardElBase), the card's own index
             // prop identifies the slot; ignored by the memo comparator
             registerCardEl={registerCardElBase}
+            // bug59b (A): settle-handoff epoch — a flip re-renders this card
+            // once (memo comparator), forcing React's canonical className
+            // rewrite in the handoff commit; never read by the card body
+            blurEpoch={blurEpoch}
           />
         )
       })}
