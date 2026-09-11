@@ -1397,17 +1397,23 @@ describe('MainMenuView', () => {
   })
 
   // ticket 9.3: the home cards render the user-selected entities (default
-  // selection = the HOME_LIGHTS) plus the manage card (picker entry)
+  // selection = the HOME_LIGHTS); ticket 9.5: no manage card — the picker is
+  // reached via Einstellungen → Home
   describe('bug34: every selected entity renders as a home card', () => {
-    it('renders a card for every selected entity (default = HOME_LIGHTS) plus the manage card', () => {
+    it('renders a card for every selected entity (default = HOME_LIGHTS), no manage card', () => {
       const { container } = render(<MainMenuView />)
 
       const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
-      // the default selection's 9 lights + the manage card at the end
-      expect(content.querySelectorAll('.card')).toHaveLength(HOME_LIGHTS.length + 1)
+      // the default selection's 9 lights — nothing else in the home carousel
+      expect(content.querySelectorAll('.card')).toHaveLength(HOME_LIGHTS.length)
       // the card order follows the selection (default = HOME_LIGHTS menu order)
       const titles = Array.from(content.querySelectorAll('.card h3')).map((el) => el.textContent)
-      expect(titles).toEqual([...HOME_LIGHTS.map((light) => light.label), 'Entitäten wählen'])
+      expect(titles).toEqual(HOME_LIGHTS.map((light) => light.label))
+    })
+
+    it('does not render the removed manage card ("Entitäten wählen")', () => {
+      render(<MainMenuView />)
+      expect(screen.queryByText('Entitäten wählen')).not.toBeInTheDocument()
     })
 
     it('shows the live on/off subtitle per light (default mock: all off)', async () => {
@@ -1489,14 +1495,26 @@ describe('MainMenuView', () => {
       expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
     })
 
-    it('tapping the manage card opens the entity picker', async () => {
+    // ticket 9.5: the picker opener moved from the home carousel to the
+    // 'Home' row of the Einstellungen list (row 8, after 'Home Assistant')
+    it('the Home settings row opens the entity picker', async () => {
       const onOpenEntityPicker = vi.fn()
       render(<MainMenuView onOpenEntityPicker={onOpenEntityPicker} />)
-      await waitFor(() => {
-        expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
-      })
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
 
-      fireEvent.click(screen.getByText('Entitäten wählen'))
+      // the row value mirrors the live selection count (default = 9 lights)
+      expect(screen.getByText(`${HOME_LIGHTS.length} Entitäten`)).toBeInTheDocument()
+
+      wheel(-10) // 1 Show Lyrics
+      wheel(-10) // 2 Karaoke Lyrics
+      wheel(-10) // 3 Mic
+      wheel(-10) // 4 Devices
+      wheel(-10) // 5 Bluetooth Pairing
+      wheel(-10) // 6 Raspberry Pi
+      wheel(-10) // 7 Home Assistant
+      wheel(-10) // 8 Home
+      confirmDial()
 
       expect(onOpenEntityPicker).toHaveBeenCalledTimes(1)
     })
@@ -1569,14 +1587,16 @@ describe('MainMenuView', () => {
       expect(card?.querySelector('.subtitle')?.textContent).toBe('Szene')
     })
 
-    it('an empty selection shows the inert placeholder plus the manage card', () => {
+    // ticket 9.5: the empty selection keeps only the inert placeholder — the
+    // manage card is gone, the hint points to Einstellungen → Home
+    it('an empty selection shows the inert placeholder pointing to the settings', () => {
       localStorage.setItem(SELECTION_LS_KEY, '[]')
       const { container } = render(<MainMenuView />)
 
       expect(screen.getByText('Keine Entitäten gewählt')).toBeInTheDocument()
-      expect(screen.getByText('Entitäten wählen')).toBeInTheDocument()
+      expect(screen.getByText('In den Einstellungen wählen')).toBeInTheDocument()
       const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
-      expect(content.querySelectorAll('.card')).toHaveLength(2)
+      expect(content.querySelectorAll('.card')).toHaveLength(1)
     })
   })
 
