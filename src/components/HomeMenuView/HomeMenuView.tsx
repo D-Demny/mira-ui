@@ -33,31 +33,21 @@ function badgeFor(view: HomeEntityView): string {
   return '–'
 }
 
-interface Props {
-  // ticket 9.3: opens the entity picker (the App-level overlay); when
-  // provided, a manage row is appended to the focus list
-  onOpenEntityPicker?: () => void
-}
+// ticket 9.5: the entity picker (selection + reordering) is no longer an
+// opener from this view — it lives in Einstellungen → Home (the App-level
+// overlay is triggered by the 'set-home' settings row)
 
-function HomeMenuViewImpl({ onOpenEntityPicker }: Props) {
+function HomeMenuViewImpl() {
   // bug57 v2: this view IS the home list — mounted = visible, so the 3s HA
   // poll is active for the whole lifetime of the view
   const entities = useHomeSelectedEntities(true)
 
-  const hasManage = typeof onOpenEntityPicker === 'function'
-
-  // single focus list: the selected entities, then (if the picker entry is
-  // available) the manage row
-  const itemCount = entities.length + (hasManage ? 1 : 0)
-
   const { focusedIndex, handleWheel, tapItem, setFocusRef } = useListFocus({
-    itemCount,
+    itemCount: entities.length,
     onSelect: (index) => {
       if (index < entities.length) {
         entities[index].actuate()
-        return
       }
-      onOpenEntityPicker?.()
     },
     allowTapSelect: true,
   })
@@ -65,8 +55,7 @@ function HomeMenuViewImpl({ onOpenEntityPicker }: Props) {
   const badgeClassFor = (view: HomeEntityView) =>
     view.error ? styles.badgeError : view.active === true && !view.loading ? styles.badgeOn : ''
 
-  // one row per focus-list item: entity rows carry a status badge, the
-  // manage row does not (same li/role/ref/`.focused` structure as before)
+  // one row per focus-list item (entity rows carry a status badge)
   const renderRow = (index: number, key: string, label: string, meta: string, badge: string | null) => {
     const view = index < entities.length ? entities[index] : null
     const focused = index === focusedIndex
@@ -110,15 +99,6 @@ function HomeMenuViewImpl({ onOpenEntityPicker }: Props) {
           {entities.map((view, i) =>
             renderRow(i, view.entityId, view.label, view.room ?? domainLabelFor(view.domain), badgeFor(view)),
           )}
-          {hasManage
-            ? renderRow(
-                entities.length,
-                'manage-entities',
-                'Entitäten wählen',
-                entities.length + ' ausgewählt',
-                null,
-              )
-            : null}
         </ul>
       </section>
     </div>
