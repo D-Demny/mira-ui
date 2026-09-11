@@ -35,6 +35,8 @@ import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
 import { warmArt } from './warmedArt'
 import { entityArt } from './homeEntityArt'
+import { HomeDashboardView } from './HomeDashboardView'
+import { buildCoverSection, buildLightGrid, buildSceneRow, classifyEntities } from './homeDashboard'
 import styles from './MainMenuView.module.scss'
 
 // bug25: the lyric sync offset range mirrors the player SettingsSheet
@@ -373,6 +375,19 @@ export function MainMenuView({
         (view.dimmable ? 1 : 0),
     )
     .join('\u0000')
+
+  // ticket 9.6 (Task C): the Home dashboard grid's view models — the same
+  // pure builders HomeDashboardView uses internally, so MainMenuView can
+  // count the dial focus slots (scenes → lights → cover columns; placeholders
+  // are focus stops too) without re-implementing the mapping math
+  const homeDashboard = useMemo(() => {
+    const { scenes, lights, covers } = classifyEntities(selectedEntities)
+    return {
+      sceneRow: buildSceneRow(scenes),
+      lightGrid: buildLightGrid(lights),
+      coverSection: buildCoverSection(covers),
+    }
+  }, [selectedEntities])
 
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
   // single-track playback (entries with a uri but no metadata → blank card)
@@ -900,7 +915,15 @@ export function MainMenuView({
 
   const focus = useMainMenuFocus({
     sidebarCount: categories.length,
-    contentCount: confirmedCategory.cards.length,
+    // ticket 9.6 (Task C): the Home dial traverses ALL dashboard grid slots
+    // (scenes → lights → cover columns, placeholders are focus stops too);
+    // every other category keeps the carousel card count
+    contentCount:
+      confirmedCategory.id === 'home'
+        ? homeDashboard.sceneRow.length +
+          homeDashboard.lightGrid.length +
+          homeDashboard.coverSection.columns.length
+        : confirmedCategory.cards.length,
     onExit: () => onExit?.(),
     // keep the rendered pane in sync when a sidebar item is selected (dial press or tap)
     onSelectSidebar: (index) => {
@@ -918,12 +941,20 @@ export function MainMenuView({
     },
     onConfirmContent: (index) => {
       // only ever runs in the content pane, where displayed == confirmed
+      // ticket 9.6 W2: dashboard interaction wiring (scene activate / light
+      // toggle / cover up-down, long-press → HALightControlModal) keys off the
+      // grid slots — no-op until then
+      if (confirmedCategory.id === 'home') return
       const card = confirmedCategory.cards[index]
       if (card) handleCardAction(card, index)
     },
     // bug53: dial HOLD on a card — same routing as the press path, plus the
     // dimmable-light → dim view shortcut (handleCardHold covers it)
     onHoldContent: (index) => {
+      // ticket 9.6 W2: dashboard interaction wiring (scene activate / light
+      // toggle / cover up-down, long-press → HALightControlModal) keys off the
+      // grid slots — no-op until then
+      if (confirmedCategory.id === 'home') return
       const card = confirmedCategory.cards[index]
       if (card) handleCardHold(card, index)
     },
@@ -1205,6 +1236,15 @@ export function MainMenuView({
               onToggleAuto={() => updateSettings({ autoBrightness: !settings.autoBrightness })}
             />
           </div>
+        ) : displayedCategory.id === 'home' ? (
+          // ticket 9.6 (Task C): the Home category renders the dashboard grid
+          // instead of the content carousel. W1 keep-it-simple: no underflow
+          // geometry, no blur props, no scroll port — those are the carousel's
+          // bug54/bug58 concerns; revisit in W2 if the dial needs them.
+          <HomeDashboardView
+            entities={selectedEntities}
+            focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+          />
         ) : (
           <ContentCarousel
             cards={displayedCategory.cards}
