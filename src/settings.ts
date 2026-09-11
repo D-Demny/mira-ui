@@ -22,6 +22,25 @@ export interface PiProfile {
   keyInstalled: boolean
 }
 
+// ticket 9.4: the Home Assistant connection — the daemon's HA proxy
+// (/ha-api/) and the login/test endpoints read this from the settings blob
+// (daemon/ha_config.go, ParseHaConfig pattern). An empty url means "not
+// configured" — the daemon's build-time config.yml defaults apply.
+// SECURITY (documented trade-off, same as PiProfile.password): the username,
+// password and the long-lived token are stored in plain text so re-logins
+// keep working. They are NEVER logged — neither in the UI console nor in the
+// daemon logs (hard ticket constraint).
+export interface HaSettingsValue {
+  url: string
+  username: string
+  password: string
+  token: string
+  // where the token came from: 'default' = the build-time config.yml value
+  // (no login needed), 'login' = the daemon WS flow (fresh 10-year token),
+  // 'manual' = user-typed (phase 2)
+  tokenSource: 'default' | 'manual' | 'login'
+}
+
 export interface Settings {
   showLyrics: boolean
   karaokeLyrics: boolean
@@ -54,6 +73,8 @@ export interface Settings {
   // The enum values keep their pre-v2 names, so stored blobs (only 'solid' /
   // 'translucent' ever existed) need no migration.
   sidebarBackground: 'solid' | 'translucent' | 'clear' | 'blur'
+  // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
+  ha: HaSettingsValue
 }
 
 export const VOLUME_STEP_MIN = 1
@@ -69,10 +90,16 @@ export const UI_SCALE_DEFAULT = 100
 // piProfiles list + activePiId). The version is part of the blob the daemon
 // stores opaquely; initSettings only requires a numeric v, so an old build
 // reading a v2 blob degrades to the flat defaults (no crash).
-const SCHEMA_VERSION = 2
+// ticket 9.4: v3 adds the `ha` object. This is an ADDITIVE migration — the
+// coercion of a blob without an `ha` key yields the ha defaults (see
+// coerceHa), so no separate migration step is needed. An old build reading a
+// v3 blob ignores the unknown `ha` key (no crash — compat matrix, ticket
+// 9.4 design §5: new UI + old daemon keeps running on the config.yml values).
+const SCHEMA_VERSION = 3
 // NOTE (ticket10-5A): the localStorage key stays at v1 ON PURPOSE — the
 // one-time migration of the legacy piServer entry must still find the old
 // blob. A key bump would skip the migration and lose the stored credentials.
+// The v3 bump is version-in-blob only, the key never changes.
 const LS_KEY = 'mira.settings.v1'
 const PUT_DEBOUNCE_MS = 400
 
@@ -103,6 +130,10 @@ const DEFAULTS: Settings = {
   activePiId: null,
   hybridDisabled: false,
   sidebarBackground: 'solid',
+  // ticket 9.4: empty = not configured → the daemon's build-time config.yml
+  // defaults apply (the modal pre-fills the default URL from the
+  // POST /api/ha/test response, task 7)
+  ha: { url: '', username: '', password: '', token: '', tokenSource: 'default' },
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -215,6 +246,34 @@ function coerceActivePiId(profiles: PiProfile[], raw: unknown): string | null {
   return profiles[0].id
 }
 
+// ticket 9.4: strict ha coercion (same pattern as coercePiProfile). url and
+// username are trimmed (trailing whitespace from the onscreen keyboard is
+// the realistic source); password and token are kept VERBATIM — the daemon's
+// ParseHaConfig makes the same distinction, and a token with a stray space
+// must not be "fixed" client-side (it would silently break authentication).
+// tokenSource is an enum: anything that is not exactly 'manual' or 'login'
+// (foreign values from a hand-edited blob, or blobs predating the field)
+// coerces to 'default'. A missing or non-object `ha` yields the defaults
+// object (no undefined leaks — the daemon parses the blob independently and
+// treats a missing `ha` key as "use config.yml defaults").
+function coerceHa(raw: unknown): HaSettingsValue {
+  if (typeof raw !== 'object' || raw === null) {
+    return { url: '', username: '', password: '', token: '', tokenSource: 'default' }
+  }
+  const obj = raw as Partial<HaSettingsValue>
+  return {
+    url: typeof obj.url === 'string' ? obj.url.trim() : '',
+    username: typeof obj.username === 'string' ? obj.username.trim() : '',
+    // verbatim — never trim (see above)
+    password: typeof obj.password === 'string' ? obj.password : '',
+    token: typeof obj.token === 'string' ? obj.token : '',
+    tokenSource:
+      obj.tokenSource === 'manual' || obj.tokenSource === 'login'
+        ? obj.tokenSource
+        : 'default',
+  }
+}
+
 function coerce(partial: Partial<Settings> | null | undefined): Settings {
   const piProfiles = coercePiProfiles(partial)
   return {
@@ -253,6 +312,10 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
           : partial?.sidebarBackground === 'blur'
             ? 'blur'
             : 'solid',
+    // ticket 9.4: strict coercion, see coerceHa — a blob without the `ha`
+    // key (every blob predating v3) coerces to the empty defaults, which is
+    // the whole v2→v3 migration (idempotent, no separate step)
+    ha: coerceHa(partial?.ha),
   }
 }
 

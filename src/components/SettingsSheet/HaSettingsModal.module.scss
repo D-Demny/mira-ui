@@ -1,0 +1,216 @@
+// ticket 9.4: the Home Assistant settings view — 1:1 the PiServerModal
+// structure (Bug10-1/Bug51 scroll chain, CR69 margin-based spacing).
+.backdrop {
+  position: fixed;
+  @include inset-0;
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.62);
+  animation: fadeIn $dur-base $ease-standard both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+// Bug10-1: the card is the FIXED SHELL of the modal (size, background,
+// border, shadow). It does not scroll itself — the .content block below is
+// the vertical scroll container (the established SettingsList pattern:
+// fixed container + scrolling content block).
+.card {
+  width: 540px;
+  max-width: calc(100% - #{$s-6});
+  max-height: calc(100% - #{$s-6});
+  @include column;
+  padding: $s-5;
+  background: $bg;
+  border-radius: $r-2xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: slideIn $dur-base $ease-emphasized both;
+}
+
+// Bug10-1: the vertical scroll container of the HA menu — the card shell
+// above stays fixed, only this block scrolls when the content (header +
+// credential fields + buttons) exceeds the display height.
+// flex: 1 1 auto + min-height: 0 let the block shrink below its content
+// height inside the max-height-capped card, which is what triggers the
+// scrolling. CR69/Bug49: no flex gap — the block spacing comes from the
+// margin-based flex-gap-y mixin (Chromium 69 ignores flex `gap`, Chrome 84+).
+//
+// Bug51: the direct children (header / credential fields / action buttons)
+// must NOT shrink. They are flex items of this column with the default
+// flex-shrink: 1 — once the card is capped by the max-height chain
+// (800x480 device), the items are compressed BELOW their content height,
+// their inner content (labels, inputs, buttons) then paints on top of each
+// other, and the block never becomes scrollable. flex-shrink: 0 on every
+// direct child is the same rule the SettingsList rows carry — that is what
+// makes the menu scroll instead of collapsing.
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  @include hide-scrollbar;
+  @include column;
+  @include flex-gap-y($s-4);
+
+  > * {
+    flex-shrink: 0;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.header {
+  @include column;
+  @include flex-gap-y($s-2);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: $fs-2xl;
+  font-weight: $fw-semibold;
+  letter-spacing: -0.01em;
+  color: $text-primary;
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: $r-md;
+  color: $text-secondary;
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: $text-primary;
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.status {
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+}
+
+.statusOn {
+  color: $accent;
+}
+
+.statusOff {
+  color: $text-tertiary;
+}
+
+// Bug10-1/CR69: raw flex `gap` (Chrome 84+) is ignored by Chromium 69 —
+// the label/input spacing is margin-based via the flex-gap-y mixin
+.field {
+  @include column;
+  @include flex-gap-y($s-2);
+}
+
+.fieldLabel {
+  font-size: $fs-sm;
+  color: $text-secondary;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: $s-3 $s-4;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.05);
+  color: $text-primary;
+  font-size: $fs-md;
+  outline: none;
+  transition: border-color $dur-fast $ease-standard;
+
+  &:focus {
+    border-color: $accent;
+  }
+
+  // the dial focus highlight (same pattern as the PiServerModal fields —
+  // pure CSS, no el.focus() per tick)
+  &.focused {
+    border-color: $accent;
+    background: rgba(30, 215, 96, 0.12);
+  }
+}
+
+// Bug10-1/CR69: the button spacing is margin-based via the flex-gap-x mixin
+.actions {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
+
+.btn {
+  flex: 0 0 auto;
+  padding: $s-3 $s-4;
+  border-radius: $r-lg;
+  border: none;
+  background: rgba(255, 255, 255, 0.09);
+  color: $text-primary;
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  cursor: pointer;
+  transition:
+    transform $dur-fast $ease-standard,
+    opacity $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.btnPrimary {
+  width: 100%;
+  background: $accent;
+  color: #000;
+}
+
+// ticket 9.4: the concrete failure reason (Bug53 .errorDetail pattern, see
+// HomeEntityPickerModal) — the probe error under the status line and the
+// login error under the save button. Word-wrapping (not truncation) so the
+// concrete reason (host included) stays readable; the modal scrolls, so a
+// longer reason never breaks the card height. The class string carries
+// only the error class + host — never a credential value.
+.errorDetail {
+  font-size: $fs-sm;
+  color: #ff6b6b;
+  word-break: break-word;
+}

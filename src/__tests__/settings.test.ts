@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import {
   __resetSettings,
   activePiProfile,
   defaultPiProfile,
   getSettings,
+  initSettings,
   updateActivePiProfileField,
   updateSettings,
 } from '../settings'
 import { getPreset, setPreset } from '../presets'
+import { server } from './msw-server'
 
 beforeEach(() => {
   localStorage.clear()
@@ -355,5 +358,147 @@ describe('settings store', () => {
     // backward compat: blobs predating bug58 never held 'blur' — a missing
     // field stays 'solid' (no migration needed; the strict coercion above is
     // the null-op migration), so the pre-bug58 tests keep running unchanged
+  })
+
+  describe('ha (ticket 9.4)', () => {
+    const DEFAULT_HA = {
+      url: '',
+      username: '',
+      password: '',
+      token: '',
+      tokenSource: 'default' as const,
+    }
+
+    it('defaults to the empty ha config on a fresh install (daemon defaults apply)', () => {
+      expect(getSettings().ha).toEqual(DEFAULT_HA)
+    })
+
+    it('coerces a v2 blob without an ha key to the defaults (v2→v3 migration)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
+      )
+      __resetSettings()
+      expect(getSettings().ha).toEqual(DEFAULT_HA)
+    })
+
+    it('coerces a complete ha object 1:1 (url/username trimmed, password/token verbatim)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({
+          ha: {
+            url: '  http://10.10.1.104:8123  ',
+            username: '  mira  ',
+            password: 'p w  with  spaces ',
+            token: '  eyJhbGciOi.eyJpc3Mi  ',
+            tokenSource: 'login',
+          },
+        }),
+      )
+      __resetSettings()
+      expect(getSettings().ha).toEqual({
+        url: 'http://10.10.1.104:8123',
+        username: 'mira',
+        // verbatim — a secret with stray spaces is part of the value,
+        // never "fixed" client-side (the daemon parses identically)
+        password: 'p w  with  spaces ',
+        token: '  eyJhbGciOi.eyJpc3Mi  ',
+        tokenSource: 'login',
+      })
+    })
+
+    it('coerces a non-object ha (hand-edited blob) to the defaults', () => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ ha: 'http://x' }))
+      __resetSettings()
+      expect(getSettings().ha).toEqual(DEFAULT_HA)
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ ha: null }))
+      __resetSettings()
+      expect(getSettings().ha).toEqual(DEFAULT_HA)
+    })
+
+    it.each([
+      ['a foreign tokenSource', { tokenSource: 'bogus' }],
+      ['the wrong-case tokenSource', { tokenSource: 'Login' }],
+      ['a numeric tokenSource', { tokenSource: 1 }],
+      ['a null tokenSource', { tokenSource: null }],
+    ])('coerces %s to tokenSource default', (_label, ha) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ ha }))
+      __resetSettings()
+      expect(getSettings().ha.tokenSource).toBe('default')
+    })
+
+    it('coerces a missing tokenSource (partial hand-edited blob) to default', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ ha: { url: 'http://10.0.0.9:8123', token: 't' } }),
+      )
+      __resetSettings()
+      expect(getSettings().ha).toEqual({ ...DEFAULT_HA, url: 'http://10.0.0.9:8123', token: 't' })
+    })
+
+    it.each(['manual', 'login'])('keeps the enum tokenSource %s', (tokenSource) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ ha: { tokenSource } }))
+      __resetSettings()
+      expect(getSettings().ha.tokenSource).toBe(tokenSource)
+    })
+
+    it('round-trips updateSettings({ ha }) through localStorage (v3 blob)', () => {
+      const ha = {
+        url: 'http://192.168.1.10:8123',
+        username: 'mira',
+        password: 'pw',
+        token: 'tok',
+        tokenSource: 'login' as const,
+      }
+      updateSettings({ ha })
+      expect(getSettings().ha).toEqual(ha)
+      __resetSettings() // reload the persisted (v3) blob
+      expect(getSettings().ha).toEqual(ha)
+      // the persisted blob is the v3 shape the daemon parses opaquely
+      const stored = JSON.parse(String(localStorage.getItem('mira.settings.v1'))) as {
+        ha?: Record<string, unknown>
+      }
+      expect(stored.ha?.token).toBe('tok')
+      expect(stored.ha?.tokenSource).toBe('login')
+    })
+
+    it('initSettings adopts a daemon v3 blob with an ha object', async () => {
+      vi.useRealTimers() // the fetch round-trip needs the real clock
+      server.use(
+        http.get('*/settings', () =>
+          HttpResponse.json({
+            v: 3,
+            showLyrics: false,
+            ha: {
+              url: 'http://10.10.1.104:8123',
+              username: 'mira',
+              password: 'pw',
+              token: 'tok',
+              tokenSource: 'login',
+            },
+          }),
+        ),
+      )
+      await initSettings()
+      expect(getSettings().ha).toEqual({
+        url: 'http://10.10.1.104:8123',
+        username: 'mira',
+        password: 'pw',
+        token: 'tok',
+        tokenSource: 'login',
+      })
+    })
+
+    it('initSettings coerces a daemon v2 blob without ha to the defaults', async () => {
+      vi.useRealTimers()
+      server.use(http.get('*/settings', () => HttpResponse.json({ v: 2, showLyrics: false })))
+      await initSettings()
+      expect(getSettings().ha).toEqual(DEFAULT_HA)
+      // the store is re-persisted in the v3 shape for the next daemon read
+      const stored = JSON.parse(String(localStorage.getItem('mira.settings.v1'))) as {
+        ha?: Record<string, unknown>
+      }
+      expect(stored.ha).toEqual(DEFAULT_HA)
+    })
   })
 })
