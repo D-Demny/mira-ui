@@ -26,6 +26,7 @@ import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBan
 import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { Screensaver } from '@/components/Screensaver'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
+import { HaSettingsModal } from '@/components/SettingsSheet/HaSettingsModal'
 import { PiKeyboardOverlay, type PiKeyboardField } from '@/components/SettingsSheet/PiKeyboardOverlay'
 import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
@@ -136,6 +137,10 @@ function AppInner() {
   const [defaultDeviceModalOpen, setDefaultDeviceModalOpen] = useState(false)
   // epic10 task 4: the Raspberry Pi provisioning/connection view
   const [piServerModalOpen, setPiServerModalOpen] = useState(false)
+  // ticket 9.4: the Home Assistant connection settings view (its on-screen
+  // keyboard is rendered inside the modal's own backdrop — no App-level
+  // keyboard state)
+  const [haSettingsOpen, setHaSettingsOpen] = useState(false)
   // ticket10-2: the on-screen keyboard for the Pi credential fields (null = closed)
   const [piKeyboardField, setPiKeyboardField] = useState<PiKeyboardField | null>(null)
   // bug46: the dimmable HA light control popup (entity + label while open)
@@ -407,6 +412,7 @@ function AppInner() {
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
     !piServerModalOpen &&
+    !haSettingsOpen &&
     !piKeyboardField &&
     !debugOpen &&
     !updateCardOpen &&
@@ -601,6 +607,7 @@ function AppInner() {
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
     !piServerModalOpen &&
+    !haSettingsOpen &&
     !debugOpen &&
     !reportId &&
     !pairing
@@ -677,6 +684,12 @@ function AppInner() {
       setPiServerModalOpen(false)
       return
     }
+    // ticket 9.4: the HA settings modal (its ListFocus entry normally
+    // consumes the press; this is the App-level fallback)
+    if (haSettingsOpen) {
+      setHaSettingsOpen(false)
+      return
+    }
     if (btMenuOpen) {
       setBtMenuOpen(false)
       return
@@ -735,6 +748,7 @@ function AppInner() {
     forced,
     setForced,
     piServerModalOpen,
+    haSettingsOpen,
     btMenuOpen,
     settingsOpen,
     powerMenuOpen,
@@ -811,6 +825,7 @@ function AppInner() {
     !deviceMenuOpen &&
     !defaultDeviceModalOpen &&
     !piServerModalOpen &&
+    !haSettingsOpen &&
     !btMenuOpen &&
     !settingsOpen &&
     !pairing
@@ -886,6 +901,9 @@ function AppInner() {
           onOpenKeyboard={(field) => setPiKeyboardField(field)}
         />
       ) : null}
+      {/* ticket 9.4: the Home Assistant connection settings view (its
+          on-screen keyboard renders inside the modal's own backdrop) */}
+      {haSettingsOpen ? <HaSettingsModal onClose={() => setHaSettingsOpen(false)} /> : null}
       {/* ticket10-2: the on-screen keyboard for the Pi credential fields */}
       {piKeyboardField ? (
         <PiKeyboardOverlay field={piKeyboardField} onClose={() => setPiKeyboardField(null)} />
@@ -1130,6 +1148,8 @@ function AppInner() {
           onOpenEntityPicker={() => setEntityPickerOpen(true)}
           // epic10 task 4: the dev screen also gets the Pi settings view
           onOpenPiServer={() => setPiServerModalOpen(true)}
+          // ticket 9.4: the dev screen also gets the HA settings view
+          onOpenHaSettings={() => setHaSettingsOpen(true)}
         />
         {globalOverlays}
       </div>
@@ -1285,6 +1305,8 @@ function AppInner() {
             onOpenEntityPicker={() => setEntityPickerOpen(true)}
             // epic10 task 4: the Raspberry Pi row opens the provisioning view
             onOpenPiServer={() => setPiServerModalOpen(true)}
+            // ticket 9.4: the Home Assistant row opens the settings view
+            onOpenHaSettings={() => setHaSettingsOpen(true)}
           />
           {globalOverlays}
         </div>

@@ -171,4 +171,13 @@ export const server = setupServer(
   http.get('*/api/pi/tethering/status', () =>
     HttpResponse.json({ state: 'idle', tethering_ok: false, internet_ok: false }),
   ),
+  // ticket 9.4: the daemon's HA login/test endpoints — the defaults mirror an
+  // OLD daemon WITHOUT the endpoints (ticket 9.4 design §5 compat matrix:
+  // new UI + old daemon): the Go mux answers the unknown POST paths with its
+  // plain-text 404. The UI clients (src/api/haSettings.ts) map any non-JSON
+  // body to the HaSettingsApiError code 'not_available' ("not available
+  // (daemon outdated?)"), so the app degrades to a clear error line unless a
+  // test opts in with server.use
+  http.post('*/api/ha/login', () => new HttpResponse('404 page not found', { status: 404 })),
+  http.post('*/api/ha/test', () => new HttpResponse('404 page not found', { status: 404 })),
 )

@@ -2040,9 +2040,39 @@ describe('MainMenuView', () => {
         'Bluetooth Pairing',
         // epic10 task 4
         'Raspberry Pi',
+        // ticket 9.4
+        'Home Assistant',
       ]) {
         expect(await screen.findByText(label)).toBeInTheDocument()
       }
+    })
+
+    it('the Home Assistant row sits directly after the Raspberry Pi row (Default value)', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      const piRow = (await screen.findByText('Raspberry Pi')).closest('.row')
+      expect(piRow).toBeTruthy()
+      // the row right after 'Raspberry Pi' is the new 'Home Assistant' row
+      const haRow = piRow!.nextElementSibling
+      expect(haRow?.textContent).toContain('Home Assistant')
+      // empty settings store → the daemon's build-time defaults apply
+      expect(haRow?.textContent).toContain('Default')
+    })
+
+    it('the Home Assistant row value flips to Konfiguriert when url+token are stored', async () => {
+      updateSettings({
+        ha: {
+          url: 'http://10.10.1.104:8123',
+          username: 'mira',
+          password: '',
+          token: 'long-lived-token',
+          tokenSource: 'login',
+        },
+      })
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      const row = (await screen.findByText('Home Assistant')).closest('.row')
+      expect(row?.textContent).toContain('Konfiguriert')
     })
 
     it('confirming Show Lyrics flips the live value', async () => {
@@ -2174,6 +2204,26 @@ describe('MainMenuView', () => {
       wheel(-10) // 6 Raspberry Pi
       confirmDial()
       expect(onOpenPiServer).toHaveBeenCalledTimes(1)
+    })
+
+    it('Home Assistant opens the HA settings modal', async () => {
+      const onOpenHaSettings = vi.fn()
+      const onOpenPiServer = vi.fn()
+      render(<MainMenuView onOpenHaSettings={onOpenHaSettings} onOpenPiServer={onOpenPiServer} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+
+      wheel(-10) // 1 Show Lyrics
+      wheel(-10) // 2 Karaoke Lyrics
+      wheel(-10) // 3 Mic
+      wheel(-10) // 4 Devices
+      wheel(-10) // 5 Bluetooth Pairing
+      wheel(-10) // 6 Raspberry Pi
+      wheel(-10) // 7 Home Assistant
+      confirmDial()
+      expect(onOpenHaSettings).toHaveBeenCalledTimes(1)
+      // the neighbouring row keeps its own target
+      expect(onOpenPiServer).not.toHaveBeenCalled()
     })
 
     it('the Raspberry Pi row value mirrors the live Pi server mode', async () => {
