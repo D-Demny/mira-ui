@@ -1580,6 +1580,69 @@ describe('MainMenuView', () => {
     })
   })
 
+  // bug57 v2: the 3s HA poll runs only while the Home carousel is the
+  // visible (confirmed) category — no daemon traffic in the other menus,
+  // and (re-)entering 'Home' triggers an immediate fresh read (no waiting
+  // for the next 3s tick)
+  describe('bug57 v2: HA poll gated on the Home carousel visibility', () => {
+    it('polls only while Home is visible: other categories = no requests, re-entering Home = immediate read + 3s rhythm', async () => {
+      vi.useFakeTimers()
+      let stateGets = 0
+      server.use(
+        http.get('*/ha-api/states/light.*', ({ request }) => {
+          stateGets += 1
+          const path = new URL(request.url).pathname
+          const entityId = decodeURIComponent(path.slice(path.lastIndexOf('/') + 1))
+          return HttpResponse.json({ entity_id: entityId, state: 'off', attributes: {} })
+        }),
+      )
+      const { unmount } = render(<MainMenuView />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      // Home is the initial (visible) category: one mount fetch per selected
+      // light (the visibility read dedupes on the in-flight mount reads)
+      const afterMount = stateGets
+      expect(afterMount).toBe(HOME_LIGHTS.length)
+
+      // Home visible for 6.5s: exactly two poll ticks at the 3s rhythm
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6500)
+      })
+      expect(stateGets).toBe(afterMount + 2 * HOME_LIGHTS.length)
+
+      // switch to Playlists: the poll stops — no further state requests
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      const afterSwitch = stateGets
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6500)
+      })
+      expect(stateGets).toBe(afterSwitch)
+
+      // back to Home: an immediate fresh read for every selected light,
+      // then the 3s rhythm resumes
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(stateGets).toBe(afterSwitch + HOME_LIGHTS.length)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(stateGets).toBe(afterSwitch + 2 * HOME_LIGHTS.length)
+
+      unmount()
+      vi.useRealTimers()
+    })
+  })
+
   describe('bug4: track sub-menu back behavior', () => {
     it('back inside the track list returns to the playlist list without exiting', async () => {
       const onExit = vi.fn()
@@ -1933,9 +1996,12 @@ describe('MainMenuView', () => {
       expect(view.style.getPropertyValue('--menu-glow-b')).toBe(settings.accent.b)
     })
 
-    it('transitions to the new card color when the dial focus moves', async () => {
+    it('transitions to the new card color once the dial burst ends', async () => {
       seedColorCache('http://img/r.jpg', [245, 192, 74])
       seedColorCache('http://img/liked.jpg', [120, 60, 180])
+      // first track of the Liked Songs sub-menu (opened on confirm) — same
+      // seeded palette so the post-freeze commit is the expected value
+      seedColorCache('http://img/lk.jpg', [120, 60, 180])
       const { container } = render(<MainMenuView />)
       const view = container.firstElementChild as HTMLElement
 
@@ -1947,6 +2013,15 @@ describe('MainMenuView', () => {
       // Liked Songs card, whose seeded cover drives the ambient colors
       wheel(-10)
       wheel(-10)
+      // bug58: while dial ticks are in progress (contentMoveKind 'dial') the
+      // previously committed ambient values stay frozen — no per-tick rewrite
+      expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([245, 192, 74]))
+
+      // confirming the focused card is a 'jump' move (opens the track
+      // sub-menu), which releases the freeze: the ambient colors commit from
+      // the newly focused track's seeded artwork
+      confirmDial()
+      await screen.findByText('Faded')
       expect(view.style.getPropertyValue('--menu-bg')).toBe(darkBg([120, 60, 180]))
       expect(view.style.getPropertyValue('--menu-glow-a')).toBe(rgba([120, 60, 180], 0.5))
     })
@@ -2430,11 +2505,18 @@ describe('MainMenuView', () => {
     })
   })
 
-  describe('bug54: configurable menu background (solid black / translucent glass)', () => {
+  describe('bug54/bug58: configurable menu background (Schwarz / Halbdurchsichtig / Durchsichtig / Unschärfe)', () => {
     // the 'Menü-Hintergrund' row is APPENDED to the 'Settings' sub-level
     // (Einstellungen → Settings, index 5) — existing row indices stay stable
     function toSidebarBackgroundRow() {
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+    }
+
+    // the row's right-aligned value span (exact value text — 'Durchsichtig'
+    // is a substring of 'Halbdurchsichtig', so row-level textContent
+    // matching would not distinguish the two)
+    function rowValue(row: Element | null): string | undefined {
+      return row?.querySelector('[class*="value"]')?.textContent
     }
 
     it('renders the "Menü-Hintergrund" row last in the sub-level with the default value', async () => {
@@ -2453,12 +2535,13 @@ describe('MainMenuView', () => {
       expect(row?.textContent).toContain('Schwarz')
     })
 
-    it('confirming the row toggles the store, the row value, and the view modifiers', async () => {
+    it('confirming the row cycles all four options (store, row value, sidebar modifier)', async () => {
       const { container } = render(<MainMenuView />)
       const view = container.firstElementChild as HTMLElement
       const nav = container.querySelector('nav') as HTMLElement
-      expect(view.className).not.toContain('viewTranslucent')
+      expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).not.toContain('glass')
+      expect(nav.className).not.toContain('clear')
 
       toSidebarBackgroundRow()
       await screen.findByText('Settings')
@@ -2466,44 +2549,170 @@ describe('MainMenuView', () => {
       for (let i = 0; i < 5; i++) wheel(-10) // to 'Menü-Hintergrund' (5)
       confirmDial()
 
+      // 1: Schwarz → Halbdurchsichtig
       expect(getSettings().sidebarBackground).toBe('translucent')
       const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
-      expect(row?.textContent).toContain('Durchsichtig')
-      // the view root and the sidebar carry the translucent modifiers
-      expect(view.className).toContain('viewTranslucent')
+      expect(rowValue(row)).toBe('Halbdurchsichtig')
+      // 08.09 user change (incl. v2): only the panel's look changes (the
+      // glass class) — the layout stays solid (no underflow), so no view
+      // modifier is added
+      expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).toContain('glass')
+      expect(nav.className).not.toContain('clear')
 
-      confirmDial() // back to solid
-      expect(getSettings().sidebarBackground).toBe('solid')
-      expect(row?.textContent).toContain('Schwarz')
-      expect(view.className).not.toContain('viewTranslucent')
+      // 2: Halbdurchsichtig → Durchsichtig (100% transparent, v2)
+      confirmDial()
+      expect(getSettings().sidebarBackground).toBe('clear')
+      expect(rowValue(row)).toBe('Durchsichtig')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(nav.className).toContain('clear')
       expect(nav.className).not.toContain('glass')
+
+      // 3: Durchsichtig → Unschärfe (bug58)
+      confirmDial()
+      expect(getSettings().sidebarBackground).toBe('blur')
+      expect(rowValue(row)).toBe('Unschärfe')
+      // T1/T4: the panel look is the glass one (blur reuses .glass — no own
+      // class, SidebarNav unchanged); T2: the underflow layout is ACTIVE —
+      // the content pane spans the full screen and the carousel slides under
+      // the sidebar (carousel + settings-list assertions in the dedicated
+      // test below; the per-card blur follows in T3)
+      expect(view.className).toContain('viewUnderflow')
+      expect(nav.className).toContain('glass')
+      expect(nav.className).not.toContain('clear')
+
+      // 4: Unschärfe → Schwarz (full cycle closed)
+      confirmDial()
+      expect(getSettings().sidebarBackground).toBe('solid')
+      expect(rowValue(row)).toBe('Schwarz')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(nav.className).not.toContain('glass')
+      expect(nav.className).not.toContain('clear')
     })
 
-    it('hands the underflow geometry to the carousel in translucent mode (and removes it in solid mode)', async () => {
+    it('keeps the solid carousel geometry in translucent mode (cards clipped at the menu edge, not under it)', async () => {
+      // 08.09 user change: the acceptance criteria flipped — 'translucent'
+      // must NOT reveal the cards under the menu. The carousel keeps the
+      // solid layout: no .underflow padding on the scroll port, no negative
+      // margin on the content pane (.viewUnderflow), so the pane's
+      // overflow:hidden clips the cards at the sidebar's right edge exactly
+      // like solid mode
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
-      // the Home carousel is rendered — the underflow padding puts the scroll
-      // port under the sidebar (the .underflow modifier)
+      const view = container.firstElementChild as HTMLElement
       const carousel = container.querySelector('.carousel') as HTMLElement
       expect(carousel).not.toBeNull()
-      expect(carousel.className).toContain('underflow')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(carousel.className).not.toContain('underflow')
 
+      // toggling back to solid changes nothing about the carousel layout
       act(() => {
         updateSettings({ sidebarBackground: 'solid' })
       })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
       expect((container.querySelector('.carousel') as HTMLElement).className).not.toContain(
         'underflow',
       )
     })
 
-    it('the settings list wrapper gets the underflow inset in translucent mode', async () => {
+    it('keeps the solid carousel geometry in clear mode (cards clipped at the menu edge, not under it)', async () => {
+      // v2: the 100% transparent mode clips the cards at the menu edge just
+      // like 'solid' and 'translucent' — only the panel background is gone
+      // (.clear instead of .glass on the nav)
+      updateSettings({ sidebarBackground: 'clear' })
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+      const nav = container.querySelector('nav') as HTMLElement
+      const carousel = container.querySelector('.carousel') as HTMLElement
+      expect(carousel).not.toBeNull()
+      expect(nav.className).toContain('clear')
+      expect(nav.className).not.toContain('glass')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(carousel.className).not.toContain('underflow')
+
+      // toggling to another mode changes nothing about the carousel layout
+      act(() => {
+        updateSettings({ sidebarBackground: 'translucent' })
+      })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
+      expect((container.querySelector('.carousel') as HTMLElement).className).not.toContain(
+        'underflow',
+      )
+    })
+
+    it('the settings list keeps the solid layout in translucent mode (no underflow inset)', async () => {
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       await screen.findByText('Settings')
       const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
+      expect(list.parentElement?.className).not.toContain('settingsUnderflow')
+    })
+
+    it('the three non-blur modes render the identical solid carousel layout (blur underflows)', async () => {
+      // geometry contract: 'solid' / 'translucent' / 'clear' drive the
+      // carousel with underflowPx=0 (the default dialScrollLeft path,
+      // bit-exact the solid formula — pinned in carouselWindow.test.ts), so
+      // card positioning, the centering target and the scroll clamps are
+      // identical; the only DOM difference is the sidebar's background
+      // class. bug58 T2: 'blur' DIVERGES — underflowPx=SIDEBAR_WIDTH (the
+      // cards pass under the sidebar), pinned in the dedicated test below.
+      updateSettings({ sidebarBackground: 'translucent' })
+      const { container } = render(<MainMenuView />)
+      const layout = () =>
+        [
+          (container.firstElementChild as HTMLElement).className,
+          (container.querySelector('.carousel') as HTMLElement).className,
+          (container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement).className,
+        ].join('|')
+      const solidLayout = layout()
+      act(() => {
+        updateSettings({ sidebarBackground: 'clear' })
+      })
+      expect(layout()).toBe(solidLayout)
+      act(() => {
+        updateSettings({ sidebarBackground: 'solid' })
+      })
+      expect(layout()).toBe(solidLayout)
+      // blur diverges: the underflow geometry is active (see below)
+      act(() => {
+        updateSettings({ sidebarBackground: 'blur' })
+      })
+      expect(layout()).not.toBe(solidLayout)
+      expect((container.firstElementChild as HTMLElement).className).toContain('viewUnderflow')
+      expect((container.querySelector('.carousel') as HTMLElement).className).toContain('underflow')
+    })
+
+    it('enables the under-the-menu geometry in blur mode (cards pass under the sidebar)', async () => {
+      // bug58 T2: 'Unschärfe' re-activates the Bug54-gated underflow
+      // mechanism — the content pane spans the full screen (.viewUnderflow,
+      // clipped at the SCREEN edge), the carousel viewport starts under the
+      // sidebar (underflowPx=SIDEBAR_WIDTH → the .underflow padding + the
+      // underflow dial centering geometry) and the settings list keeps its
+      // left inset (.settingsUnderflow). The per-card blur itself follows in
+      // T3.
+      updateSettings({ sidebarBackground: 'blur' })
+      const { container } = render(<MainMenuView />)
+      const view = container.firstElementChild as HTMLElement
+      const carousel = container.querySelector('.carousel') as HTMLElement
+      expect(carousel).not.toBeNull()
+      expect(view.className).toContain('viewUnderflow')
+      expect(carousel.className).toContain('underflow')
+
+      // the settings list gets the underflow inset (display:block + padding)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
       expect(list.parentElement?.className).toContain('settingsUnderflow')
+
+      // toggling to a non-blur mode disables the underflow again (solid
+      // layout: no pane margin, no carousel padding, display:contents list)
+      act(() => {
+        updateSettings({ sidebarBackground: 'translucent' })
+      })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
+      expect(list.parentElement?.className).not.toContain('settingsUnderflow')
     })
   })
 

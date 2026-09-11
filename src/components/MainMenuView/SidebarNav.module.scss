@@ -14,14 +14,36 @@
   overflow: hidden;
 }
 
-// bug54: translucent menu background — semi-transparent overlay so the
-// carousel cards sliding under the sidebar stay partially visible (the
-// ticket's Nocturne reference). NO backdrop-filter: the target Chromium 69
-// has no backdrop-filter (Chrome 76+) — the ticket's explicit fallback is a
+// bug54 v2: "Halbdurchsichtig" (enum 'translucent') — semi-transparent
+// panel: the app background shows through where no card is. Since the 08.09
+// user change the carousel keeps the solid geometry (cards are clipped at
+// the sidebar's right edge and never visible underneath), so the
+// translucency is the panel's own look — identical clipping to solid, only
+// the opacity differs. NO backdrop-filter: the target Chromium 69 has no
+// backdrop-filter (Chrome 76+, CR69) — the ticket's explicit fallback is a
 // clean semi-transparent color. The solid mode keeps the 0.95 background
 // above (this class only overrides it).
+// v2 raised the transparency (~20% → ~30%, per the user's on-screen
+// impression): the background should show through more clearly while the
+// menu stays readable. The EXACT alpha is a visual acceptance by the user
+// (started at 0.55, down from 0.65) — adjust it if the on-device verdict
+// differs.
+// bug58: "Unschärfe" (enum 'blur') REUSES this look (ticket Task 4):
+// MainMenuView maps 'blur' → 'glass', so no separate .blur class exists and
+// SidebarNav stays unchanged — when the underflow layout + per-card
+// filter: blur(Npx) land, the blurred cards will show through this same
+// translucent panel. Still NO backdrop-filter (CR69).
 .glass {
-  background: rgba(18, 18, 18, 0.65);
+  background: rgba(18, 18, 18, 0.55);
+}
+
+// bug54 v2: "Durchsichtig" (enum 'clear') — 100% transparent: no visible
+// panel background at all, only the menu entries. The carousel keeps the
+// solid geometry (cards clipped at the menu edge, same as the other modes).
+// Light text on the dark app background stays readable — no text shadow or
+// other extras (keep it simple).
+.clear {
+  background: transparent;
 }
 
 .item {

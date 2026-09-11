@@ -291,7 +291,7 @@ describe('settings store', () => {
     })
   })
 
-  describe('sidebarBackground (bug54)', () => {
+  describe('sidebarBackground (bug54/bug58)', () => {
     it('defaults to solid on a fresh install', () => {
       expect(getSettings().sidebarBackground).toBe('solid')
     })
@@ -307,8 +307,12 @@ describe('settings store', () => {
 
     it.each([
       ['the exact "translucent" string', 'translucent', 'translucent'],
+      ['the exact "clear" string (v2)', 'clear', 'clear'],
+      ['the exact "blur" string (bug58)', 'blur', 'blur'],
       ['"transparent"', 'transparent', 'solid'],
       ['"SOLID"', 'SOLID', 'solid'],
+      ['"Unschärfe" (a German label, not an enum value)', 'Unschärfe', 'solid'],
+      ['"BLUR"', 'BLUR', 'solid'],
       ['the number 1', 1, 'solid'],
       ['true', true, 'solid'],
       ['null', null, 'solid'],
@@ -319,12 +323,41 @@ describe('settings store', () => {
       expect(getSettings().sidebarBackground).toBe(expected)
     })
 
+    // backward compat: blobs predating v2 only ever held 'solid' or
+    // 'translucent' — the strict coercion above is the (null-op) migration
+    it('keeps an old-blob "translucent" value on reload (no v2 migration needed)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, sidebarBackground: 'translucent' }),
+      )
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('translucent')
+    })
+
     it('round-trips translucent through localStorage', () => {
       updateSettings({ sidebarBackground: 'translucent' })
       expect(getSettings().sidebarBackground).toBe('translucent')
       __resetSettings()
       expect(getSettings().sidebarBackground).toBe('translucent')
     })
+
+    it('round-trips clear through localStorage', () => {
+      updateSettings({ sidebarBackground: 'clear' })
+      expect(getSettings().sidebarBackground).toBe('clear')
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('clear')
+    })
+
+    it('round-trips blur (bug58) through localStorage', () => {
+      updateSettings({ sidebarBackground: 'blur' })
+      expect(getSettings().sidebarBackground).toBe('blur')
+      __resetSettings()
+      expect(getSettings().sidebarBackground).toBe('blur')
+    })
+
+    // backward compat: blobs predating bug58 never held 'blur' — a missing
+    // field stays 'solid' (no migration needed; the strict coercion above is
+    // the null-op migration), so the pre-bug58 tests keep running unchanged
   })
 
   describe('ha (ticket 9.4)', () => {

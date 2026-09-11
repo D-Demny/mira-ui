@@ -149,7 +149,11 @@ function fetchCatalog(force: boolean): Promise<void> {
 
 // --------------------------------------------------------- entity live states
 
-const POLL_MS = 5000
+// bug57 v2: 5000 → 3000 — external changes (HA app / wall switch /
+// automation) must show up within a few seconds. The poll is only active
+// while the Home carousel is actually visible (see addPoller), so the
+// tighter interval keeps the daemon traffic low.
+const POLL_MS = 3000
 
 interface EntityState {
   state: string | null
@@ -164,7 +168,153 @@ const inFlightStates = new Map<string, Promise<void>>()
 // ids for which a refresh has been started — the state store alone is NOT a
 // signal (stateOf() creates entries during render, before any fetch)
 const knownEntities = new Set<string>()
+// bug57: stale-read protection — a monotonic write revision per entity.
+// Every actuation write (optimistic flip, service answer, error revert)
+// bumps it. A state read captures the revision at fetch start and may only
+// land if no actuation write happened in the meantime: a read that started
+// before a press can no longer clobber the optimistic flip, while reads that
+// start AFTER the last write (5 s poll, fresh mount, the resync inside
+// actuateEntity) keep mirroring external changes (phone / wall switch /
+// automation). Reads never bump (in-flight reads are deduped per entity, so
+// they can never overlap), and the `actuating: false` write at the end of an
+// actuation deliberately does NOT bump (the resync read started earlier must
+// still be allowed to land).
+const writeRevisions = new Map<string, number>()
+
+function writeRevision(entityId: string): number {
+  return writeRevisions.get(entityId) ?? 0
+}
+
+function bumpWriteRevision(entityId: string): void {
+  writeRevisions.set(entityId, writeRevision(entityId) + 1)
+}
+// bug57 v2: the in-flight actuation per entity. A service call is only
+// authoritative once it has SETTLED — HA has processed the POST and the
+// answer is in. A state read that starts while the call is still pending
+// races with the POST: HA can answer the GET with the PRE-POST state, and
+// the bug57 v1 revision check cannot catch it (the read started AFTER the
+// optimistic flip write) — it would clobber the flip with the
+// pre-actuation state (Build #109 user report: rapid re-press, card
+// 'An' → 'Aus' → 'An' → 'Aus'). So such a read may never land; only a read
+// that starts after the settlement (or with no actuation pending at all)
+// is allowed. The actuation's own resync read starts right after the
+// settlement, so it keeps landing.
+interface PendingActuation {
+  seq: number
+  settled: boolean
+}
+const pendingActuations = new Map<string, PendingActuation>()
+const actuationSeqs = new Map<string, number>()
+
+function nextActuationSeq(entityId: string): number {
+  const seq = (actuationSeqs.get(entityId) ?? 0) + 1
+  actuationSeqs.set(entityId, seq)
+  return seq
+}
+
+function actuationSeq(entityId: string): number {
+  return actuationSeqs.get(entityId) ?? 0
+}
+
+// bug57 v2: the actuation's service call just settled — bump the write
+// revision (every read that started before the settlement is stale by the
+// v1 check as well) and mark the actuation so a read started NOW (the
+// resync) may land. No-op when a newer actuation owns the state.
+function settleActuation(entityId: string, seq: number): void {
+  if (actuationSeq(entityId) !== seq) return
+  bumpWriteRevision(entityId)
+  const pending = pendingActuations.get(entityId)
+  if (pending !== undefined && pending.seq === seq) pending.settled = true
+}
+// bug57 v3: transition hold — after an optimistic flip, HA keeps reporting
+// the PRE-flip state while the entity is still transitioning (lights fading
+// off take ~0.5–1 s; Build #110: press 'Aus', the card flickers back to
+// 'An'). A read or service answer whose value DIVERGES from the flipped
+// target within TRANSITION_HOLD_MS of the flip is a transition intermediate
+// state: it is discarded and a single confirming re-read (deduped per
+// entity) is scheduled at the window's end, so the true post-transition
+// state lands without waiting for the next 3 s poll. A value EQUAL to the
+// target always lands — it confirms the flip and cancels a pending
+// confirming re-read. Divergent values AFTER the window land normally: a
+// genuine external change (wall switch / phone) is delayed by at most the
+// hold, worst case poll 3 s + hold 1.5 s. The hold is set by an optimistic
+// flip only (never by a read; no flip = no hold, e.g. scenes), error reverts
+// clear it (the revert is authoritative), and the v1 (write revisions) +
+// v2 (pending settle) guards run FIRST — the hold filters what survives them.
+const TRANSITION_HOLD_MS = 1500
+
+interface TransitionHold {
+  target: string
+  until: number
+}
+const transitionHolds = new Map<string, TransitionHold>()
+const confirmTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function clearConfirmTimer(entityId: string): void {
+  const timer = confirmTimers.get(entityId)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    confirmTimers.delete(entityId)
+  }
+}
+
+// bug57 v3: a NEW optimistic flip replaces any pending hold — the newer
+// actuation owns the state, so the older one's confirming re-read is dropped
+function setTransitionHold(entityId: string, target: string): void {
+  clearConfirmTimer(entityId)
+  transitionHolds.set(entityId, { target, until: Date.now() + TRANSITION_HOLD_MS })
+}
+
+// bug57 v3: clears hold + pending confirming re-read — the error revert is
+// authoritative and no report may be filtered against a state the entity did
+// not actually reach
+function clearTransitionHold(entityId: string): void {
+  transitionHolds.delete(entityId)
+  clearConfirmTimer(entityId)
+}
+
+// bug57 v3: applies the transition hold to a value about to land (a read or
+// a service answer). Returns true when the value must be DISCARDED
+// (divergent within the hold window) — a confirming re-read is scheduled
+// exactly once at the window's end. False = the value lands; an expired hold
+// is dropped with it, and a value equal to the target cancels a pending
+// confirming re-read (it already confirmed the flip).
+function applyTransitionHold(entityId: string, value: string): boolean {
+  const hold = transitionHolds.get(entityId)
+  if (hold === undefined) return false
+  const now = Date.now()
+  if (now >= hold.until) {
+    // the window is over — a divergent value is a genuine external change,
+    // it lands normally; drop the expired hold (and its stale re-read)
+    transitionHolds.delete(entityId)
+    clearConfirmTimer(entityId)
+    return false
+  }
+  if (value === hold.target) {
+    // confirmation of the flipped state — nothing to hold back, and a
+    // pending confirming re-read is now redundant
+    clearConfirmTimer(entityId)
+    return false
+  }
+  // divergent mid-fade report — discard it; schedule the confirming re-read
+  // ONCE (deduped: an already-pending timer is kept as-is)
+  if (confirmTimers.get(entityId) === undefined) {
+    const timer = setTimeout(() => {
+      confirmTimers.delete(entityId)
+      // a plain state read — the v1/v2 guards still apply to it, and by the
+      // time it lands the hold window is over, so its value always lands
+      void refreshEntity(entityId, false)
+    }, hold.until - now)
+    confirmTimers.set(entityId, timer)
+  }
+  return true
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null
+// bug57 v2: polling is decoupled from subscription — it runs only while at
+// least one hook instance has explicitly activated it (the Home carousel is
+// actually visible). Ref-counted so two mounted instances (MainMenuView +
+// HomeMenuView) do not double-start the interval.
+let pollerCount = 0
 const listeners = new Set<() => void>()
 
 function stateOf(entityId: string): EntityState {
@@ -196,9 +346,27 @@ function refreshEntity(entityId: string, initial: boolean): Promise<void> {
   const existing = inFlightStates.get(entityId)
   if (existing) return existing
   knownEntities.add(entityId)
+  // bug57: the revision this read starts with — see `writeRevisions`
+  const readRevision = writeRevision(entityId)
+  // bug57 v2: a read that starts while an actuation's service call is still
+  // pending may NEVER land — it races with the in-flight POST and HA can
+  // answer with the pre-POST state (see `pendingActuations`). A read that
+  // starts after the settlement (or with no actuation pending) may land,
+  // subject to the v1 revision check.
+  const pending = pendingActuations.get(entityId)
+  const startedAfterSettle = pending === undefined || pending.settled
   const promise = (async () => {
     try {
       const entity = await fetchHaEntityState(entityId)
+      // stale read: an actuation write happened while the fetch was in
+      // flight — that write owns the state, the fetched (older) state is
+      // discarded so it cannot clobber the optimistic flip
+      if (readRevision !== writeRevision(entityId)) return
+      // bug57 v2: the read started while the actuation's service call was
+      // still in flight — HA may have served the pre-POST state
+      if (!startedAfterSettle) return
+      // bug57 v3: mid-fade report — see applyTransitionHold
+      if (applyTransitionHold(entityId, entity.state)) return
       entityStates.set(entityId, {
         ...stateOf(entityId),
         state: entity.state,
@@ -209,6 +377,10 @@ function refreshEntity(entityId: string, initial: boolean): Promise<void> {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to reach Home Assistant'
       console.warn('useHomeEntities error:', message)
+      // a failed STALE read reports nothing the user can act on — the
+      // newer actuation write owns the error state
+      if (readRevision !== writeRevision(entityId)) return
+      if (!startedAfterSettle) return
       entityStates.set(entityId, { ...stateOf(entityId), loading: false, error: message })
     } finally {
       inFlightStates.delete(entityId)
@@ -244,43 +416,89 @@ async function actuateEntity(entityId: string) {
   const domain = domainOf(entityId)
   const previous = store.state
   const flipped = optimisticState(domain, previous)
+  // bug57 v2: this actuation's sequence number. Its service answer (and its
+  // error revert) are applied only if no NEWER actuation has since started —
+  // defense in depth: the actuating guard above is the primary barrier
+  // against interleaved actuations, the sequence check makes the answer path
+  // safe on its own (a stale answer from a superseded actuation must never
+  // clobber a newer flip).
+  const mySeq = nextActuationSeq(entityId)
+  pendingActuations.set(entityId, { seq: mySeq, settled: false })
+  // bug57: the actuation owns the state from here on — any read that started
+  // earlier is stale from this point on
+  bumpWriteRevision(entityId)
   entityStates.set(entityId, {
     ...store,
     actuating: true,
     error: null,
     ...(flipped !== null ? { state: flipped } : {}),
   })
+  // bug57 v3: the entity now transitions toward `flipped` — HA keeps
+  // reporting the pre-flip state during the fade (lights dimming off take
+  // ~0.5–1 s, Build #110); hold divergent reports for TRANSITION_HOLD_MS
+  if (flipped !== null) setTransitionHold(entityId, flipped)
   emit()
   try {
     if (domain === 'scene') {
       // scenes are stateless — the service answer is not trustworthy, so
-      // resync from the states endpoint afterwards
+      // resync from the states endpoint afterwards. The actuation settles
+      // first, and the resync read starts AFTER the settlement, so the
+      // bug57 + bug57 v2 guards let it land
       await activateHaEntity({ entityId, domain })
+      settleActuation(entityId, mySeq)
       await refreshEntity(entityId, false)
     } else {
       const updated = await activateHaEntity({ entityId, domain })
       const found = updated.find((s) => s.entity_id === entityId)
       if (found) {
-        // the service answers with the entity's new state — trust it
+        // the service answers with the entity's new state — trust it, but
+        // only if this answer belongs to the NEWEST actuation
+        if (actuationSeq(entityId) !== mySeq) return
+        settleActuation(entityId, mySeq)
+        // bug57 v3: mid-fade report (HA still says the old state while the
+        // entity transitions) — held back, a confirming re-read follows at
+        // the window's end
+        if (applyTransitionHold(entityId, found.state)) return
         entityStates.set(entityId, {
           ...stateOf(entityId),
           state: found.state,
           attributes: found.attributes ?? null,
         })
       } else {
-        // no entity in the service response — resync from the states endpoint
+        // no entity in the service response — resync from the states
+        // endpoint (settles first, the resync read starts after the
+        // settlement — the bug57 + bug57 v2 guards let it land)
+        if (actuationSeq(entityId) !== mySeq) return
+        settleActuation(entityId, mySeq)
         await refreshEntity(entityId, false)
       }
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to activate entity'
     console.warn('useHomeEntities actuate error:', message)
+    // a NEWER actuation owns the state — its writes (not this older
+    // actuation's revert) decide; skip the revert entirely
+    if (actuationSeq(entityId) !== mySeq) return
+    // bug57 v3: the revert is authoritative — clear any mid-fade hold so no
+    // report gets filtered against a flip that never happened
+    clearTransitionHold(entityId)
+    // bug57: the revert is an actuation write — stale reads are discarded
+    bumpWriteRevision(entityId)
     if (previous !== null) {
       entityStates.set(entityId, { ...stateOf(entityId), state: previous })
     }
     entityStates.set(entityId, { ...stateOf(entityId), error: message })
   } finally {
-    entityStates.set(entityId, { ...stateOf(entityId), actuating: false })
+    // only the NEWEST actuation clears its own bookkeeping — a stale,
+    // superseded actuation must not clear the newer one's flags
+    if (actuationSeq(entityId) === mySeq) {
+      pendingActuations.delete(entityId)
+      // bug57: deliberately NO bump here — the resync read (scene / missing
+      // entity in the service answer) started before this write and must be
+      // allowed to land. The actuation is fully settled now, so a loading
+      // flag left behind by a discarded initial read is cleared with it
+      entityStates.set(entityId, { ...stateOf(entityId), actuating: false, loading: false })
+    }
     emit()
   }
 }
@@ -301,12 +519,24 @@ function stopPolling() {
   }
 }
 
+function addPoller() {
+  pollerCount += 1
+  if (pollerCount === 1) startPolling()
+}
+
+function removePoller() {
+  pollerCount = Math.max(0, pollerCount - 1)
+  if (pollerCount === 0) stopPolling()
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
-  if (listeners.size === 1) startPolling()
+  // bug57 v2: subscriptions no longer start the poll — only an explicit
+  // addPoller (a visible Home carousel, see useHomeSelectedEntities) does.
+  // The other menus (playlists, settings, ...) and the transient overlays
+  // (picker, light control) generate no HA daemon traffic while mounted.
   return () => {
     listeners.delete(listener)
-    if (listeners.size === 0) stopPolling()
   }
 }
 
@@ -375,8 +605,14 @@ export function useHomeEntitySelection() {
 }
 
 // ticket 9.3: the main hook — live views of the selected entities in
-// selection order (the Home carousel renders exactly these)
-export function useHomeSelectedEntities(): HomeEntityView[] {
+// selection order (the Home carousel renders exactly these).
+//
+// bug57 v2: `pollActive` — the 3s poll runs only while the Home carousel is
+// actually visible (the caller passes whether its Home view is on screen).
+// On (re-)becoming visible an immediate fresh read for every selected entity
+// is issued — no waiting for the first 3s tick. While hidden: no poll, no
+// daemon traffic.
+export function useHomeSelectedEntities(pollActive: boolean = false): HomeEntityView[] {
   const [, setVersion] = useState(0)
 
   useEffect(() => {
@@ -384,6 +620,16 @@ export function useHomeSelectedEntities(): HomeEntityView[] {
     const unsubscribe = subscribe(() => setVersion((v) => v + 1))
     return unsubscribe
   }, [])
+
+  // bug57 v2: visibility-gated polling — see the hook comment above
+  useEffect(() => {
+    if (!pollActive) return
+    for (const entityId of currentSelection()) void refreshEntity(entityId, false)
+    addPoller()
+    return () => {
+      removePoller()
+    }
+  }, [pollActive])
 
   // selection changes: fetch the newly added ids (the mount effect above
   // covers the initial set, this one reacts to toggles/reset)
@@ -426,10 +672,18 @@ export function useHomeSelectedEntities(): HomeEntityView[] {
 // test isolation — resets all shared stores (fresh module state per test)
 export function __resetHomeEntityStores() {
   stopPolling()
+  pollerCount = 0
   listeners.clear()
   inFlightStates.clear()
   knownEntities.clear()
   entityStates.clear()
+  writeRevisions.clear()
+  pendingActuations.clear()
+  actuationSeqs.clear()
+  // bug57 v3: transition holds + their confirming re-read timers
+  for (const timer of confirmTimers.values()) clearTimeout(timer)
+  confirmTimers.clear()
+  transitionHolds.clear()
   catalog.entries = []
   catalog.loading = false
   catalog.error = null

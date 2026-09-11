@@ -160,10 +160,13 @@ import { MainMenuView } from '../MainMenuView'
 import { ContentCarousel } from '../ContentCarousel'
 import { carouselCardAreEqual } from '../carouselCardCompare'
 import {
+  ANIM_SETTLE_MS,
   CARD_GAP,
   CARD_WIDTH,
   CAROUSEL_EDGE_PADDING,
   dialScrollLeft,
+  sidebarOverlap,
+  sidebarOverlapAt,
   windowRange,
 } from '../carouselWindow'
 import type { MenuCard } from '../mockData'
@@ -591,6 +594,19 @@ describe('bug8.2: carousel card memo comparator', () => {
   it('re-renders when the interactivity changes', () => {
     expect(carouselCardAreEqual(base, { ...base, interactive: false })).toBe(false)
   })
+
+  it('bug58 T3: re-renders when the blur flag flips (the card crossed the sidebar edge)', () => {
+    expect(carouselCardAreEqual(base, { ...base, blurred: true })).toBe(false)
+    // ...and stays quiet while the card keeps its blur state
+    expect(carouselCardAreEqual({ ...base, blurred: true }, { ...base, blurred: true })).toBe(true)
+  })
+
+  it('bug59b A: re-renders when the settle-handoff epoch flips (stale-blur guard), stays quiet otherwise', () => {
+    expect(carouselCardAreEqual(base, { ...base, blurEpoch: 1 })).toBe(false)
+    // ...and stays quiet while the epoch is unchanged (dial ticks)
+    expect(carouselCardAreEqual({ ...base, blurEpoch: 0 }, { ...base, blurEpoch: 0 })).toBe(true)
+    expect(carouselCardAreEqual({ ...base, blurEpoch: 3 }, { ...base, blurEpoch: 3 })).toBe(true)
+  })
 })
 
 describe('bug39: category switch purges window state & scroll offset', () => {
@@ -1014,12 +1030,16 @@ describe('bug47 R2 (F1/F2): dial mode is read-free and centers arithmetically', 
   })
 })
 
-// bug54: the translucent menu background — underflowPx > 0 means the
-// carousel viewport spans the FULL screen (the content pane slides under the
-// 250px sidebar). The dial centering must use the underflow geometry (first
-// card's rest position at 266, left boundary at the sidebar's right edge,
-// centering target in the visible zone at 525) and the scroll port must
-// apply the .underflow padding.
+// bug54: the underflow geometry — underflowPx > 0 means the carousel
+// viewport spans the FULL screen (the content pane slides under the 250px
+// sidebar). The dial centering must use the underflow geometry (first card's
+// rest position at 266, left boundary at the sidebar's right edge, centering
+// target in the visible zone at 525) and the scroll port must apply the
+// .underflow padding.
+// bug54 (08.09.2026 user change): no menu background mode currently passes a
+// positive underflowPx — 'translucent' was changed to the solid layout (cards
+// clipped at the menu edge). This suite pins the GATED mechanism that the
+// upcoming 'blur' mode (Bug58) will re-enable.
 describe('bug54: underflow geometry (translucent menu background)', () => {
   beforeEach(() => {
     vi.spyOn(Element.prototype, 'scrollIntoView')
@@ -1219,5 +1239,618 @@ describe('bug54: underflow geometry (translucent menu background)', () => {
 
     rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} />)
     expect(carouselEl(container).className).not.toContain('underflow')
+  })
+})
+
+// bug59 test harness: a deterministic clock + rAF queue for the live-blur
+// loop. performance.now() is frozen at a fixed base so ANIM_SETTLE_MS windows
+// are advanced explicitly; requestAnimationFrame/cancelAnimationFrame are
+// queued instead of fired, so a dial tick (the layout-effect scroll write)
+// arms the loop and schedules its frame WITHOUT any frame running until
+// step()/settle() is called — exactly the in-flight window the feature covers.
+function mockLiveBlurClock() {
+  let t = 1_000_000
+  const queue: FrameRequestCallback[] = []
+  let nextId = 0
+  vi.spyOn(performance, 'now').mockImplementation(() => t)
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { queue.push(cb); return ++nextId })
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  const advance = (ms: number) => { t += ms }
+  const step = () => act(() => { const q = queue.splice(0, queue.length); for (const cb of q) cb(t) })
+  const settle = () => { advance(ANIM_SETTLE_MS + 1); step() }
+  return { advance, step, settle, queueLength: () => queue.length }
+}
+
+// bug58 T3/T4: in the 'blur' menu background exactly the cards that are MORE
+// THAN HALF under the translucent sidebar glass carry a strong per-card blur
+// (.blurred, `filter: blur`) — and LOSE it again as soon as they leave the
+// area (a filter forces its own compositing layer; permanent blurs are not
+// acceptable on the weak S905D2). The set is pure arithmetic from the dial
+// state (sidebarOverlap), so the tick path stays read-free. T4 (device report
+// Build #110/#111): "under the glass" means the card's CENTER crossed the
+// sidebar's right edge — a card with only a ~4 px sliver under it (98 % still
+// visible) is NOT blurred anymore (the visible false positive on device).
+// Worked example (count 50, viewport 800, underflow 250): pitch = 170 + 24 =
+// 194, leftInset = 16 + 250 = 266. At focus 4 the dial offset is 602, so card
+// i sits at screen x = 266 + 194i - 602: card 1 at -142 (center -57, more than
+// half under), card 2 at 52 (center 137, more than half under), card 3 at 246
+// — its center (331) is still RIGHT of the edge: it stays SHARP. The focused
+// card 4 sits at 440, fully right of it.
+describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', () => {
+  beforeEach(() => {
+    vi.spyOn(Element.prototype, 'scrollIntoView')
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // 50 cards: long enough for windowing (same shape as the bug47 R2 / bug54 suites)
+  const MANY: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `b-${i}`,
+    title: `Blur ${i}`,
+    subtitle: '',
+  }))
+  const SCREEN_W = 800 // the device's full screen (blur mode spans it)
+  const UNDERFLOW_PX = 250 // the sidebar width
+  const GEO = {
+    leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW_PX, // 266
+    minVisibleX: UNDERFLOW_PX,
+    centerTarget: UNDERFLOW_PX + (SCREEN_W - UNDERFLOW_PX) / 2, // 525
+  }
+
+  function carouselEl(container: HTMLElement): HTMLElement {
+    return container.querySelector('.carousel') as HTMLElement
+  }
+
+  // instrument the carousel: count layout reads, capture scrollLeft writes
+  function instrument(el: HTMLElement): {
+    reads: { width: number; left: number }
+    left: { value: number }
+  } {
+    const reads = { width: 0, left: 0 }
+    const left = { value: -1 }
+    Object.defineProperty(el, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        reads.width++
+        return SCREEN_W
+      },
+    })
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      get: () => {
+        reads.left++
+        return left.value
+      },
+      set: (v: number) => {
+        left.value = v
+      },
+    })
+    return { reads, left }
+  }
+
+  it('pure: the overlap set per focus — at most 2 cards (T4 center rule), the focused card never inside', () => {
+    // focus 0: card 0 rests at screen x 266 — already right of the edge
+    expect(sidebarOverlap(50, 0, SCREEN_W, UNDERFLOW_PX).size).toBe(0)
+    // focus 1: card 0 slid to x 246 — only a ~4px sliver is under the glass,
+    // its center (331) is still right of the edge: NOT blurred (T4; [0] in T3)
+    expect([...sidebarOverlap(50, 1, SCREEN_W, UNDERFLOW_PX)]).toEqual([])
+    // focus 2: card 0 at x 52 — more than half under the glass
+    expect([...sidebarOverlap(50, 2, SCREEN_W, UNDERFLOW_PX)]).toEqual([0])
+    expect([...sidebarOverlap(50, 3, SCREEN_W, UNDERFLOW_PX)]).toEqual([0, 1])
+    // focus 4: card 3 at x 246 stays sharp — its center (331) never crosses
+    // the edge; exactly the false positive of the device report (Build #110)
+    expect([...sidebarOverlap(50, 4, SCREEN_W, UNDERFLOW_PX)]).toEqual([1, 2])
+    // right end: clamped to maxScroll, only cards 45/46 are more than half under
+    expect([...sidebarOverlap(50, 49, SCREEN_W, UNDERFLOW_PX)]).toEqual([45, 46])
+    // edge cases: empty list, and the solid layout (zero-width area) never overlap
+    expect(sidebarOverlap(0, 0, SCREEN_W, UNDERFLOW_PX).size).toBe(0)
+    expect([...sidebarOverlap(50, 3, SCREEN_W, 0)]).toEqual([])
+    // invariant: minVisibleX keeps the focused card fully right of the edge
+    for (const f of [0, 1, 3, 25, 49]) {
+      expect(sidebarOverlap(50, f, SCREEN_W, UNDERFLOW_PX).has(f)).toBe(false)
+    }
+  })
+
+  it('DOM: blur mode — exactly the cards under the sidebar carry .blurred; focused and right-side cards do not', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+    // bug59: while a smooth animation is in flight the rAF loop owns the
+    // .blurred classes exclusively — settle the (mocked) clock before any
+    // assertion on committed blur classes so the settled handoff has run
+    const clock = mockLiveBlurClock()
+
+    // tick 1 (→ focus 3): the one-shot viewport measure lands in the ref only
+    // AFTER this render (jsdom saw 0 at mount; on device the mount-time layout
+    // effect already holds the real width), so React's commit carries no
+    // .blurred — and the dial write is the pure arithmetic, never
+    // scrollIntoView. bug59b (B): before the first rAF frame, the pre-paint
+    // arm effect re-applies the dial-TARGET set imperatively (focus 3 → {0,1}),
+    // so the DOM under the glass is already blurred in this very frame
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={3}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(reads.width).toBe(1) // measured once, never again (read-free dial path)
+    expect(reads.left).toBe(0) // arm re-apply reads targetOffsetRef, not scrollLeft
+    expect(left.value).toBe(dialScrollLeft(50, 3, SCREEN_W, GEO))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(container.querySelectorAll('article.blurred')).toHaveLength(2)
+    for (const title of ['Blur 0', 'Blur 1']) {
+      expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
+    }
+
+    // tick 2 (→ focus 4): rendered WITH the measured viewport — only cards 1/2
+    // are MORE THAN HALF under the glass (screen x -142 / 52, centers -57 / 137
+    // left of the 250 edge); card 3 at x 246 keeps its sharpness (center 331)
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    // bug59: one settled frame hands the classes back to React — at this
+    // (settled) offset the render-derived set is what must be in the DOM
+    clock.settle()
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
+    for (const title of ['Blur 1', 'Blur 2']) {
+      expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
+    }
+    // card 0 has fully left the area (screen x -336, off-screen); card 3 is the
+    // T4 false positive — only its left ~4 px are under the glass, so it stays
+    // sharp; focused and right-side cards are untouched
+    expect(screen.getByText('Blur 0').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 3').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 4').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 5').closest('article')).not.toHaveClass('blurred')
+    expect(reads.width).toBe(1) // still read-free
+
+    // tick 3 (→ focus 5): card 1 leaves the area and LOSES .blurred again —
+    // that is exactly what makes the per-card filter acceptable on-device
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={5}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    // bug59: the next tick re-armed the loop — settle before asserting so the
+    // committed classes are again React's render-derived (settled) set
+    clock.settle()
+    expect(screen.getByText('Blur 1').closest('article')).not.toHaveClass('blurred')
+    expect(screen.getByText('Blur 2').closest('article')).toHaveClass('blurred')
+    expect(screen.getByText('Blur 3').closest('article')).toHaveClass('blurred')
+    expect(screen.getByText('Blur 4').closest('article')).not.toHaveClass('blurred') // T4 center rule: only a sliver under, stays sharp
+    expect(screen.getByText('Blur 5').closest('article')).not.toHaveClass('blurred') // focused: never blurred
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
+    expect(reads.width).toBe(1)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('Fix A: the blur follows blurIndex — survives an undefined focusedIndex (sidebar-pane focus) and resets on a category switch', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        blurIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    scrollIntoView.mockClear()
+    // bug59: the live-blur loop owns the .blurred classes while a smooth
+    // animation is in flight — settle the (mocked) clock before asserting on
+    // committed blur classes
+    const clock = mockLiveBlurClock()
+
+    // tick 1 (→ focus 4): the one-shot viewport measure lands in the ref only
+    // AFTER this render, so no .blurred yet — but the dial write is the pure
+    // arithmetic (never scrollIntoView)
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={4}
+        blurIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(reads.width).toBe(1) // measured once, never again (read-free dial path)
+    expect(left.value).toBe(dialScrollLeft(50, 4, SCREEN_W, GEO))
+
+    // tick 2: the UI focus moves into the SIDEBAR pane — focusedIndex goes
+    // undefined (MainMenuView's ternary) while blurIndex stays 4. The cards
+    // under the glass must KEEP their blur (device report Build #110/#111),
+    // and no scroll write or re-measure happens: the dial branch is keyed on
+    // focusedIndex only
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        blurIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    // bug59: the loop never re-armed on this tick (dial branch bailed on the
+    // undefined focusedIndex) — one settled frame hands the classes back to
+    // React, which derives them from blurIndex (not focusedIndex)
+    clock.settle()
+    expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
+    for (const title of ['Blur 1', 'Blur 2']) {
+      expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
+    }
+    expect(left.value).toBe(dialScrollLeft(50, 4, SCREEN_W, GEO)) // no scroll write
+    expect(reads.width).toBe(1) // no re-measure
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    // tick 3: a sidebar preview switch — categoryId changes and the content
+    // index resets to 0 (the carousel's card-0 remount), so the blur set is
+    // empty again even though focusedIndex is still undefined
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="other"
+        blurIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    // bug59: the category purge re-armed the loop (another smooth move back to
+    // 0) — settle before asserting so the cleared state is the settled handoff
+    clock.settle()
+    expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
+    expect(left.value).toBe(0) // the category purge reset the scroll to card 0
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('DOM: the legacy modes (underflowPx 0) never blur a card', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+      />,
+    )
+    instrument(carouselEl(container)) // the viewport may measure — the gate stays closed
+
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={3}
+        focusScrollBehavior="auto"
+      />,
+    )
+    expect(container.querySelectorAll('article.blurred')).toHaveLength(0)
+    expect(carouselEl(container).className).not.toContain('underflow')
+  })
+})
+
+// bug59: while a smooth dial animation is in flight, React commits NO blur at
+// all (the liveBlur gate renders NO_BLUR) — a rAF loop owns the .blurred
+// classes exclusively and follows the PHYSICAL scrollLeft (sidebarOverlapAt)
+// every frame. Once ANIM_SETTLE_MS has passed since the last scroll write AND
+// the physical offset sits within 1px of the target, the loop strips ONLY its
+// stale classes (a card that left the glass at this offset), flips liveBlur
+// off and bumps the blurEpoch; React re-renders EVERY card in that very commit
+// with the render-derived sidebarOverlap set — identical at the settled offset
+// — so the handoff is invisible AND no frame ever paints a card under the
+// glass sharp (bug59b: neither the full strip on settle nor the NO_BLUR arm
+// commit may win a frame). These tests pin: the equivalence that makes the
+// handoff invisible (PURE), the in-flight ownership of the classes (IN-FLIGHT,
+// incl. the pre-paint arm re-apply), the settled handoff itself
+// (SETTLE-HANDOFF), the stale-only settle strip (bug59b A) and the read-free
+// dial path (TICK-PATH INVARIANT).
+describe('bug59: live blur tracking', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  // same geometry as the bug58 T3 suite: device screen, full-screen port,
+  // 250 px sidebar underflow
+  const CARDS: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `b59-${i}`,
+    title: `B59 ${i}`,
+    subtitle: '',
+  }))
+  const SCREEN_W = 800
+  const UNDERFLOW_PX = 250
+  const GEO = {
+    leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW_PX, // 266
+    minVisibleX: UNDERFLOW_PX,
+    centerTarget: UNDERFLOW_PX + (SCREEN_W - UNDERFLOW_PX) / 2, // 525
+  }
+
+  function carouselEl(container: HTMLElement): HTMLElement {
+    return container.querySelector('.carousel') as HTMLElement
+  }
+
+  // same instrument as the T3 suite: count layout reads, capture scrollLeft
+  // writes — left.value is the "physical" offset the loop reads per frame
+  function instrument(el: HTMLElement): {
+    reads: { width: number; left: number }
+    left: { value: number }
+  } {
+    const reads = { width: 0, left: 0 }
+    const left = { value: -1 }
+    Object.defineProperty(el, 'clientWidth', {
+      configurable: true,
+      get: () => {
+        reads.width++
+        return SCREEN_W
+      },
+    })
+    Object.defineProperty(el, 'scrollLeft', {
+      configurable: true,
+      get: () => {
+        reads.left++
+        return left.value
+      },
+      set: (v: number) => {
+        left.value = v
+      },
+    })
+    return { reads, left }
+  }
+
+  // the indices of the .blurred cards, mapped from the card titles (B59 <i>)
+  function blurredIndices(container: HTMLElement): number[] {
+    return Array.from(container.querySelectorAll('article.blurred')).map((el) =>
+      Number(/B59 (\d+)/.exec(el.textContent ?? '')?.[1]),
+    )
+  }
+
+  it('PURE: at every settled dial offset the physical set equals the target set (handoff is invisible)', () => {
+    const { container } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    instrument(carouselEl(container))
+    mockLiveBlurClock()
+
+    // the dial target offset IS the settled physical offset (the write lands
+    // exactly) — at it, both functions must yield identical sets: same
+    // constants, same candidate window, same T4 center rule. Cover several
+    // (count, focusedIndex) pairs in underflow mode, including the clamped
+    // ends where dialScrollLeft saturates at maxScroll / the left boundary
+    for (const [count, idxs] of [
+      [50, [0, 1, 2, 3, 4, 5, 10, 25, 49]],
+      [8, [0, 1, 2, 3, 4, 7]],
+    ] as const) {
+      for (const idx of idxs) {
+        const settledOffset = dialScrollLeft(count, idx, SCREEN_W, GEO)
+        expect([...sidebarOverlapAt(settledOffset, count, UNDERFLOW_PX)].sort((a, b) => a - b)).toEqual(
+          [...sidebarOverlap(count, idx, SCREEN_W, UNDERFLOW_PX)].sort((a, b) => a - b),
+        )
+      }
+    }
+  })
+
+  it('IN-FLIGHT: after one dial tick React commits no .blurred; the arm re-applies the target set pre-paint and the first frame glues it to the physical offset', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { left } = instrument(carouselEl(container))
+    const clock = mockLiveBlurClock()
+
+    // one dial tick (→ focus 4): the layout effect writes the target offset
+    // and arms the loop. React's commit carries no .blurred at all (the
+    // liveBlur gate renders NO_BLUR while in flight) — but bug59b (B) re-applies
+    // the dial-TARGET set {1,2} imperatively pre-paint, so before ANY rAF frame
+    // has run the DOM under the glass is already blurred
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(clock.queueLength()).toBe(1) // armed, not yet executed
+    // bug59b (B): pre-paint arm — exactly the dial-target set (focus 4 → {1,2}),
+    // applied by the layout effect, not by React's commit and not by a frame
+    expect([...blurredIndices(container)].sort((a, b) => a - b)).toEqual([1, 2])
+
+    // one frame (without settle): the loop reads the PHYSICAL scrollLeft and
+    // writes the set derived from it — not from the render's target index
+    clock.step()
+    const expected = sidebarOverlapAt(left.value, CARDS.length, UNDERFLOW_PX)
+    const dom = blurredIndices(container)
+    expect([...dom].sort((a, b) => a - b)).toEqual([...expected].sort((a, b) => a - b))
+    // T4 center rule from the DOM side: no blurred card has its physical
+    // center right of the sidebar's right edge
+    for (const i of dom) {
+      const x = GEO.leftInset + i * (CARD_WIDTH + CARD_GAP) - left.value
+      expect(x + CARD_WIDTH / 2).toBeLessThan(UNDERFLOW_PX)
+    }
+  })
+
+  it('SETTLE-HANDOFF: after clock.settle() the .blurred set is the target-based sidebarOverlap and the queue drains', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { left } = instrument(carouselEl(container))
+    const clock = mockLiveBlurClock()
+
+    // one dial tick (→ focus 4) arms the loop; settle advances past
+    // ANIM_SETTLE_MS and steps one frame: the physical offset sits on the
+    // target (the write lands exactly), so the loop clears its classes,
+    // flips liveBlur off and schedules no next frame — React re-renders with
+    // the render-derived set in that very commit (the invisible handoff)
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    clock.settle()
+
+    const expected = sidebarOverlap(CARDS.length, 4, SCREEN_W, UNDERFLOW_PX)
+    const dom = blurredIndices(container)
+    expect([...dom].sort((a, b) => a - b)).toEqual([...expected].sort((a, b) => a - b))
+    // the handoff happened at the dial target offset (not mid-animation) ...
+    expect(left.value).toBe(dialScrollLeft(CARDS.length, 4, SCREEN_W, GEO))
+    // ... and the loop is done: no frame left in the queue
+    expect(clock.queueLength()).toBe(0)
+  })
+
+  it('bug59b A: settle strips ONLY what is stale — cards still under the glass keep their blur through the handoff commit', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { left } = instrument(carouselEl(container))
+    const clock = mockLiveBlurClock()
+
+    // dial to focus 5: arm (target 796 — the pre-paint re-apply writes {2,3}),
+    // then move the PHYSICAL offset mid-flight to 700 and run one frame: the
+    // loop glues the set to the physical position (still {2,3} here — card 3's
+    // center at x 233 sits left of the 250 edge; cards 0/1 are fully off-screen)
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={5}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    left.value = 700
+    clock.step()
+    expect([...blurredIndices(container)].sort((a, b) => a - b)).toEqual([2, 3])
+
+    // dial back to focus 4 (target 602 — the settled set is {1,2}) and settle:
+    // card 3 is STALE (its center at x 427 is right of the edge), cards 1/2
+    // are not. The handoff may strip ONLY card 3's class — a full strip (the
+    // old code) would leave every card under the glass sharp for the frame(s)
+    // before React's canonical commit lands: the visible flash of Bug59b
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={4}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    // capture every IMPERATIVE .blurred removal during the settle frame
+    // (React's own className updates go through setAttribute, not classList)
+    const removed: number[] = []
+    for (const el of container.querySelectorAll('article')) {
+      const index = Number(/B59 (\d+)/.exec(el.textContent ?? '')?.[1])
+      const list = el.classList
+      const origRemove = list.remove.bind(list)
+      list.remove = (...tokens: string[]) => {
+        if (tokens.includes('blurred')) removed.push(index)
+        return origRemove(...tokens)
+      }
+    }
+    clock.settle()
+
+    expect(removed).toEqual([3]) // stale-only — no full strip, nothing else touched
+    const expected = sidebarOverlap(CARDS.length, 4, SCREEN_W, UNDERFLOW_PX)
+    const dom = blurredIndices(container)
+    expect([...dom].sort((a, b) => a - b)).toEqual([...expected].sort((a, b) => a - b))
+    // cards still under the glass kept their class through the handoff commit ...
+    for (const title of ['B59 1', 'B59 2']) {
+      expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
+    }
+    // ... and the loop is done: no frame left in the queue
+    expect(clock.queueLength()).toBe(0)
+  })
+
+  it('TICK-PATH INVARIANT: dial ticks without rAF frames read scrollLeft zero times (tick path stays read-free)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads } = instrument(carouselEl(container))
+    const clock = mockLiveBlurClock()
+
+    // two dial ticks: the layout-effect path writes scrollLeft arithmetically
+    // and arms the loop — a frame is queued, but NONE runs without step(), so
+    // the loop's per-frame physical read never happens on the tick path
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={3}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    rerender(
+      <ContentCarousel
+        cards={CARDS}
+        categoryId="playlists"
+        focusedIndex={5}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+
+    expect(clock.queueLength()).toBe(1) // armed once, never executed
+    expect(reads.left).toBe(0) // the tick path stays read-free
+    expect(reads.width).toBe(1) // the viewport is still measured exactly once
   })
 })

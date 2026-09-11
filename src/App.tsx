@@ -31,7 +31,6 @@ import { PiKeyboardOverlay, type PiKeyboardField } from '@/components/SettingsSh
 import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TransferPrompt } from '@/components/TransferPrompt'
-
 import { TrackInfo } from '@/components/TrackInfo'
 import { UpdateCard } from '@/components/UpdateCard'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
@@ -70,7 +69,7 @@ const UPDATE_POPUP_ENABLED = false
 const TRANSFER_DISMISS_KEY = 'mira.transferDismissedAt'
 const TRANSFER_DISMISS_MS = 2 * 60 * 60 * 1000
 
-export default function App() {
+function AppInner() {
   const auth = useAuth()
   const { status: realStatus, loading, connected, setupProgress } = useObserver()
   const notify = useNotify()
@@ -1444,4 +1443,8 @@ export default function App() {
       {globalOverlays}
     </>
   )
+}
+
+export default function App() {
+  return <AppInner />
 }

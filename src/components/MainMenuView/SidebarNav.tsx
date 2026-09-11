@@ -8,10 +8,12 @@ interface SidebarNavProps {
   onSelect: (id: string) => void
   // index of the dial-focused item (rendered with a focus outline)
   focusedIndex?: number
-  // bug54: translucent menu background — the nav switches to the semi-
-  // transparent glass overlay (cards slide underneath), instead of the
-  // opaque solid mask
-  glass?: boolean
+  // bug54: menu background variant — 'solid' (opaque, default), 'glass'
+  // (semi-transparent panel — the app background shows through where no
+  // card is) or 'clear' (100% transparent — no visible background at all,
+  // only the menu entries). The carousel geometry is identical in all
+  // three (cards clipped at the menu edge; 08.09 user change v2)
+  background?: 'solid' | 'glass' | 'clear'
 }
 
 export function SidebarNav({
@@ -19,9 +21,14 @@ export function SidebarNav({
   activeId,
   onSelect,
   focusedIndex,
-  glass = false,
+  background = 'solid',
 }: SidebarNavProps) {
-  const navClass = glass ? `${styles.sidebar} ${styles.glass}` : styles.sidebar
+  const navClass =
+    background === 'solid'
+      ? styles.sidebar
+      : background === 'glass'
+        ? `${styles.sidebar} ${styles.glass}`
+        : `${styles.sidebar} ${styles.clear}`
   return (
     <nav className={navClass} aria-label="Hauptmenü">
       {categories.map((category, index) => {

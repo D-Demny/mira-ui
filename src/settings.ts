@@ -59,10 +59,20 @@ export interface Settings {
   // capability poll (the only ambient Pi activity). Creating a new profile
   // clears it again (explicit re-opt-in — see useMiraServer.retarget).
   hybridDisabled: boolean
-  // bug54: the main-menu sidebar background — 'solid' (opaque black,
-  // default) or 'translucent' (semi-transparent glass the carousel slides
-  // under)
-  sidebarBackground: 'solid' | 'translucent'
+  // bug54/bug58: the main-menu sidebar background — 'solid' (opaque black,
+  // default), 'translucent' (semi-transparent glass, labelled
+  // "Halbdurchsichtig"), 'clear' (100% transparent — no visible panel
+  // background at all, only the menu entries, labelled "Durchsichtig") or
+  // 'blur' (bug58, labelled "Unschärfe" — the FOURTH option: the cards pass
+  // under the translucent menu strongly blurred; the per-card blur follows —
+  // until then they show through the glass panel unblurred).
+  // The three non-blur modes keep the solid carousel geometry: the cards are
+  // clipped at the menu edge and never visible under it (08.09 user change
+  // v2); 'blur' re-enabled the gated underflow (bug58 T2) so the cards pass
+  // under the menu.
+  // The enum values keep their pre-v2 names, so stored blobs (only 'solid' /
+  // 'translucent' ever existed) need no migration.
+  sidebarBackground: 'solid' | 'translucent' | 'clear' | 'blur'
   // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
   ha: HaSettingsValue
 }
@@ -289,11 +299,19 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     // separate step; no schema version bump — additive field, old builds
     // ignore unknown keys).
     hybridDisabled: partial?.hybridDisabled === true,
-    // bug54: strict like keyInstalled — only the exact 'translucent' string
-    // selects the glass mode. Anything else (hand-edited blobs with foreign
-    // values, blobs predating the field) coerces to 'solid'.
+    // bug54/bug58: strict like keyInstalled — only the exact known strings
+    // pass ('solid' | 'translucent' | 'clear' | 'blur'). Anything else
+    // (hand-edited blobs with foreign values, blobs predating the field)
+    // coerces to 'solid'. Old blobs only ever held 'solid' or
+    // 'translucent', so the coercion is the (null-op) migration.
     sidebarBackground:
-      partial?.sidebarBackground === 'translucent' ? 'translucent' : 'solid',
+      partial?.sidebarBackground === 'translucent'
+        ? 'translucent'
+        : partial?.sidebarBackground === 'clear'
+          ? 'clear'
+          : partial?.sidebarBackground === 'blur'
+            ? 'blur'
+            : 'solid',
     // ticket 9.4: strict coercion, see coerceHa — a blob without the `ha`
     // key (every blob predating v3) coerces to the empty defaults, which is
     // the whole v2→v3 migration (idempotent, no separate step)

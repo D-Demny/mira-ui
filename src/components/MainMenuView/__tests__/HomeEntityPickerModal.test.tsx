@@ -192,7 +192,12 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
       }),
     )
     renderPicker()
-    await vi.advanceTimersByTimeAsync(CATALOG_TIMEOUT_MS)
+    // bug57 v2: wrapped in act like the second advance below — with polling
+    // decoupled from subscription no interval fires during the fake-clock
+    // advance, so only the act flush commits the timeout state update
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CATALOG_TIMEOUT_MS)
+    })
 
     expect(calls).toBe(1)
     expect(screen.getByText('Home Assistant nicht erreichbar')).toBeInTheDocument()

@@ -83,6 +83,19 @@ function haRowValue(ha: HaSettingsValue): string {
   return haBaseStatus(ha) === 'configured' ? 'Konfiguriert' : 'Default'
 }
 
+// bug54 v2 (08.09) / bug58: the four 'Menü-Hintergrund' options with their
+// row labels, in cycle order (Schwarz → Halbdurchsichtig → Durchsichtig →
+// Unschärfe). The enum values keep their pre-v2 names (backward compat of
+// stored blobs); v2 relabelled 'translucent' ('Durchsichtig' →
+// 'Halbdurchsichtig') and added 'clear' (100% transparent,
+// 'Durchsichtig'); bug58 adds the fourth option 'blur' ('Unschärfe').
+const SIDEBAR_BG_LABELS: Record<Settings['sidebarBackground'], string> = {
+  solid: 'Schwarz',
+  translucent: 'Halbdurchsichtig',
+  clear: 'Durchsichtig',
+  blur: 'Unschärfe',
+}
+
 // bug25: root rows of the 'Einstellungen' vertical list
 function buildRootSettingsRows(
   settings: Settings,
@@ -190,7 +203,7 @@ function buildAdjustSettingsRows(
     {
       id: 'set-sidebar-bg',
       title: 'Menü-Hintergrund',
-      value: settings.sidebarBackground === 'translucent' ? 'Durchsichtig' : 'Schwarz',
+      value: SIDEBAR_BG_LABELS[settings.sidebarBackground],
       kind: 'toggle',
     },
   ]
@@ -294,7 +307,10 @@ export function MainMenuView({
   // ticket 9.3: the user-selected entities in one hook (the same hook the
   // Home sub-menu uses); the categories memo keys on the scalar snapshot
   // below, never on the fresh per-render view objects (bug8.1)
-  const selectedEntities = useHomeSelectedEntities()
+  // bug57 v2: the 3s HA poll runs only while the Home carousel is actually
+  // the confirmed (visible) category — no daemon traffic in the other menus;
+  // (re-)entering 'home' triggers an immediate fresh read inside the hook
+  const selectedEntities = useHomeSelectedEntities(activeCategoryId === 'home')
   const settings = useSettings()
   // epic10: Pi helper-server feature detection — starts the capabilities
   // poll while the main menu is mounted. The artwork pre-decode below uses
@@ -355,6 +371,10 @@ export function MainMenuView({
   // track's echo, and keep each remaining entry's position in the ORIGINAL
   // next_tracks list (Spotify queue index, the active track being 0) so
   // bug26's in-queue skip offset stays correct after the list shrinks.
+  // bug58: dial-FPS fix shipped as permanent behavior (see the static-bg
+  // freeze below and ContentCarousel's scroll-port classes); the temporary
+  // A/B experiment flags were stripped after on-device measurement
+
   const nowPlayingSnapshot = useMemo(() => {
     if (!nowPlaying) return null
     const queue: {
@@ -375,20 +395,22 @@ export function MainMenuView({
       ) {
         continue
       }
+      const rawArt = track.image_url || undefined
       queue.push({
         id: track.track_id || track.uri,
         title: track.name,
         subtitle: track.artist,
-        art: track.image_url || undefined,
+        art: rawArt,
         uri: track.uri,
         position: i + 1,
       })
     }
+    const activeArt = nowPlaying.track_image || undefined
     return {
       id: nowPlaying.track_id,
       title: nowPlaying.track_name,
       subtitle: nowPlaying.track_artist,
-      art: nowPlaying.track_image || undefined,
+      art: activeArt,
       uri: nowPlaying.track_uri,
       queue,
     }
@@ -428,10 +450,42 @@ export function MainMenuView({
   const isAdjustLevel = activeCategoryId === 'settings' && settingsLevel === 'adjust'
   const activeAdjustingRowId = activeCategoryId === 'settings' ? adjustingRowId : null
   const settingsRows = isAdjustLevel ? settingsAdjustRows : settingsRootRows
-  // bug54: the 'Menü-Hintergrund' setting — 'translucent' slides the content
-  // under the sidebar (the glass, cards partially visible underneath),
-  // 'solid' keeps today's strict clipping
-  const translucent = settings.sidebarBackground === 'translucent'
+  // bug54 v2 / bug58: the 'Menü-Hintergrund' setting — 'translucent' and
+  // 'blur' render the sidebar as a semi-transparent glass panel (bug58's
+  // 'Unschärfe' reuses the .glass look — ticket Task 4 — so no new
+  // SidebarNav prop value is needed; in blur mode the cards now actually
+  // pass under it, unblurred for now — the per-card blur follows),
+  // 'clear' as a fully transparent background
+  // (no visible panel, only the menu entries), 'solid' keeps it opaque. The
+  // three non-blur modes keep the solid carousel geometry (cards clipped at
+  // the menu edge — see slidesUnderSidebar below)
+  const sidebarNavBackground =
+    settings.sidebarBackground === 'translucent' || settings.sidebarBackground === 'blur'
+      ? 'glass'
+      : settings.sidebarBackground === 'clear'
+        ? 'clear'
+        : 'solid'
+  // bug54 (08.09.2026 user change, incl. v2): does the mode slide the
+  // content carousel under the sidebar? Per mode:
+  //   'solid': no — strict clipping at the sidebar's right edge
+  //   'translucent': no — the changed acceptance criteria require the cards
+  //   to be INVISIBLE under the menu: they are clipped at the menu edge
+  //   exactly like 'solid' (same viewport, same card geometry, same dial
+  //   centering); only the panel's look differs (.glass, the app background
+  //   shows through where no card is)
+  //   'clear': no — 100% transparent background (v2); same clipping as the
+  //   other modes, only no visible panel background at all
+  //   'blur': yes (bug58 T2) — Bug58 needs the cards to actually pass under
+  //   the menu so they can be blurred there (the per-card blur follows in
+  //   T3; until then they show through the .glass panel unblurred). The
+  //   content pane spans the full screen (clipped at the SCREEN edge), the
+  //   carousel viewport starts under the sidebar (underflowPx=SIDEBAR_WIDTH)
+  //   with the underflow dial centering geometry, and the settings list
+  //   keeps a left inset of the sidebar width (.settingsUnderflow).
+  // This flag gates the underflow mechanism (negative content-pane margin,
+  // the carousel's .underflow padding, the CarouselGeometry underflow
+  // centering) — only 'blur' applies it.
+  const slidesUnderSidebar = settings.sidebarBackground === 'blur'
 
   const categories = useMemo(() => {
     // ticket 9.3: every user-selected entity is a home carousel card, in
@@ -745,9 +799,17 @@ export function MainMenuView({
       // the focused row adjusts the level directly (handleWheelContent)
       updateSettings({ autoBrightness: !settings.autoBrightness })
     } else if (card.id === 'set-sidebar-bg') {
-      // bug54: toggle the menu background (solid black / translucent glass)
+      // bug54 v2 / bug58: cycle the menu background
+      // (Schwarz → Halbdurchsichtig → Durchsichtig → Unschärfe → Schwarz)
       updateSettings({
-        sidebarBackground: settings.sidebarBackground === 'solid' ? 'translucent' : 'solid',
+        sidebarBackground:
+          settings.sidebarBackground === 'solid'
+            ? 'translucent'
+            : settings.sidebarBackground === 'translucent'
+              ? 'clear'
+              : settings.sidebarBackground === 'clear'
+                ? 'blur'
+                : 'solid',
       })
     } else if (
       // bug25: dial-confirm on a slider row toggles its adjust mode; while
@@ -1026,7 +1088,7 @@ export function MainMenuView({
     }
   }, [categories, displayedCategory, focus.activePane, focus.contentIndex, remoteBlur])
 
-  const viewStyle = {
+  const freshMenuStyle = {
     ...(ambientAccent
       ? {
           // bug24: ambient colors derived from the focused card's artwork
@@ -1041,6 +1103,31 @@ export function MainMenuView({
           '--menu-bg': displayedCategory.bg,
         }),
   } as CSSProperties
+
+  // bug58: freeze ambient menu-bg/glow vars while dial ticks are in progress
+  // — measured 2x FPS on S905D2 (Bug58 A/B, staticBg). While the move kind is
+  // 'dial' (contentMoveKind 'dial'), keep the PREVIOUSLY committed --menu-bg /
+  // --menu-glow-a/b values instead of rewriting them every tick; once the
+  // move kind stops being 'dial' the fresh values flow through and get
+  // committed again. Small guard over a ref of the last committed value —
+  // the styling computation above is untouched. The ref is read/written in
+  // the render body deliberately (accepted pattern here, cf. viewportWidthRef
+  // in ContentCarousel.tsx): the value only feeds the style object below and
+  // never drives React state, so a concurrent double-invocation would just
+  // commit the same freshMenuStyle twice — no render dependency on it.
+  const lastCommittedMenuStyleRef = useRef<CSSProperties | null>(null)
+  let viewStyle: CSSProperties
+  if (
+    focus.contentMoveKind === 'dial' &&
+    // eslint-disable-next-line react-hooks/refs -- bug58 static-bg freeze, see hunk comment above
+    lastCommittedMenuStyleRef.current !== null
+  ) {
+    // eslint-disable-next-line react-hooks/refs -- bug58 static-bg freeze, see hunk comment above
+    viewStyle = lastCommittedMenuStyleRef.current
+  } else {
+    lastCommittedMenuStyleRef.current = freshMenuStyle
+    viewStyle = freshMenuStyle
+  }
 
   useSwipeGestures(viewRef, {
     // right swipe enters the content pane, left swipe returns to the sidebar
@@ -1067,8 +1154,9 @@ export function MainMenuView({
         [
           styles.view,
           focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
-          // bug54: the translucent modifier slides the content under the sidebar
-          translucent ? styles.viewTranslucent : '',
+          // bug54/bug58: the underflow modifier slides the content under the
+          // sidebar (applied in 'blur' mode only — see slidesUnderSidebar)
+          slidesUnderSidebar ? styles.viewUnderflow : '',
         ]
           .filter(Boolean)
           .join(' ')
@@ -1084,18 +1172,19 @@ export function MainMenuView({
           activeId={activeCategoryId}
           onSelect={onCategorySelect}
           focusedIndex={focus.activePane === 'sidebar' ? focus.sidebarIndex : undefined}
-          glass={translucent}
+          background={sidebarNavBackground}
         />
       </aside>
       <main className={styles.contentPane} aria-label="Menü-Inhalt">
         {displayedCategory.id === 'settings' ? (
           // bug25: the settings pane is a vertical list; the sidebar preview
           // always shows the root rows, the confirmed pane the open level.
-          // bug54: the wrapper keeps the list out from under the glass in
-          // translucent mode (display:contents in solid mode — no change)
+          // bug54/bug58: in underflow mode ('blur' only — see
+          // slidesUnderSidebar) the wrapper keeps the list out from under the
+          // glass (display:contents otherwise — no layout change)
           <div
             className={
-              translucent
+              slidesUnderSidebar
                 ? `${styles.settingsWrap} ${styles.settingsUnderflow}`
                 : styles.settingsWrap
             }
@@ -1132,12 +1221,26 @@ export function MainMenuView({
             // the dial hold (dimmable light → dim view, everything else press)
             onCardHold={handleCardHold}
             focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+            // bug58 T4: the BLUR set follows the content index UNCONDITIONALLY
+            // (no activePane ternary). While the UI focus sits in the sidebar
+            // pane (dialing the menu rows), focusedIndex above is undefined —
+            // but the cards under the glass must keep their blur, so the blur
+            // state must not depend on the active pane (device report Build
+            // #110/#111). focus.contentIndex stays a valid number in both
+            // panes (the hook clamps it to [0, contentCount) — it never goes
+            // undefined) and stays put during sidebar dialing: a preview
+            // switch resets it to 0, which matches the carousel's card-0
+            // remount on that categoryId change.
+            blurIndex={focus.contentIndex}
             // bug47: dial ticks scroll instantly, taps/confirms/switches keep
             // the smooth scroll (the hook tags the last focus change)
             focusScrollBehavior={focus.contentMoveKind === 'dial' ? 'auto' : 'smooth'}
-            // bug54: in translucent mode the carousel viewport spans the
-            // full screen — the geometry underflow is the sidebar width
-            underflowPx={translucent ? SIDEBAR_WIDTH : 0}
+            // bug54/bug58: in underflow mode ('blur' — see slidesUnderSidebar
+            // above) the carousel viewport spans the full screen — the
+            // geometry underflow is the sidebar width. The three other
+            // background modes ('solid' / 'translucent' / 'clear') pass 0:
+            // the solid geometry (cards clipped at the sidebar's right edge).
+            underflowPx={slidesUnderSidebar ? SIDEBAR_WIDTH : 0}
           />
         )}
       </main>
