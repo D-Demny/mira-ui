@@ -34,3 +34,6 @@ scripts/
 
 bun.lock
 bun.lockb
+
+# local opencode session scratchpad (never project code)
+.opencode/
