@@ -91,6 +91,24 @@ function toggleSelection(entityId: string) {
   emit()
 }
 
+// ticket 9.5: reorder the carousel — swap one selected entity with its
+// neighbor in the given direction ('up' = earlier, 'down' = later). The
+// position IS the carousel order, so the swap is the whole operation.
+// Clamped at the boundaries and a no-op for unselected ids (no persist,
+// no emit — nothing changed)
+function moveSelection(entityId: string, dir: 'up' | 'down') {
+  const current = currentSelection()
+  const from = current.indexOf(entityId)
+  if (from === -1) return
+  const to = from + (dir === 'up' ? -1 : 1)
+  if (to < 0 || to >= current.length) return
+  const next = [...current]
+  ;[next[from], next[to]] = [next[to], next[from]]
+  selection = next
+  persistSelection(next)
+  emit()
+}
+
 function resetSelection() {
   selection = defaultSelection()
   persistSelection(selection)
@@ -590,6 +608,11 @@ export function useHomeEntitySelection() {
   const toggle = useCallback((entityId: string) => {
     toggleSelection(entityId)
   }, [])
+  // ticket 9.5: move a selected entity one step in the selection (carousel)
+  // order — see moveSelection for the boundary/no-op semantics
+  const move = useCallback((entityId: string, dir: 'up' | 'down') => {
+    moveSelection(entityId, dir)
+  }, [])
   const reset = useCallback(() => {
     resetSelection()
   }, [])
@@ -599,6 +622,7 @@ export function useHomeEntitySelection() {
     selectedIds,
     isSelected: (entityId: string) => selectedIds.includes(entityId),
     toggle,
+    move,
     reset,
     isCustomized: isCustomizedSelection(selectedIds),
   }

@@ -107,6 +107,73 @@ describe('useHomeEntities', () => {
         HOME_LIGHTS.map((l) => l.entityId),
       )
     })
+
+    describe('move (ticket 9.5: carousel reordering)', () => {
+      it('swaps a selected entity with its predecessor on move up', () => {
+        const ids = [FIRST_LIGHT, 'light.b']
+        seedSelection(ids)
+        const { result } = renderHook(() => useHomeEntitySelection())
+        act(() => {
+          result.current.move('light.b', 'up')
+        })
+        expect(result.current.selectedIds).toEqual(['light.b', FIRST_LIGHT])
+      })
+
+      it('swaps a selected entity with its successor on move down and persists the new order', () => {
+        const ids = [FIRST_LIGHT, 'light.b']
+        seedSelection(ids)
+        const { result } = renderHook(() => useHomeEntitySelection())
+        act(() => {
+          result.current.move(FIRST_LIGHT, 'down')
+        })
+        expect(result.current.selectedIds).toEqual(['light.b', FIRST_LIGHT])
+        expect(JSON.parse(String(localStorage.getItem(SELECTION_LS_KEY)))).toEqual([
+          'light.b',
+          FIRST_LIGHT,
+        ])
+      })
+
+      it('clamps at the boundaries (first up / last down is a no-op without persisting)', () => {
+        const ids = [FIRST_LIGHT, 'light.b']
+        seedSelection(ids)
+        const { result } = renderHook(() => useHomeEntitySelection())
+        act(() => {
+          result.current.move(FIRST_LIGHT, 'up')
+        })
+        expect(result.current.selectedIds).toEqual(ids)
+        act(() => {
+          result.current.move('light.b', 'down')
+        })
+        expect(result.current.selectedIds).toEqual(ids)
+        // a clamped move must not rewrite the persisted order
+        expect(JSON.parse(String(localStorage.getItem(SELECTION_LS_KEY)))).toEqual(ids)
+      })
+
+      it('is a no-op for an unselected entity id', () => {
+        const ids = [FIRST_LIGHT, 'light.b']
+        seedSelection(ids)
+        const { result } = renderHook(() => useHomeEntitySelection())
+        act(() => {
+          result.current.move(SWITCH, 'down')
+        })
+        expect(result.current.selectedIds).toEqual(ids)
+      })
+
+      it('keeps every entity exactly once (a swap never drops or duplicates)', () => {
+        const ids = HOME_LIGHTS.map((l) => l.entityId)
+        const last = ids[ids.length - 1]
+        // walk the last light all the way to the front
+        const { result } = renderHook(() => useHomeEntitySelection())
+        for (let i = 0; i < ids.length - 1; i += 1) {
+          act(() => {
+            result.current.move(last, 'up')
+          })
+          expect(result.current.selectedIds).toHaveLength(ids.length)
+          expect(new Set(result.current.selectedIds).size).toBe(ids.length)
+        }
+        expect(result.current.selectedIds[0]).toBe(last)
+      })
+    })
   })
 
   describe('catalog', () => {
