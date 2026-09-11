@@ -200,6 +200,74 @@
   background: $accent;
 }
 
+// ticket 9.5: the 'Reihenfolge' section — one compact row per selected entity
+// (selection order = carousel order) with a ▲ / ▼ move button at the end.
+// Same CR69 constraints as the rest of the modal: no flex gap, no
+// backdrop-filter, margins only.
+.orderRow {
+  display: flex;
+  align-items: center;
+  min-height: $touch-min;
+  margin-bottom: 2px;
+  padding: $s-2 $s-3;
+  border-radius: $r-md;
+  user-select: none;
+}
+
+.orderIndex {
+  flex: 0 0 auto;
+  width: 18px;
+  margin-right: $s-2;
+  font-size: $fs-sm;
+  font-weight: $fw-semibold;
+  color: $text-tertiary;
+  text-align: right;
+}
+
+.moveBtn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  margin-left: $s-2;
+  padding: 0;
+  border: 1px solid $divider;
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.06);
+  color: $text-secondary;
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    color $dur-fast $ease-standard,
+    border-color $dur-fast $ease-standard;
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    color: $text-primary;
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.92);
+  }
+
+  &:disabled {
+    border-color: rgba(255, 255, 255, 0.04);
+    background: transparent;
+    color: $text-disabled;
+    cursor: default;
+  }
+}
+
+// dial-focus highlight (CSS-only, like .focused on the rows — tuned for the
+// small button footprint)
+.moveBtnFocused {
+  border-color: $accent;
+  background: $accent-dim;
+  color: #ffffff;
+}
+
 .info {
   padding: $s-4 $s-3;
   font-size: $fs-md;

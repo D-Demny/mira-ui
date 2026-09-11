@@ -101,6 +101,7 @@ function buildRootSettingsRows(
   settings: Settings,
   deviceName: string,
   piMode: MiraServerState['mode'],
+  homeEntityCount: number,
 ): SettingsRow[] {
   return [
     { id: 'set-main', title: 'Settings', value: '', kind: 'open-settings' },
@@ -118,6 +119,13 @@ function buildRootSettingsRows(
     { id: 'set-pi', title: 'Raspberry Pi', value: piRowValue(piMode), kind: 'open-link' },
     // ticket 9.4: opens the Home Assistant connection settings view
     { id: 'set-ha', title: 'Home Assistant', value: haRowValue(settings.ha), kind: 'open-link' },
+    // ticket 9.5: opens the home entity picker (select + reorder the carousel)
+    {
+      id: 'set-home',
+      title: 'Home',
+      value: homeEntityCount === 1 ? '1 Entität' : `${homeEntityCount} Entitäten`,
+      kind: 'open-link',
+    },
   ]
 }
 
@@ -258,8 +266,10 @@ export interface MainMenuViewProps {
   // bug46: a dimmable HA light card opens the brightness / color-temperature
   // popup (rendered by the App's globalOverlays) instead of toggling directly
   onOpenLightControl?: (entityId: string, label: string) => void
-  // ticket 9.3: the manage card (and the empty-selection placeholder) open
-  // the entity picker overlay (rendered by the App's globalOverlays)
+  // ticket 9.5: the 'Home' settings row opens the entity picker overlay
+  // (rendered by the App's globalOverlays). The inline manage card that used
+  // to open it from the Home carousel was removed in this ticket — the
+  // picker is reached via Einstellungen → Home now
   onOpenEntityPicker?: () => void
   // epic10 task 4: the 'Raspberry Pi' settings row opens the provisioning
   // view (rendered by the App's globalOverlays)
@@ -437,8 +447,14 @@ export function MainMenuView({
   // confirmed level is what the focus hook counts and confirms. The
   // 'Raspberry Pi' row's value mirrors the live Pi server mode (epic10)
   const settingsRootRows = useMemo(
-    () => buildRootSettingsRows(settings, nowPlaying?.device_name ?? '', miraServer.mode),
-    [settings, nowPlaying?.device_name, miraServer.mode],
+    () =>
+      buildRootSettingsRows(
+        settings,
+        nowPlaying?.device_name ?? '',
+        miraServer.mode,
+        selectedEntities.length,
+      ),
+    [settings, nowPlaying?.device_name, miraServer.mode, selectedEntities.length],
   )
   const settingsAdjustRows = useMemo(
     () => buildAdjustSettingsRows(settings, defaultDevice, phoneVolume),
@@ -489,8 +505,11 @@ export function MainMenuView({
 
   const categories = useMemo(() => {
     // ticket 9.3: every user-selected entity is a home carousel card, in
-    // selection order; the manage card (the picker entry) always sits LAST,
-    // and an empty selection gets an inert placeholder before it
+    // selection order.
+    // ticket 9.5: the inline manage card ('Entitäten wählen') is GONE from
+    // the Home carousel — the picker (selection + reordering) is reached via
+    // Einstellungen → Home now. An empty selection still gets an inert
+    // placeholder pointing to the new location
     const homeCards: MenuCard[] = selectedEntities.map((view) => ({
       id: 'ha-' + view.entityId,
       title: view.label,
@@ -503,17 +522,9 @@ export function MainMenuView({
       homeCards.push({
         id: 'ha-empty',
         title: 'Keine Entitäten gewählt',
-        subtitle: 'Wähle Entitäten aus',
+        subtitle: 'In den Einstellungen wählen',
       })
     }
-    homeCards.push({
-      id: 'ha-manage',
-      title: 'Entitäten wählen',
-      subtitle: selectedEntities.length + ' ausgewählt',
-      art: entityArt('manage', 'manage', null),
-      kind: 'action' as const,
-      actionId: 'ha-manage',
-    })
 
     // bug2.3: playlist cards show only the title — no owner name / track count
     const playlistCards: MenuCard[] = playlistItems.map((playlist) => ({
@@ -746,13 +757,6 @@ export function MainMenuView({
       // start playback and land directly on the 'Läuft gerade' pane
       setActiveCategoryId('now-playing')
       onPlay?.(card.uri)
-    } else if (
-      card.kind === 'action' &&
-      (card.actionId === 'ha-manage' || card.id === 'ha-empty')
-    ) {
-      // ticket 9.3: the picker entry (the manage card, or the empty-selection
-      // placeholder) opens the entity picker overlay
-      onOpenEntityPicker?.()
     } else if (card.kind === 'action' && card.actionId?.startsWith('ha-act:')) {
       // ticket 9.3: per-entity action — the action id carries the entity id.
       // Keep focus inside the carousel — no view transition.
@@ -791,6 +795,9 @@ export function MainMenuView({
     } else if (card.id === 'set-ha') {
       // ticket 9.4: the Home Assistant connection settings view
       onOpenHaSettings?.()
+    } else if (card.id === 'set-home') {
+      // ticket 9.5: the home entity picker (selection + carousel order)
+      onOpenEntityPicker?.()
     } else if (card.id === 'set-default-device') {
       onOpenDefaultDevice?.()
     } else if (card.id === 'set-brightness') {

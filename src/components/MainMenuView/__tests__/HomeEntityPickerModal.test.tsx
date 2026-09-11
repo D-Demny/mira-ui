@@ -48,8 +48,10 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     ]) {
       expect(screen.getByText(section)).toBeInTheDocument()
     }
+    // ticket 9.5: each default-selected light appears TWICE — once as a
+    // catalog row, once in the 'Reihenfolge' section
     for (const light of HOME_LIGHTS) {
-      expect(screen.getByText(light.label)).toBeInTheDocument()
+      expect(screen.getAllByText(light.label)).toHaveLength(2)
     }
     expect(screen.getByText('Abendstimmung')).toBeInTheDocument()
     expect(screen.getByText('Lüfter Wohnzimmer')).toBeInTheDocument()
@@ -76,13 +78,15 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     fireEvent.click(row)
 
     await screen.findByText('10 ausgewählt')
-    expect(screen.getByRole('button', { name: /Wasserpumpe/ })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    // ticket 9.5: the selected entity ALSO appears in the 'Reihenfolge'
+    // section (with its move buttons), so scope the row query to the catalog
+    // group instead of a bare name match
+    const schalterSection = screen.getByText('Schalter').closest('.section') as HTMLElement
+    const catalogRow = schalterSection.querySelector('[role="button"]') as HTMLElement
+    expect(catalogRow).toHaveAttribute('aria-pressed', 'true')
     expect(readSelection()).toContain('switch.wasserpumpe')
-    // toggling the same row back removes it again
-    fireEvent.click(screen.getByRole('button', { name: /Wasserpumpe/ }))
+    // toggling the same row back removes it again (and clears its reorder row)
+    fireEvent.click(catalogRow)
     await screen.findByText('9 ausgewählt')
     expect(readSelection()).not.toContain('switch.wasserpumpe')
   })
@@ -227,6 +231,100 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     await screen.findByText('Keine steuerbaren Entitäten gefunden')
   })
 
+  // ticket 9.5: the 'Reihenfolge' section — the selection order IS the Home
+  // carousel order; per row a ▲/▼ move button (flat focus chain, boundary
+  // clamped moves stay disabled) and immediate persistence of each swap
+  describe('reorder section (ticket 9.5)', () => {
+    it('renders a numbered row per selected entity with the boundary buttons disabled', async () => {
+      renderPicker()
+      await screen.findByText('Reihenfolge')
+
+      const section = screen.getByText('Reihenfolge').closest('.section') as HTMLElement
+      const orderRows = Array.from(section.querySelectorAll('.orderRow'))
+      expect(orderRows).toHaveLength(9)
+      // the numbering follows the selection (default = HOME_LIGHTS order)
+      expect(orderRows[0].textContent).toContain('3er Stehlampe Gold')
+      expect(orderRows[8].textContent).toContain('Treppenspot Tür')
+      // the first row cannot move up, the last cannot move down…
+      const firstUp = orderRows[0].querySelector(
+        'button[aria-label="3er Stehlampe Gold nach oben verschieben"]',
+      ) as HTMLButtonElement
+      expect(firstUp).toBeDisabled()
+      const lastDown = orderRows[8].querySelector(
+        'button[aria-label="Treppenspot Tür nach unten verschieben"]',
+      ) as HTMLButtonElement
+      expect(lastDown).toBeDisabled()
+      // …but the inner moves are enabled
+      const secondUp = orderRows[1].querySelector(
+        'button[aria-label="Esstisch Hängelampe nach oben verschieben"]',
+      ) as HTMLButtonElement
+      expect(secondUp).toBeEnabled()
+    })
+
+    it('moves a row up: the stored order swaps and the section re-renders', async () => {
+      renderPicker()
+      await screen.findByText('Reihenfolge')
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Esstisch Hängelampe nach oben verschieben' }),
+      )
+
+      // the swap is persisted immediately (the selection array is the source
+      // of truth for the carousel order)…
+      expect(readSelection()[0]).toBe('light.esstisch_hangelampe_3er')
+      expect(readSelection()[1]).toBe('light.3er_stehlampe_gold_esszimmer')
+      expect(readSelection().length).toBe(9)
+      // …and the numbered rows follow the new order
+      const section = screen.getByText('Reihenfolge').closest('.section') as HTMLElement
+      const orderRows = Array.from(section.querySelectorAll('.orderRow'))
+      expect(orderRows[0].textContent).toContain('Esstisch Hängelampe')
+      expect(orderRows[1].textContent).toContain('3er Stehlampe Gold')
+    })
+
+    it('moves a row down the same way', async () => {
+      renderPicker()
+      await screen.findByText('Reihenfolge')
+
+      fireEvent.click(
+        screen.getByRole('button', { name: '3er Stehlampe Gold nach unten verschieben' }),
+      )
+
+      expect(readSelection()[0]).toBe('light.esstisch_hangelampe_3er')
+      expect(readSelection()[1]).toBe('light.3er_stehlampe_gold_esszimmer')
+    })
+
+    it('a disabled boundary button is a no-op', async () => {
+      renderPicker()
+      await screen.findByText('Reihenfolge')
+
+      const firstUp = screen.getByRole('button', {
+        name: '3er Stehlampe Gold nach oben verschieben',
+      }) as HTMLButtonElement
+      expect(firstUp).toBeDisabled()
+      fireEvent.click(firstUp)
+
+      // the default order is untouched (the click handler guards !enabled,
+      // even though a disabled button cannot fire in a real browser) — the
+      // first reorder row is still the selection's first entry…
+      const section = screen.getByText('Reihenfolge').closest('.section') as HTMLElement
+      const firstRow = section.querySelector('.orderRow') as HTMLElement
+      expect(firstRow.textContent).toContain('3er Stehlampe Gold')
+      // …and nothing was persisted (the default selection has no LS entry yet)
+      expect(readSelection()).toEqual([])
+    })
+
+    it('hides the section when only one entity is selected', async () => {
+      window.localStorage.setItem(
+        SELECTION_LS_KEY,
+        JSON.stringify(['light.3er_stehlampe_gold_esszimmer']),
+      )
+      renderPicker()
+
+      await screen.findByText('1 ausgewählt')
+      expect(screen.queryByText('Reihenfolge')).not.toBeInTheDocument()
+    })
+  })
+
   // bug53 (stale data retention): a failed TTL-expired refetch on top of an
   // already-loaded catalog keeps the list visible (selection usable) with a
   // non-blocking error note — no blank screen, no error screen
@@ -238,7 +336,9 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     try {
       const first = renderPicker()
       await screen.findByText('Wasserpumpe')
-      expect(screen.getByText('3er Stehlampe Gold')).toBeInTheDocument()
+      // ticket 9.5: the default-selected light is listed twice (catalog row +
+      // 'Reihenfolge' row)
+      expect(screen.getAllByText('3er Stehlampe Gold')).toHaveLength(2)
       first.unmount()
 
       // beyond the 60 s catalog TTL, a remount re-fetches — and that
@@ -251,9 +351,10 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
       )
       renderPicker()
 
-      // the (stale) catalog rows stay visible and selectable…
+      // the (stale) catalog rows stay visible and selectable… (the selected
+      // light is listed twice: catalog row + 'Reihenfolge' row)
       expect(screen.getByText('Wasserpumpe')).toBeInTheDocument()
-      expect(screen.getByText('3er Stehlampe Gold')).toBeInTheDocument()
+      expect(screen.getAllByText('3er Stehlampe Gold')).toHaveLength(2)
       // …with a non-blocking error note carrying the concrete reason
       await screen.findByText(/home assistant 500/)
       // and the full error screen (with its retry row) does NOT replace it

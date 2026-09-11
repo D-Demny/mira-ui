@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { HomeMenuView } from '../HomeMenuView'
@@ -106,14 +106,12 @@ describe('HomeMenuView', () => {
     expect(screen.getAllByRole('button')).toHaveLength(9)
   })
 
-  it('appends the manage row and opens the picker on confirm (ticket 9.3)', () => {
-    const onOpenEntityPicker = vi.fn()
-    render(<HomeMenuView onOpenEntityPicker={onOpenEntityPicker} />)
-    const buttons = screen.getAllByRole('button')
-    expect(buttons).toHaveLength(10)
-    expect(buttons[9].textContent).toContain('Entitäten wählen')
-    expect(buttons[9].textContent).toContain('9 ausgewählt')
-    fireEvent.click(buttons[9])
-    expect(onOpenEntityPicker).toHaveBeenCalledTimes(1)
+  // ticket 9.5: the picker opener moved out of this view (Einstellungen →
+  // Home now) — the list is exactly the live selection, nothing appended
+  it('renders no manage row / picker opener anymore (ticket 9.5)', () => {
+    render(<HomeMenuView />)
+    expect(screen.queryByText('Entitäten wählen')).not.toBeInTheDocument()
+    expect(screen.queryByText('ausgewählt')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(9)
   })
 })
