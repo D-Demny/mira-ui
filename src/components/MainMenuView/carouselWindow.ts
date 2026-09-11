@@ -37,6 +37,18 @@ export const CAROUSEL_EDGE_PADDING = 16
 // the carousel viewport extends underneath the sidebar by exactly this
 // width — keep in sync with the SCSS variable.
 export const SIDEBAR_WIDTH = 250
+// bug59: how long (ms) after the LAST scroll write a still-settling smooth
+// animation is considered "in flight" by the live-blur rAF loop in
+// ContentCarousel.tsx. Chromium's native scroll-behavior interpolation for a
+// ~1–3 card step on the S905D2 finishes well inside this window; beyond it,
+// if the physical offset is within 1px of the target, the animation is done
+// and ownership of the .blurred classes hands back to React (an invisible
+// handoff — see sidebarOverlapAt, whose set equals sidebarOverlap's at the
+// settled position). Lives HERE instead of in the component on purpose: this
+// module is plain math (react-refresh, unit-testable), and the loop's test
+// harness needs the constant from the same source as the production code —
+// a react-based module must not export non-components.
+export const ANIM_SETTLE_MS = 350
 
 // bug54: the geometry of the viewport the centering math is written for.
 // Omitted (the default) means today's solid layout: the viewport starts at
@@ -108,6 +120,28 @@ export function dialScrollLeft(
   return Math.max(0, Math.min(center - centerTarget, maxScroll, leftBoundary))
 }
 
+// bug59: the small candidate window [lo, hi] of card indices that can ever
+// sit under the glass at a given scroll offset. Shared by sidebarOverlap()
+// (dial-target offset) and sidebarOverlapAt() (physical offset) so both use
+// EXACTLY the same window arithmetic — their sets are identical whenever the
+// two offsets coincide (the settle handoff is invisible because of it).
+function overlapCandidateRange(
+  scrollLeftPx: number,
+  leftInset: number,
+  underflowPx: number,
+): { lo: number; hi: number } {
+  const pitch = CARD_WIDTH + CARD_GAP
+  return {
+    // card i's screen x is leftInset + i * pitch - scrollLeft; it can be more
+    // than half under the edge only within this range (T4 center rule — the
+    // [lo, hi] window was derived for the any-pixel rule (x < underflowPx)
+    // and still encloses the stricter T4 set: a card whose center crossed the
+    // edge has x < underflowPx too)
+    lo: Math.floor((scrollLeftPx - leftInset - CARD_WIDTH) / pitch),
+    hi: Math.ceil((scrollLeftPx - leftInset + underflowPx) / pitch),
+  }
+}
+
 // bug58 T3: the card indices that overlap the sidebar area in underflow mode
 // (the 'blur' menu background). ContentCarousel blurs exactly these cards
 // (.blurred, `filter: blur`) while they sit under the translucent glass and
@@ -138,7 +172,6 @@ export function sidebarOverlap(
   // solid layout (underflowPx 0): the "sidebar area" has zero width, so no
   // card can overlap it — never derive a set from the geometry in that case
   if (underflowPx <= 0) return new Set<number>()
-  const pitch = CARD_WIDTH + CARD_GAP
   const leftInset = CAROUSEL_EDGE_PADDING + underflowPx
   const scrollLeft = dialScrollLeft(count, focusedIndex, viewportW, {
     leftInset,
@@ -149,14 +182,33 @@ export function sidebarOverlap(
   // (x + CARD_WIDTH/2 < underflowPx, T4) and any part is still on screen
   // (x + CARD_WIDTH > 0 — a fully-left card is off-screen). Solve the two
   // inequalities for the small candidate range instead of scanning the whole
-  // list. The [lo, hi] window was derived for the any-pixel rule (x <
-  // underflowPx) and still encloses the stricter T4 set — a card whose center
-  // crossed the edge has x < underflowPx too — so it stays untouched.
-  const lo = Math.floor((scrollLeft - leftInset - CARD_WIDTH) / pitch)
-  const hi = Math.ceil((scrollLeft - leftInset + underflowPx) / pitch)
+  // list.
+  const pitch = CARD_WIDTH + CARD_GAP
+  const { lo, hi } = overlapCandidateRange(scrollLeft, leftInset, underflowPx)
   const out = new Set<number>()
   for (let i = Math.max(0, lo); i <= Math.min(count - 1, hi); i++) {
     const x = leftInset + i * pitch - scrollLeft
+    if (x + CARD_WIDTH / 2 < underflowPx && x + CARD_WIDTH > 0) out.add(i)
+  }
+  return out
+}
+
+// bug59: the blur set for an ARBITRARY physical scroll offset — the live rAF
+// loop in ContentCarousel.tsx calls this on every frame while a smooth
+// animation is in flight, following the PHYSICAL scrollLeft instead of the
+// dial target (the target-index set desyncs from the lagging animation by up
+// to ~200 ms — exactly the viewport-blur leak of Bug59). Same constants, same
+// candidate window, same T4 center rule as sidebarOverlap(): at a settled
+// offset (physical == target) both sets are identical, which is what makes
+// the handoff back to React's render-derived set invisible.
+export function sidebarOverlapAt(scrollLeftPx: number, count: number, underflowPx: number): Set<number> {
+  if (underflowPx <= 0) return new Set<number>()
+  const pitch = CARD_WIDTH + CARD_GAP
+  const leftInset = CAROUSEL_EDGE_PADDING + underflowPx
+  const { lo, hi } = overlapCandidateRange(scrollLeftPx, leftInset, underflowPx)
+  const out = new Set<number>()
+  for (let i = Math.max(0, lo); i <= Math.min(count - 1, hi); i++) {
+    const x = leftInset + i * pitch - scrollLeftPx
     if (x + CARD_WIDTH / 2 < underflowPx && x + CARD_WIDTH > 0) out.add(i)
   }
   return out
