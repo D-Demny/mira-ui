@@ -1133,7 +1133,8 @@ function AppInner() {
   if (forced === 'home') {
     return (
       <div className={styles.app}>
-        <HomeMenuView onOpenEntityPicker={() => setEntityPickerOpen(true)} />
+        {/* ticket 9.5: no picker opener here — the picker is in Einstellungen → Home */}
+        <HomeMenuView />
         {globalOverlays}
       </div>
     )
@@ -1144,7 +1145,7 @@ function AppInner() {
         <MainMenuView
           // bug46: the dev screen also gets the light control popup
           onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
-          // ticket 9.3: the dev screen also gets the entity picker
+          // ticket 9.5: the dev screen also gets the entity picker (Einstellungen → Home)
           onOpenEntityPicker={() => setEntityPickerOpen(true)}
           // epic10 task 4: the dev screen also gets the Pi settings view
           onOpenPiServer={() => setPiServerModalOpen(true)}
@@ -1301,7 +1302,7 @@ function AppInner() {
             onOpenBluetooth={() => setBtMenuOpen(true)}
             // bug46: dimmable HA light cards open the control popup
             onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
-            // ticket 9.3: the manage card opens the entity picker
+            // ticket 9.5: the Einstellungen → Home row opens the entity picker
             onOpenEntityPicker={() => setEntityPickerOpen(true)}
             // epic10 task 4: the Raspberry Pi row opens the provisioning view
             onOpenPiServer={() => setPiServerModalOpen(true)}
