@@ -291,10 +291,20 @@ describe('ContentCarousel', () => {
     expect(screen.getByText('Nichts läuft')).toBeInTheDocument()
   })
 
-  it('tapping the light action card toggles the light without leaving the menu', () => {
-    render(<MainMenuView />)
+  it('W1: tapping the light tile on the home dashboard is a no-op — nothing sent, state unchanged', () => {
+    // ticket 9.6 W1: the Home category renders the dashboard grid
+    // (HomeDashboardView) instead of the content carousel — the label still
+    // comes from the same selection source as before
+    const { container } = render(<MainMenuView />)
     fireEvent.click(screen.getByText('3er Stehlampe Gold'))
-    expect(hookState.toggle).toHaveBeenCalledTimes(1)
+
+    // ticket 9.6 W2: tap → toggle wiring lands in W2 — the W1 tiles carry no
+    // handlers, so no request is sent and the readout stays unchanged
+    expect(hookState.toggle).not.toHaveBeenCalled()
+    const tile = container.querySelector(
+      '[data-entity-id="light.3er_stehlampe_gold_esszimmer"]',
+    )
+    expect(tile?.querySelector('.state')?.textContent).toBe('An')
     expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute(
       'aria-current',
       'true',
