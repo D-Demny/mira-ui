@@ -34,10 +34,18 @@ const hookState = vi.hoisted(() => ({
   // useHomeSelectedEntities() (here: the default selection, the same entity
   // list as the real hook's HOME_LIGHTS)
   lights: [
-    { entityId: 'light.3er_stehlampe_gold_esszimmer', label: '3er Stehlampe Gold', room: 'Esszimmer' },
+    {
+      entityId: 'light.3er_stehlampe_gold_esszimmer',
+      label: '3er Stehlampe Gold',
+      room: 'Esszimmer',
+    },
     { entityId: 'light.esstisch_hangelampe_3er', label: 'Esstisch Hängelampe', room: 'Esszimmer' },
     { entityId: 'light.3er_deko_esszimmer', label: '3er Deko', room: 'Esszimmer' },
-    { entityId: 'light.kajplats_e27_ws_g60_clear_470lm', label: 'Stehlampe Gold', room: 'Wohnzimmer' },
+    {
+      entityId: 'light.kajplats_e27_ws_g60_clear_470lm',
+      label: 'Stehlampe Gold',
+      room: 'Wohnzimmer',
+    },
     { entityId: 'light.kajplats_e14_ws_globe_806lm', label: 'Tischlampe', room: 'Gaderobe' },
     { entityId: 'light.gaderobe_lampe_3er', label: 'Lampe 3er', room: 'Gaderobe' },
     { entityId: 'light.kajplats_gu10_ws_575lm_3', label: 'Treppenspot Treppe', room: 'Flur Oben' },
@@ -91,7 +99,7 @@ vi.mock('@/hooks/usePlaylistTracks', () => ({
   usePlaylistTracks: (playlistId: string | null) => ({
     tracks: playlistId
       ? [
-           {
+          {
             id: `tr-${playlistId}-1`,
             name: 'First Track',
             uri: `spotify:track:tr-${playlistId}-1`,
@@ -291,14 +299,20 @@ describe('ContentCarousel', () => {
     expect(screen.getByText('Nichts läuft')).toBeInTheDocument()
   })
 
-  it('tapping the light action card toggles the light without leaving the menu', () => {
-    render(<MainMenuView />)
+  it('tapping the light tile on the home dashboard sends the toggle (actuate)', () => {
+    // ticket 9.6 W1: the Home category renders the dashboard grid
+    // (HomeDashboardView) instead of the content carousel — the label still
+    // comes from the same selection source as before. W2: a tap runs
+    // view.actuate() (the mocked actuate IS hookState.toggle); the state here
+    // is pinned by the mock, so the assertions cover the request + no view
+    // transition only
+    const { container } = render(<MainMenuView />)
     fireEvent.click(screen.getByText('3er Stehlampe Gold'))
+
     expect(hookState.toggle).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute(
-      'aria-current',
-      'true',
-    )
+    const tile = container.querySelector('[data-entity-id="light.3er_stehlampe_gold_esszimmer"]')
+    expect(tile?.querySelector('.state')?.textContent).toBe('An')
+    expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'true')
   })
 
   it('shows the current track and queue in the Läuft gerade category after starting playback', () => {
@@ -474,7 +488,11 @@ describe('bug5/bug6/bug18: windowed rendering', () => {
     ]
     for (const [focusedIndex, count] of cases) {
       const { container } = render(
-        <ContentCarousel cards={MANY.slice(0, count)} categoryId="playlists" focusedIndex={focusedIndex} />,
+        <ContentCarousel
+          cards={MANY.slice(0, count)}
+          categoryId="playlists"
+          focusedIndex={focusedIndex}
+        />,
       )
       const spacers = Array.from(container.querySelectorAll('.spacer')) as HTMLElement[]
       const { start, end } = windowRange(count, focusedIndex, null)
@@ -561,7 +579,9 @@ describe('bug47: focusScrollBehavior per input type', () => {
 
   it('defaults to the smooth scroll when no behavior prop is given (standalone usage)', () => {
     const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
-    const { rerender } = render(<ContentCarousel cards={FEW} categoryId="playlists" focusedIndex={0} />)
+    const { rerender } = render(
+      <ContentCarousel cards={FEW} categoryId="playlists" focusedIndex={0} />,
+    )
     scrollIntoView.mockClear()
 
     rerender(<ContentCarousel cards={FEW} categoryId="playlists" focusedIndex={1} />)
@@ -992,8 +1012,7 @@ describe('bug47 R2 (F1/F2): dial mode is read-free and centers arithmetically', 
         focusScrollBehavior="auto"
       />,
     )
-    const maxScroll =
-      2 * CAROUSEL_EDGE_PADDING + 50 * CARD_WIDTH + 49 * CARD_GAP - VIEWPORT_W
+    const maxScroll = 2 * CAROUSEL_EDGE_PADDING + 50 * CARD_WIDTH + 49 * CARD_GAP - VIEWPORT_W
     expect(left.value).toBe(maxScroll)
     expect(left.value).toBeLessThan(
       CAROUSEL_EDGE_PADDING + 49 * (CARD_WIDTH + CARD_GAP) + CARD_WIDTH / 2 - VIEWPORT_W / 2,
@@ -1253,11 +1272,23 @@ function mockLiveBlurClock() {
   const queue: FrameRequestCallback[] = []
   let nextId = 0
   vi.spyOn(performance, 'now').mockImplementation(() => t)
-  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { queue.push(cb); return ++nextId })
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    queue.push(cb)
+    return ++nextId
+  })
   vi.stubGlobal('cancelAnimationFrame', vi.fn())
-  const advance = (ms: number) => { t += ms }
-  const step = () => act(() => { const q = queue.splice(0, queue.length); for (const cb of q) cb(t) })
-  const settle = () => { advance(ANIM_SETTLE_MS + 1); step() }
+  const advance = (ms: number) => {
+    t += ms
+  }
+  const step = () =>
+    act(() => {
+      const q = queue.splice(0, queue.length)
+      for (const cb of q) cb(t)
+    })
+  const settle = () => {
+    advance(ANIM_SETTLE_MS + 1)
+    step()
+  }
   return { advance, step, settle, queueLength: () => queue.length }
 }
 
@@ -1653,9 +1684,9 @@ describe('bug59: live blur tracking', () => {
     ] as const) {
       for (const idx of idxs) {
         const settledOffset = dialScrollLeft(count, idx, SCREEN_W, GEO)
-        expect([...sidebarOverlapAt(settledOffset, count, UNDERFLOW_PX)].sort((a, b) => a - b)).toEqual(
-          [...sidebarOverlap(count, idx, SCREEN_W, UNDERFLOW_PX)].sort((a, b) => a - b),
-        )
+        expect(
+          [...sidebarOverlapAt(settledOffset, count, UNDERFLOW_PX)].sort((a, b) => a - b),
+        ).toEqual([...sidebarOverlap(count, idx, SCREEN_W, UNDERFLOW_PX)].sort((a, b) => a - b))
       }
     }
   })

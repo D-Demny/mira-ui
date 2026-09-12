@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   activateHaEntity,
+  callHaService,
   entityActive,
   fetchHaEntityList,
   fetchHaEntityState,
@@ -27,6 +28,9 @@ export interface HomeEntityView {
   dimmable: boolean
   brightnessPct: number | null
   actuate: () => void
+  // ticket 9.6 W2: directional cover control (the Home dashboard's ^/v/stop
+  // buttons) — covers cannot be toggled, the direction is explicit
+  coverActuate: (action: 'open' | 'close' | 'stop') => void
 }
 
 // ------------------------------------------------------------------ selection
@@ -521,6 +525,83 @@ async function actuateEntity(entityId: string) {
   }
 }
 
+// ticket 9.6 W2: directional cover actuation (open / close / stop) — the Home
+// dashboard sends an explicit direction, covers cannot be "toggled". Fire-
+// and-forget like `actuate` on the view; the async work runs under the SAME
+// seq guard + write-revision + settle/revert discipline as actuateEntity.
+// The one behavioral difference: a cover's motion state ('opening'/'closing')
+// settles ASYNCHRONOUSLY on the HA side, so the service answer is not
+// trustworthy — like scenes, the real state is resynced from the states
+// endpoint afterwards (see actuateEntity's scene branch).
+const COVER_SERVICES: Record<'open' | 'close' | 'stop', string> = {
+  open: 'open_cover',
+  close: 'close_cover',
+  stop: 'stop_cover',
+}
+
+export function actuateCover(entityId: string, action: 'open' | 'close' | 'stop'): void {
+  void (async () => {
+    const store = stateOf(entityId)
+    if (store.actuating) return
+    const previous = store.state
+    // optimistic target — only from a SETTLED cover state; 'stop' never flips
+    let flipped: string | null = null
+    if (action === 'open') {
+      if (previous === 'opening') return // already moving the right way — no request
+      if (previous === 'open' || previous === 'closed') flipped = 'opening'
+    } else if (action === 'close') {
+      if (previous === 'closing') return // already moving the right way — no request
+      if (previous === 'open' || previous === 'closed') flipped = 'closing'
+    } else {
+      // 'stop' only makes sense while the cover is actually moving — a
+      // settled (or not-yet-known) state has nothing to stop
+      if (previous !== 'opening' && previous !== 'closing') return
+    }
+    // same bookkeeping as actuateEntity: this actuation's sequence number, the
+    // pending flag (bug57 v2), and write ownership (bug57)
+    const mySeq = nextActuationSeq(entityId)
+    pendingActuations.set(entityId, { seq: mySeq, settled: false })
+    bumpWriteRevision(entityId)
+    entityStates.set(entityId, {
+      ...store,
+      actuating: true,
+      error: null,
+      ...(flipped !== null ? { state: flipped } : {}),
+    })
+    // bug57 v3: an optimistic flip starts the transition hold (a stop has no
+    // flip — nothing to hold against)
+    if (flipped !== null) setTransitionHold(entityId, flipped)
+    emit()
+    try {
+      await callHaService('cover', COVER_SERVICES[action], { entity_id: entityId })
+      settleActuation(entityId, mySeq)
+      // motion states settle asynchronously — sync the REAL state from the
+      // states endpoint (the resync read starts AFTER the settlement, so the
+      // bug57 v1 + v2 guards let it land — same as the scene branch)
+      await refreshEntity(entityId, false)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to activate entity'
+      console.warn('useHomeEntities actuateCover error:', message)
+      // a NEWER actuation owns the state — skip this one's revert entirely
+      if (actuationSeq(entityId) !== mySeq) return
+      clearTransitionHold(entityId)
+      bumpWriteRevision(entityId)
+      if (flipped !== null && previous !== null) {
+        entityStates.set(entityId, { ...stateOf(entityId), state: previous })
+      }
+      entityStates.set(entityId, { ...stateOf(entityId), error: message })
+    } finally {
+      // only the NEWEST actuation clears its own bookkeeping
+      if (actuationSeq(entityId) === mySeq) {
+        pendingActuations.delete(entityId)
+        // deliberately NO write-revision bump here — see actuateEntity's finally
+        entityStates.set(entityId, { ...stateOf(entityId), actuating: false, loading: false })
+      }
+      emit()
+    }
+  })()
+}
+
 function startPolling() {
   if (pollTimer === null) {
     pollTimer = setInterval(() => {
@@ -689,6 +770,7 @@ export function useHomeSelectedEntities(pollActive: boolean = false): HomeEntity
       dimmable: caps.dimmable,
       brightnessPct: caps.brightnessPct,
       actuate: () => void actuateEntity(entityId),
+      coverActuate: (action: 'open' | 'close' | 'stop') => void actuateCover(entityId, action),
     }
   })
 }

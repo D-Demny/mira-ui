@@ -1,0 +1,283 @@
+// ticket 9.6 (Task B): styles for the Home dashboard grid — see
+// HomeDashboardView.tsx for the zone structure (Z1 scene row / Z2 light grid /
+// Z3 cover section). House style per ContentCarousel/SettingsList: spacing +
+// font scale from _variables.scss, margin-based flex spacing (NO flex `gap` —
+// Chromium 69 ignores it; grid containers may use raw `gap`, shipped since
+// Chrome 66, codebase precedent in App/Menu/Controls .module.scss), no
+// backdrop-filter. No scroll port here — the wrapper is a plain column and
+// MainMenuView (Task C) owns the content-area geometry.
+
+.root {
+  position: relative; // anchor for the placeholder toast (ticket 9.6 W2)
+  display: flex;
+  flex-direction: column;
+  @include flex-gap-y($s-4);
+  box-sizing: border-box;
+  padding: $s-5 $s-6;
+}
+
+// ticket 9.6 W2: placeholder-press toast — a small pill above the grid,
+// absolutely positioned so showing/hiding it never reflows the zones.
+// CR69-safe: no backdrop-filter, margin/transform-based placement only
+.toast {
+  position: absolute;
+  top: $s-1;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 80%;
+  padding: $s-1 $s-3;
+  border-radius: $r-pill;
+  background: rgba(255, 255, 255, 0.16);
+  color: $text-primary;
+  font-size: $fs-sm;
+  line-height: 1.3;
+  @include truncate(1);
+}
+
+// ------------------------------------------------------------ Z1 scene row
+.sceneRow {
+  display: flex;
+  align-items: stretch;
+  @include flex-gap-x($s-3);
+}
+
+.sceneBtn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  @include flex-gap-y($s-1);
+  padding: $s-3 $s-2;
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.07);
+  color: $text-primary;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.11);
+  }
+}
+
+.sceneLabel {
+  max-width: 100%;
+  font-size: $fs-sm;
+  font-weight: $fw-medium;
+  color: $text-primary;
+  @include truncate(1);
+}
+
+// -------------------------------------------------------------- Z2 light grid
+// raw `gap` on a GRID container is CR69-safe (Chrome 66+) and the established
+// pattern for grids in this repo — only FLEX containers use the margin mixins
+.lightGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $s-3;
+}
+
+.lightTile {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 76px;
+  padding: $s-3;
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.07);
+  color: $text-primary;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.11);
+  }
+}
+
+.tileIcon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-right: $s-3;
+  border-radius: $r-sm;
+  background: rgba(255, 255, 255, 0.08);
+  color: $text-secondary;
+}
+
+.tileBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  @include flex-gap-y($s-2);
+}
+
+.tileLabel {
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+  @include truncate(1);
+}
+
+// bar row: the track stretches, the %/An-Aus readout stacks on the right
+.tileReadout {
+  display: flex;
+  align-items: center;
+}
+
+.brightnessBar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 4px;
+  margin-right: $s-2;
+  border-radius: $r-pill;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.brightnessFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: $r-pill;
+  background: $accent;
+}
+
+// knob centered on the fill edge — width/height live in the class, only
+// `left` is driven per tile (inline style in the component)
+.knob {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: $text-primary;
+}
+
+// fixed min-width so the tracks line up across tiles even without a % readout
+.stateCol {
+  flex: 0 0 auto;
+  min-width: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.pct {
+  font-size: $fs-sm;
+  line-height: 1.2;
+  color: $text-secondary;
+}
+
+.state {
+  font-size: $fs-xs;
+  line-height: 1.2;
+  color: $text-tertiary;
+}
+
+// ----------------------------------------------------------- Z3 cover section
+.coverSection {
+  display: flex;
+  flex-direction: column;
+  @include flex-gap-y($s-3);
+  box-sizing: border-box;
+  padding: $s-4;
+  border-radius: $r-lg;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.coverHeader {
+  display: flex;
+  flex-direction: column;
+  @include flex-gap-y($s-1);
+}
+
+.coverTitle {
+  font-size: $fs-lg;
+  font-weight: $fw-bold;
+  color: $text-primary;
+  @include truncate(1);
+}
+
+.coverSubtitle {
+  font-size: $fs-sm;
+  color: $text-secondary;
+  @include truncate(1);
+}
+
+.coverColumns {
+  display: flex;
+  align-items: stretch;
+  @include flex-gap-x($s-4);
+}
+
+.coverColumn {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  @include flex-gap-y($s-2);
+  padding: $s-2;
+  border-radius: $r-md;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.coverLabel {
+  max-width: 100%;
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+  color: $text-primary;
+  @include truncate(1);
+}
+
+// the ^ / v buttons of the mockup — W2 maps these to open/close/stop calls
+.coverBtns {
+  display: flex;
+  flex-direction: column;
+  @include flex-gap-y($s-2);
+  width: 40px;
+}
+
+.coverBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border: 1px solid $divider;
+  border-radius: $r-sm;
+  background: rgba(255, 255, 255, 0.04);
+  color: $text-secondary;
+  font-size: $fs-md;
+  line-height: 1;
+  cursor: pointer;
+}
+
+// -------------------------------------------------- shared state markers
+// mock content (unmapped entity) — dimmed + dashed border per the mockup's
+// placeholder style, so the full layout is visible out-of-the-box
+.placeholder {
+  opacity: 0.55;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+}
+
+// dial focus — same outline idiom as HomeEntityPickerModal .focused /
+// SidebarNav (background tint + 2px accent outline)
+.focused {
+  background: $accent-dim;
+  outline: 2px solid $accent;
+  outline-offset: -2px;
+}
