@@ -626,16 +626,18 @@ describe('MainMenuView', () => {
     it('a card tap keeps the smooth scroll', async () => {
       const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
       render(<MainMenuView />)
-      // enter the Home content pane (action cards: a tap toggles, no navigation)
-      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
-      await waitFor(() =>
-        expect(screen.getByText('Esstisch Hängelampe')).toBeInTheDocument(),
-      )
+      // ticket 9.6 W1: the home cards are dashboard tiles without interaction
+      // wiring yet (tap → toggle lands in W2) — pin the tap-keeps-smooth
+      // contract on a real carousel category instead
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await waitFor(() => expect(screen.getByText('Road Trip')).toBeInTheDocument())
       scrollSpy.mockClear()
 
-      // tap the (non-focused) second light card
-      fireEvent.click(screen.getByText('Esstisch Hängelampe'))
-      expect(screen.getByText('Esstisch Hängelampe').closest('.card')).toHaveClass('cardFocused')
+      // tap the (non-focused) second playlist card — it opens the track
+      // sub-menu, whose first track becomes the focused card
+      fireEvent.click(screen.getByText('Workout'))
+      await screen.findByText('Track 1 of pl-2')
+      expect(screen.getByText('Track 1 of pl-2').closest('.card')).toHaveClass('cardFocused')
       expect(scrollSpy).toHaveBeenLastCalledWith({ behavior: 'smooth', inline: 'center' })
       scrollSpy.mockRestore()
     })
@@ -922,18 +924,29 @@ describe('MainMenuView', () => {
       // (which flips with the entity state), and the color extractor's img
       // cleanup resets its src — which jsdom resolves to the document url.
       // The pre-decode assertion concerns the network covers only.
-      const netSrcs = () => created.map((img) => img.src).filter((src) => src.startsWith('http://img/'))
+      const netSrcs = () =>
+        created.map((img) => img.src).filter((src) => src.startsWith('http://img/'))
 
       // wait until the dynamic card data (playlists/recent) has arrived and
       // every dynamic cover is warmed (pl-2 has no images → no entry)
       await waitFor(() => {
         expect(new Set(netSrcs())).toEqual(
-          new Set(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg', 'http://img/liked.jpg']),
+          new Set([
+            'http://img/h.jpg',
+            'http://img/r.jpg',
+            'http://img/s.jpg',
+            'http://img/liked.jpg',
+          ]),
         )
       })
 
       const srcs = netSrcs().sort()
-      expect(srcs).toEqual(['http://img/h.jpg', 'http://img/liked.jpg', 'http://img/r.jpg', 'http://img/s.jpg'])
+      expect(srcs).toEqual([
+        'http://img/h.jpg',
+        'http://img/liked.jpg',
+        'http://img/r.jpg',
+        'http://img/s.jpg',
+      ])
       // no duplicate warming: each cover URL is fetched exactly once
       expect(new Set(netSrcs()).size).toBe(netSrcs().length)
       // same fetch attributes as AlbumArt so the browser reuses one cache entry
@@ -947,9 +960,7 @@ describe('MainMenuView', () => {
   describe('bug2.6: zuletzt empty state', () => {
     it('shows a placeholder card when there is no recent history', async () => {
       server.use(
-        http.get('*/web-api/me/player/recently-played', () =>
-          HttpResponse.json({ items: [] }),
-        ),
+        http.get('*/web-api/me/player/recently-played', () => HttpResponse.json({ items: [] })),
       )
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
@@ -1079,9 +1090,7 @@ describe('MainMenuView', () => {
     it('still exits on the current track card without a play call', async () => {
       const onPlay = vi.fn()
       const onExit = vi.fn()
-      render(
-        <MainMenuView nowPlaying={longQueueNowPlaying} onPlay={onPlay} onExit={onExit} />,
-      )
+      render(<MainMenuView nowPlaying={longQueueNowPlaying} onPlay={onPlay} onExit={onExit} />)
 
       fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
       await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
@@ -1184,7 +1193,14 @@ describe('MainMenuView', () => {
       ...nowPlaying,
       context_uri: 'spotify:track:t-9',
       next_tracks: [
-        { uri: 'spotify:track:t-9', track_id: 't-9', name: '', artist: '', album: '', image_url: '' },
+        {
+          uri: 'spotify:track:t-9',
+          track_id: 't-9',
+          name: '',
+          artist: '',
+          album: '',
+          image_url: '',
+        },
         {
           uri: 'spotify:track:t-9',
           track_id: 't-9',
@@ -1285,7 +1301,14 @@ describe('MainMenuView', () => {
           nowPlaying={{
             ...queueNowPlaying,
             next_tracks: [
-              { uri: 'spotify:track:t-99', track_id: 't-99', name: '', artist: '', album: '', image_url: '' },
+              {
+                uri: 'spotify:track:t-99',
+                track_id: 't-99',
+                name: '',
+                artist: '',
+                album: '',
+                image_url: '',
+              },
               {
                 uri: 'spotify:track:t-10',
                 track_id: 't-10',
@@ -1396,19 +1419,40 @@ describe('MainMenuView', () => {
     })
   })
 
-  // ticket 9.3: the home cards render the user-selected entities (default
+  // ticket 9.3: the home category renders the user-selected entities (default
   // selection = the HOME_LIGHTS); ticket 9.5: no manage card — the picker is
-  // reached via Einstellungen → Home
+  // reached via Einstellungen → Home; ticket 9.6 W1: the dashboard grid
+  // replaces the content carousel (tiles for real entities, placeholder slots
+  // for unmapped zones, NO interaction wiring yet)
   describe('bug34: every selected entity renders as a home card', () => {
-    it('renders a card for every selected entity (default = HOME_LIGHTS), no manage card', () => {
+    it('renders a dashboard tile for every selected entity (default = HOME_LIGHTS), no manage card', () => {
       const { container } = render(<MainMenuView />)
 
       const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
-      // the default selection's 9 lights — nothing else in the home carousel
-      expect(content.querySelectorAll('.card')).toHaveLength(HOME_LIGHTS.length)
-      // the card order follows the selection (default = HOME_LIGHTS menu order)
-      const titles = Array.from(content.querySelectorAll('.card h3')).map((el) => el.textContent)
+      // the default selection's 9 lights — one real node each, and W1 renders
+      // the dashboard grid instead of the carousel (no .card elements)
+      const tiles = Array.from(content.querySelectorAll('[data-entity-id]'))
+      expect(tiles).toHaveLength(HOME_LIGHTS.length)
+      expect(content.querySelectorAll('.card')).toHaveLength(0)
+      // tile order follows the selection (default = HOME_LIGHTS menu order)
+      const titles = tiles.map((tile) => tile.querySelector('.tileLabel')?.textContent)
       expect(titles).toEqual(HOME_LIGHTS.map((light) => light.label))
+      // no scenes/covers selected → the scene row and cover section are pure
+      // W1 placeholder zones (mock content, marked data-dashboard-placeholder)
+      expect(content.querySelectorAll('.sceneBtn[data-dashboard-placeholder="true"]')).toHaveLength(
+        3,
+      )
+      for (const label of ['Normales Licht', 'Cosy time', 'Betti Zeit']) {
+        expect(screen.getByText(label)).toBeInTheDocument()
+      }
+      expect(content.querySelector('.coverSection')).toHaveAttribute(
+        'data-dashboard-placeholder',
+        'true',
+      )
+      expect(screen.getByText('Wohnzimmer und Esszimmer')).toBeInTheDocument()
+      expect(screen.getByText('Rollo Steuerung EG')).toBeInTheDocument()
+      // ticket 9.5: no manage card — the picker is reached via Einstellungen → Home
+      expect(screen.queryByText('Entitäten wählen')).not.toBeInTheDocument()
     })
 
     it('does not render the removed manage card ("Entitäten wählen")', () => {
@@ -1438,23 +1482,21 @@ describe('MainMenuView', () => {
 
       await screen.findByText('Treppenspot Treppe')
       await waitFor(() => {
-        const card = screen.getByText('Treppenspot Treppe').closest('.card')
-        expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+        const tile = screen.getByText('Treppenspot Treppe').closest('[data-entity-id]')
+        expect(tile?.querySelector('.state')?.textContent).toBe('An')
       })
       // the neighboring lights keep their own (off) state
-      const middle = screen.getByText('Treppenspot Mitte').closest('.card')
-      expect(middle?.querySelector('.subtitle')?.textContent).toBe('Aus')
+      const middle = screen.getByText('Treppenspot Mitte').closest('[data-entity-id]')
+      expect(middle?.querySelector('.state')?.textContent).toBe('Aus')
     })
 
-    it('tapping a light card sends a toggle request for that exact entity', async () => {
+    it('tapping a light tile sends the toggle request and flips the readout', async () => {
       const toggled: string[] = []
       server.use(
         http.post('*/ha-api/services/light/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           toggled.push(body.entity_id ?? '')
-          return HttpResponse.json([
-            { entity_id: body.entity_id, state: 'on', attributes: {} },
-          ])
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
         }),
       )
       render(<MainMenuView />)
@@ -1464,21 +1506,24 @@ describe('MainMenuView', () => {
 
       fireEvent.click(screen.getByText('Esstisch Hängelampe'))
 
-      await waitFor(() => expect(toggled).toEqual(['light.esstisch_hangelampe_3er']))
-      // the card reflects the toggle result
-      const card = screen.getByText('Esstisch Hängelampe').closest('.card')
-      expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+      // ticket 9.6 W2: tap → view.actuate() — the toggle request goes out and
+      // the readout flips (optimistically, then confirmed by the answer)
+      await waitFor(() => {
+        expect(toggled).toEqual(['light.esstisch_hangelampe_3er'])
+      })
+      const tile = screen.getByText('Esstisch Hängelampe').closest('[data-entity-id]')
+      await waitFor(() => {
+        expect(tile?.querySelector('.state')?.textContent).toBe('An')
+      })
     })
 
-    it('the primary light card keeps its behavior: tap toggles the primary entity, stays in Home', async () => {
+    it('tapping a light tile toggles it and stays in Home', async () => {
       const toggled: string[] = []
       server.use(
         http.post('*/ha-api/services/light/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           toggled.push(body.entity_id ?? '')
-          return HttpResponse.json([
-            { entity_id: body.entity_id, state: 'on', attributes: {} },
-          ])
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
         }),
       )
       render(<MainMenuView />)
@@ -1488,11 +1533,15 @@ describe('MainMenuView', () => {
 
       fireEvent.click(screen.getByText('3er Stehlampe Gold'))
 
-      await waitFor(() => expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer']))
+      await waitFor(() => {
+        expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer'])
+      })
       // no view transition — the home category stays active
       expect(screen.getByRole('button', { name: 'Home' })).toHaveAttribute('aria-current', 'true')
-      const card = screen.getByText('3er Stehlampe Gold').closest('.card')
-      expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+      const tile = screen.getByText('3er Stehlampe Gold').closest('[data-entity-id]')
+      await waitFor(() => {
+        expect(tile?.querySelector('.state')?.textContent).toBe('An')
+      })
     })
 
     // ticket 9.5: the picker opener moved from the home carousel to the
@@ -1519,7 +1568,7 @@ describe('MainMenuView', () => {
       expect(onOpenEntityPicker).toHaveBeenCalledTimes(1)
     })
 
-    it('tapping a switch card sends a switch/toggle request for that entity', async () => {
+    it('a selected switch renders no tile and sends no toggle request', async () => {
       const switched: string[] = []
       localStorage.setItem(
         SELECTION_LS_KEY,
@@ -1539,21 +1588,18 @@ describe('MainMenuView', () => {
           return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
         }),
       )
-      render(<MainMenuView />)
-      const title = await screen.findByText('Wasserpumpe')
+      const { container } = render(<MainMenuView />)
+      // the dashboard renders only scene/light/cover entities — the switch is
+      // dropped from the grid entirely, so there is no node to tap at all
       await waitFor(() => {
-        expect(title.closest('.card')?.querySelector('.subtitle')?.textContent).toBe('Aus')
+        expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(HOME_LIGHTS.length)
       })
-
-      fireEvent.click(title)
-
-      await waitFor(() => expect(switched).toEqual(['switch.wasserpumpe']))
-      // the card reflects the toggle result
-      const card = screen.getByText('Wasserpumpe').closest('.card')
-      expect(card?.querySelector('.subtitle')?.textContent).toBe('An')
+      expect(screen.queryByText('Wasserpumpe')).not.toBeInTheDocument()
+      // nothing in the grid can reach the switch endpoint
+      expect(switched).toEqual([])
     })
 
-    it('tapping a scene card sends a scene/turn_on request for that entity', async () => {
+    it('tapping a real scene button sends the scene/turn_on request', async () => {
       const scenes: string[] = []
       localStorage.setItem(
         SELECTION_LS_KEY,
@@ -1575,28 +1621,126 @@ describe('MainMenuView', () => {
       )
       render(<MainMenuView />)
       const title = await screen.findByText('Abendstimmung')
-      await waitFor(() => {
-        expect(title.closest('.card')?.querySelector('.subtitle')?.textContent).toBe('Szene')
-      })
+      // the selected scene takes a real (non-placeholder) slot in the scene row
+      const btn = title.closest('[data-entity-id]')
+      expect(btn).not.toBeNull()
+      expect(btn).not.toHaveAttribute('data-dashboard-placeholder')
 
       fireEvent.click(title)
 
-      await waitFor(() => expect(scenes).toEqual(['scene.abendstimmung']))
-      // scenes are stateless — the card keeps its fixed 'Szene' subtitle
-      const card = screen.getByText('Abendstimmung').closest('.card')
-      expect(card?.querySelector('.subtitle')?.textContent).toBe('Szene')
+      // ticket 9.6 W2: tap → view.actuate() — the scene activates via
+      // scene/turn_on (same path as the carousel card action)
+      await waitFor(() => {
+        expect(scenes).toEqual(['scene.abendstimmung'])
+      })
     })
 
-    // ticket 9.5: the empty selection keeps only the inert placeholder — the
-    // manage card is gone, the hint points to Einstellungen → Home
-    it('an empty selection shows the inert placeholder pointing to the settings', () => {
+    it('tapping a cover ^ / v button sends open_cover / close_cover', async () => {
+      const opened: string[] = []
+      const closed: string[] = []
+      localStorage.setItem(
+        SELECTION_LS_KEY,
+        JSON.stringify([...HOME_LIGHTS.map((light) => light.entityId), 'cover.wohnzimmer_rollo']),
+      )
+      server.use(
+        http.get('*/ha-api/states/cover.wohnzimmer_rollo', () =>
+          HttpResponse.json({
+            entity_id: 'cover.wohnzimmer_rollo',
+            state: 'closed',
+            attributes: {},
+          }),
+        ),
+        http.post('*/ha-api/services/cover/open_cover', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          opened.push(body.entity_id ?? '')
+          return HttpResponse.json([
+            { entity_id: body.entity_id, state: 'opening', attributes: {} },
+          ])
+        }),
+        http.post('*/ha-api/services/cover/close_cover', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          closed.push(body.entity_id ?? '')
+          return HttpResponse.json([
+            { entity_id: body.entity_id, state: 'closing', attributes: {} },
+          ])
+        }),
+      )
+      render(<MainMenuView />)
+      // the selected cover takes a real (non-placeholder) column
+      const coverLabel = await screen.findByText('Wohnzimmer Rollo')
+      const up = coverLabel.closest('[data-entity-id]')?.querySelector('[data-cover-action="up"]')
+      expect(up).not.toBeNull()
+
+      fireEvent.click(up as Element)
+      await waitFor(() => {
+        expect(opened).toEqual(['cover.wohnzimmer_rollo'])
+      })
+
+      const down = screen
+        .getByText('Wohnzimmer Rollo')
+        .closest('[data-entity-id]')
+        ?.querySelector('[data-cover-action="down"]')
+      fireEvent.click(down as Element)
+      await waitFor(() => {
+        expect(closed).toEqual(['cover.wohnzimmer_rollo'])
+      })
+    })
+
+    it('pressing a placeholder node shows the toast and sends nothing', async () => {
+      const toggled: string[] = []
+      const turnedOn: string[] = []
+      server.use(
+        http.post('*/ha-api/services/light/toggle', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          toggled.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
+        }),
+        http.post('*/ha-api/services/scene/turn_on', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          turnedOn.push(body.entity_id ?? '')
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'none', attributes: {} }])
+        }),
+      )
+      // empty selection → every node on the dashboard is a placeholder (scene
+      // slots, all 4 light tiles incl. 'Esstisch', and both cover columns), so
+      // each press below must toast and never leave a request behind
       localStorage.setItem(SELECTION_LS_KEY, '[]')
       const { container } = render(<MainMenuView />)
 
-      expect(screen.getByText('Keine Entitäten gewählt')).toBeInTheDocument()
-      expect(screen.getByText('In den Einstellungen wählen')).toBeInTheDocument()
+      fireEvent.click(screen.getByText('Normales Licht')) // scene placeholder
+      await screen.findByRole('status')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '„Normales Licht" ist noch nicht zugewiesen',
+      )
+      expect(toggled).toEqual([])
+      expect(turnedOn).toEqual([])
+
+      fireEvent.click(screen.getByText('Esstisch')) // light placeholder
+      expect(screen.getByRole('status')).toHaveTextContent('„Esstisch" ist noch nicht zugewiesen')
+
+      // the cover section is fully a placeholder (no cover selected): pressing
+      // the first column's up button toasts for that column's label
+      const up = container.querySelector('[data-cover-action="up"]') as Element
+      fireEvent.click(up)
+      expect(screen.getByRole('status')).toHaveTextContent('„Wohnzimmer" ist noch nicht zugewiesen')
+
+      // still no request of any kind left the component
+      expect(toggled).toEqual([])
+      expect(turnedOn).toEqual([])
+    })
+
+    // ticket 9.6 W1: the empty selection keeps only the inert all-placeholder
+    // dashboard — the old carousel hint card is gone with the carousel
+    it('an empty selection renders the all-placeholder dashboard', () => {
+      localStorage.setItem(SELECTION_LS_KEY, '[]')
+      const { container } = render(<MainMenuView />)
+
       const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
-      expect(content.querySelectorAll('.card')).toHaveLength(1)
+      // no real entity nodes — 3 scene slots + 4 light tiles + the cover
+      // section + 2 cover columns = 10 placeholder-marked nodes, zero .card
+      expect(content.querySelectorAll('[data-entity-id]')).toHaveLength(0)
+      expect(content.querySelectorAll('[data-dashboard-placeholder="true"]')).toHaveLength(10)
+      expect(content.querySelectorAll('.card')).toHaveLength(0)
     })
   })
 
@@ -2182,9 +2326,7 @@ describe('MainMenuView', () => {
     it('Devices and Bluetooth Pairing open their panels', async () => {
       const onOpenDevices = vi.fn()
       const onOpenBluetooth = vi.fn()
-      render(
-        <MainMenuView onOpenDevices={onOpenDevices} onOpenBluetooth={onOpenBluetooth} />,
-      )
+      render(<MainMenuView onOpenDevices={onOpenDevices} onOpenBluetooth={onOpenBluetooth} />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       await screen.findByText('Settings')
 
@@ -2260,7 +2402,12 @@ describe('MainMenuView', () => {
 
       server.use(
         http.get('*/api/v1/capabilities', () =>
-          HttpResponse.json({ tier: 'compute', disk_cache: true, remote_colors: true, remote_blur: true }),
+          HttpResponse.json({
+            tier: 'compute',
+            disk_cache: true,
+            remote_colors: true,
+            remote_blur: true,
+          }),
         ),
       )
       await act(async () => {
@@ -2413,13 +2560,13 @@ describe('MainMenuView', () => {
       wheel(-10) // value stays clamped, the focus moves on to the appended
       // 'Menü-Hintergrund' row (bug54: the row is APPENDED — index 5, the
       // old end-of-list was Brightness)
-      expect(
-        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
-      ).toContain('rowFocused')
+      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
       wheel(-10) // at the new end of the list: the focus clamps on the row
-      expect(
-        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
-      ).toContain('rowFocused')
+      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
     })
 
     it('the wheel never changes the level while auto is on (row navigation stays)', async () => {
@@ -2441,9 +2588,9 @@ describe('MainMenuView', () => {
       wheel(-10) // to the appended 'Menü-Hintergrund' row (bug54)
       wheel(-10) // at the end of the list: the focus stays on the row
       expect(getSettings().brightness).toBe(5)
-      expect(
-        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
-      ).toContain('rowFocused')
+      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
     })
 
     it('the slider drag stays locked while auto is on and adjusts the level when auto is off', async () => {
@@ -2619,6 +2766,10 @@ describe('MainMenuView', () => {
       // like solid mode
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
+      // ticket 9.6: home renders the dashboard grid (no content carousel) —
+      // pin the geometry contract on a real ContentCarousel category
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
       const view = container.firstElementChild as HTMLElement
       const carousel = container.querySelector('.carousel') as HTMLElement
       expect(carousel).not.toBeNull()
@@ -2641,6 +2792,10 @@ describe('MainMenuView', () => {
       // (.clear instead of .glass on the nav)
       updateSettings({ sidebarBackground: 'clear' })
       const { container } = render(<MainMenuView />)
+      // ticket 9.6: home renders the dashboard grid (no content carousel) —
+      // pin the geometry contract on a real ContentCarousel category
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
       const view = container.firstElementChild as HTMLElement
       const nav = container.querySelector('nav') as HTMLElement
       const carousel = container.querySelector('.carousel') as HTMLElement
@@ -2679,6 +2834,10 @@ describe('MainMenuView', () => {
       // cards pass under the sidebar), pinned in the dedicated test below.
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
+      // ticket 9.6: home renders the dashboard grid (no content carousel) —
+      // pin the geometry contract on a real ContentCarousel category
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
       const layout = () =>
         [
           (container.firstElementChild as HTMLElement).className,
@@ -2713,6 +2872,10 @@ describe('MainMenuView', () => {
       // T3.
       updateSettings({ sidebarBackground: 'blur' })
       const { container } = render(<MainMenuView />)
+      // ticket 9.6: home renders the dashboard grid (no content carousel) —
+      // pin the geometry contract on a real ContentCarousel category
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
       const view = container.firstElementChild as HTMLElement
       const carousel = container.querySelector('.carousel') as HTMLElement
       expect(carousel).not.toBeNull()
@@ -2859,9 +3022,7 @@ describe('MainMenuView', () => {
     })
 
     it('an observer re-projection without a track change does NOT reset the scroll', async () => {
-      const { container, rerender } = render(
-        <MainMenuView nowPlaying={hundredQueueNowPlaying} />,
-      )
+      const { container, rerender } = render(<MainMenuView nowPlaying={hundredQueueNowPlaying} />)
 
       enterNowPlaying()
       for (let i = 0; i < 20; i++) wheel(-10)
@@ -2887,14 +3048,18 @@ describe('MainMenuView', () => {
     })
   })
 
-  describe('bug53: light-card press/hold (press = toggle, hold = dim view)', () => {
-    // the live HA facts: the first light (card 0 of the Home carousel)
-    // reports dimmable color modes; the toggle POSTs are counted. The toggle
-    // response must ECHO the color-mode attributes — the view trusts the
-    // service answer over the store (useHomeEntities.actuate) and an
-    // empty-attributes answer would wipe the dimmable capability right after
-    // the first actuation (a subsequent hold would then actuate instead of
-    // opening the dim view)
+  // ticket 9.6 W1/W2: the Home category renders the dashboard grid
+  // (HomeDashboardView) instead of the content carousel — dial confirm/hold on
+  // the grid slots and pointer/touch gestures on the tiles route through
+  // MainMenuView's shared home handlers (onConfirmContent / onHoldContent
+  // plus the tap/hold callbacks passed to the dashboard): scenes and lights
+  // actuate, covers use explicit up/down + stop, placeholder nodes toast and
+  // hold a 'placeholder:<label>' control view
+  describe('bug53: light-card press/hold on the home dashboard', () => {
+    // the live HA facts: the first light (grid slot 0 of the Home dashboard)
+    // reports dimmable color modes. The toggle POSTs are spied on — W1 must
+    // leave the endpoint untouched, so the seed doubles as the "nothing was
+    // sent" witness (and the state GET keeps the readout stable at 'Aus')
     function seedDimmableFirstLight() {
       const toggled: string[] = []
       const attributes = {
@@ -2919,7 +3084,7 @@ describe('MainMenuView', () => {
       return toggled
     }
 
-    it('a dial press on a dimmable light card actuates (toggle POST), the dim view does NOT open', async () => {
+    it('a dial press on a light slot acts like a tap — toggle request, no dim view', async () => {
       const onOpenLightControl = vi.fn()
       const toggled = seedDimmableFirstLight()
       render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
@@ -2928,16 +3093,29 @@ describe('MainMenuView', () => {
       })
 
       // Home is the focused sidebar item — confirm enters the content pane
-      // with card 0 (the dimmable light) focused
+      // with grid slot 0 (the first SCENE placeholder) focused; three ticks
+      // walk the scene slots and land on the first light
       confirmDial()
-      // single press (dial) → actuate for ALL domains, dimmable lights included
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      // single press (dial) on a grid slot
       confirmDial()
 
-      await waitFor(() => expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer']))
+      // ticket 9.6 W2: dial confirm on a light slot = same actuation as a tap
+      // (toggle request out, optimistic/readout flip); the dim view opens on
+      // HOLD only (W2-3)
+      await waitFor(() => {
+        expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer'])
+      })
       expect(onOpenLightControl).not.toHaveBeenCalled()
+      const tile = screen.getByText('3er Stehlampe Gold').closest('[data-entity-id]')
+      await waitFor(() => {
+        expect(tile?.querySelector('.state')?.textContent).toBe('An')
+      })
     })
 
-    it('a dial hold on a dimmable light card opens the dim view without toggling', async () => {
+    it('a dial hold on a dimmable light slot opens the control view with entityId + label', async () => {
       const onOpenLightControl = vi.fn()
       const toggled = seedDimmableFirstLight()
       render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
@@ -2945,51 +3123,83 @@ describe('MainMenuView', () => {
         expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
       })
 
-      confirmDial() // enter the Home content pane, card 0 focused
+      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
+      wheel(-10) // walk the three scene slots onto the first (dimmable) light
+      wheel(-10)
+      wheel(-10)
 
       // the hardware layer fires entry.onHold for a press held ≥ CARD_HOLD_MS
       act(() => {
         ListFocusContext.entry.onHold?.()
       })
 
+      // ticket 9.6 W2-3: dial hold on a REAL dimmable light → HALightControlModal
+      // (entityId + label) — and the hold is NOT a toggle, so nothing was actuated
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
       expect(onOpenLightControl).toHaveBeenCalledWith(
         'light.3er_stehlampe_gold_esszimmer',
         '3er Stehlampe Gold',
       )
-      // a hold must NOT actuate
       expect(toggled).toEqual([])
     })
 
-    it('a press AND a hold on a non-dimmable switch card actuate (like a press)', async () => {
-      // the default selection is the 9 lights — make the switch the ONLY card
+    it('press on an all-placeholder dashboard toasts; a light placeholder hold opens the control view', async () => {
+      // the dashboard renders only scene/light/cover entities — a switch-only
+      // selection leaves an all-placeholder grid, so there is no card to
+      // actuate at all: presses fire the component-local toast, holds route
+      // 'placeholder:<label>' ids to the control view
       window.localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(['switch.wasserpumpe']))
-      const toggled: string[] = []
+      const switched: string[] = []
       server.use(
         http.get('*/ha-api/states/switch.wasserpumpe', () =>
           HttpResponse.json({ entity_id: 'switch.wasserpumpe', state: 'off' }),
         ),
         http.post('*/ha-api/services/switch/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
-          toggled.push(body.entity_id ?? '')
+          switched.push(body.entity_id ?? '')
           return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
         }),
       )
-      render(<MainMenuView />)
-      await screen.findByText('Wasserpumpe') // the switch card (card 0)
+      const onOpenLightControl = vi.fn()
+      const { container } = render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
+      await screen.findByText('Normales Licht') // scene placeholder — grid rendered
 
-      confirmDial() // enter the Home content pane
-      confirmDial() // press → actuate
-      await waitFor(() => expect(toggled).toEqual(['switch.wasserpumpe']))
+      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
+      // a genuine pointer TAP on the placeholder node fires the component-local
+      // toast (the dial-confirm path routes through onConfirmContent, which
+      // bypasses the DOM and therefore can't trigger the tile's onClick)
+      fireEvent.click(screen.getByText('Normales Licht'))
+      await screen.findByRole('status')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '„Normales Licht" ist noch nicht zugewiesen',
+      )
 
-      // holding a non-dimmable entity behaves like a press (no dead gesture,
-      // no dim view exists for it)
+      // ticket 9.6 W2-3: a hold on a SCENE slot does nothing — no modal,
+      // no endpoint
       act(() => {
         ListFocusContext.entry.onHold?.()
       })
-      await waitFor(() => expect(toggled).toEqual(['switch.wasserpumpe', 'switch.wasserpumpe']))
+      expect(onOpenLightControl).not.toHaveBeenCalled()
+
+      // walk the scene slots onto a placeholder LIGHT tile and hold it there —
+      // the control view opens with a 'placeholder:<label>' id (the modal then
+      // shows its empty demo state for unknown ids, intended per ticket)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
+      expect(onOpenLightControl).toHaveBeenCalledWith('placeholder:Esstisch', 'Esstisch')
+
+      expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(0)
+      expect(screen.queryByText('Wasserpumpe')).not.toBeInTheDocument()
+      // the placeholder presses reached no endpoint of any kind
+      expect(switched).toEqual([])
     })
 
-    it('a light without brightness/color_temp support keeps the direct toggle on press', async () => {
+    it('tapping a non-dimmable light tile toggles it; a dial hold on it does NOT open the control view', async () => {
       const onOpenLightControl = vi.fn()
       const toggled: string[] = []
       server.use(
@@ -3013,11 +3223,34 @@ describe('MainMenuView', () => {
 
       fireEvent.click(screen.getByText('Esstisch Hängelampe'))
 
-      await waitFor(() => expect(toggled).toEqual(['light.esstisch_hangelampe_3er']))
+      // ticket 9.6 W2: a tap toggles dimmable and non-dimmable lights alike
+      // (view.actuate()); the control view is a hold-only path (W2-3)
+      await waitFor(() => {
+        expect(toggled).toEqual(['light.esstisch_hangelampe_3er'])
+      })
       expect(onOpenLightControl).not.toHaveBeenCalled()
+      const tile = screen.getByText('Esstisch Hängelampe').closest('[data-entity-id]')
+      await waitFor(() => {
+        expect(tile?.querySelector('.state')?.textContent).toBe('An')
+      })
+
+      // ticket 9.6 W2-3: a non-dimmable REAL light never opens the control view
+      // (the touch path doesn't even arm a hold on it, and the dial hold runs
+      // the same dimmability check) — slot 4 is this tile
+      confirmDial()
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      expect(onOpenLightControl).not.toHaveBeenCalled()
+      // and the hold added no toggle on top of the one from the tap
+      expect(toggled).toEqual(['light.esstisch_hangelampe_3er'])
     })
 
-    it('a light advertising only the legacy SUPPORT_BRIGHTNESS bit: press toggles, hold opens the dim view', async () => {
+    it('legacy SUPPORT_BRIGHTNESS light counts as dimmable — press toggles, dial hold opens the control view', async () => {
       const onOpenLightControl = vi.fn()
       const toggled: string[] = []
       server.use(
@@ -3033,8 +3266,6 @@ describe('MainMenuView', () => {
         http.post('*/ha-api/services/light/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           toggled.push(body.entity_id ?? '')
-          // echo the legacy capability bit — the view trusts the service
-          // answer over the store (empty attributes would wipe dimmable)
           return HttpResponse.json([
             { entity_id: body.entity_id, state: 'on', attributes: { supported_features: 1 } },
           ])
@@ -3045,27 +3276,34 @@ describe('MainMenuView', () => {
         expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
       })
 
-      // press (tap) → toggle, no dim view
+      // press (tap) → toggle (ticket 9.6 W2: tap → view.actuate())
       fireEvent.click(screen.getByText('3er Deko'))
-      await waitFor(() => expect(toggled).toEqual(['light.3er_deko_esszimmer']))
+      await waitFor(() => {
+        expect(toggled).toEqual(['light.3er_deko_esszimmer'])
+      })
       expect(onOpenLightControl).not.toHaveBeenCalled()
 
-      // hold (dial) on the same card (HOME_LIGHTS[2] → card index 2) → dim
-      // view. The tap did not change the active pane (selectContent only
-      // moves the content index), so confirm enters the content pane first
-      // and the two wheel ticks land the focus back on card 2
+      // ticket 9.6 W2-3: the legacy SUPPORT_BRIGHTNESS bit (bit 0) counts as
+      // dimmable — the press did not change the dial focus, so confirm enters
+      // the content pane first and the wheel ticks then walk scenes + the two
+      // other lights onto the '3er Deko' tile; holding it opens the control
+      // view with entityId + label (no further toggle on top of the tap)
       confirmDial()
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
       wheel(-10)
       wheel(-10)
       act(() => {
         ListFocusContext.entry.onHold?.()
       })
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
       expect(onOpenLightControl).toHaveBeenCalledWith('light.3er_deko_esszimmer', '3er Deko')
-      // the hold must not actuate a second time
+      // the hold added no further toggle on top of the one from the tap
       expect(toggled).toEqual(['light.3er_deko_esszimmer'])
     })
 
-    it('touch: a tap toggles, a held pointer opens the dim view, a drag (slop) does neither', async () => {
+    it('touch tap on a light tile toggles it; a held pointer opens the control view and suppresses the click', async () => {
       const onOpenLightControl = vi.fn()
       const toggled = seedDimmableFirstLight()
       render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
@@ -3073,43 +3311,103 @@ describe('MainMenuView', () => {
         expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
       })
 
-      const card = screen.getByText('3er Stehlampe Gold').closest('.card') as HTMLElement
+      const tile = screen.getByText('3er Stehlampe Gold').closest('[data-entity-id]') as HTMLElement
 
       // (a) short press: pointerdown → pointerup inside the threshold → the
-      // browser click that follows is a plain TAP (actuate)
+      // browser click that follows is a plain TAP → toggle request + flip
       vi.useFakeTimers()
-      fireEvent.pointerDown(card, { clientX: 10, clientY: 10, pointerId: 1 })
+      fireEvent.pointerDown(tile, { clientX: 10, clientY: 10, pointerId: 1 })
       vi.advanceTimersByTime(200) // < CARD_HOLD_MS
-      fireEvent.pointerUp(card, { pointerId: 1 })
+      fireEvent.pointerUp(tile, { pointerId: 1 })
       vi.useRealTimers()
-      fireEvent.click(card)
-      await waitFor(() => expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer']))
+      fireEvent.click(tile)
+      await waitFor(() => {
+        expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer'])
+      })
+      await waitFor(() => {
+        expect(tile.querySelector('.state')?.textContent).toBe('An')
+      })
       expect(onOpenLightControl).not.toHaveBeenCalled()
 
-      // (b) held pointer: pointerdown → ≥ CARD_HOLD_MS → onCardHold (dim
-      // view); the browser click that follows the long press is suppressed
+      // (b) held pointer: pointerdown → ≥ CARD_HOLD_MS — the hold routing
+      // (ticket 9.6 W2-3: dimmable light → HALightControlModal) fires, and
+      // the follow-up click is SUPPRESSED by the fired hold, so no second
+      // toggle goes out
       vi.useFakeTimers()
-      fireEvent.pointerDown(card, { clientX: 20, clientY: 20, pointerId: 1 })
+      fireEvent.pointerDown(tile, { clientX: 20, clientY: 20, pointerId: 1 })
       vi.advanceTimersByTime(CARD_HOLD_MS + 50)
-      fireEvent.pointerUp(card, { pointerId: 1 })
-      vi.useRealTimers()
-      fireEvent.click(card) // must be suppressed by the held flag
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
       expect(onOpenLightControl).toHaveBeenCalledWith(
         'light.3er_stehlampe_gold_esszimmer',
         '3er Stehlampe Gold',
       )
-      expect(toggled).toEqual(['light.3er_stehlampe_gold_esszimmer'])
+      fireEvent.pointerUp(tile, { pointerId: 1 })
+      vi.useRealTimers()
+      fireEvent.click(tile) // the fired hold suppresses this follow-up click
+      expect(toggled).toHaveLength(1) // still only the short-press toggle
 
       // (c) drag: movement beyond the slop before release cancels the hold —
-      // a swipe is never a hold (useSwipeGestures territory)
+      // a swipe is never a press, so no modal and no further toggle go out
       vi.useFakeTimers()
-      fireEvent.pointerDown(card, { clientX: 30, clientY: 30, pointerId: 1 })
-      fireEvent.pointerMove(card, { clientX: 80, clientY: 30, pointerId: 1 })
+      fireEvent.pointerDown(tile, { clientX: 30, clientY: 30, pointerId: 1 })
+      fireEvent.pointerMove(tile, { clientX: 80, clientY: 30, pointerId: 1 })
       vi.advanceTimersByTime(CARD_HOLD_MS + 50)
-      fireEvent.pointerUp(card, { pointerId: 1 })
+      fireEvent.pointerUp(tile, { pointerId: 1 })
       vi.useRealTimers()
-      expect(onOpenLightControl).toHaveBeenCalledTimes(1) // no second dim view
-      expect(toggled).toHaveLength(1) // and no second toggle
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1) // still only the hold from (b)
+      expect(toggled).toHaveLength(1) // and no toggle request from the drag at all
+    })
+
+    it('a dial hold on a moving cover column sends cover/stop_cover; a placeholder column hold toasts', async () => {
+      // W2-1: 'stop' is only issued while the cover is actually moving, so
+      // the fixture starts in 'opening'; the stop POST is spied (the resync
+      // GET keeps the state stable)
+      window.localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(['cover.rolladen_wohnzimmer']))
+      const stopped: string[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.rolladen_wohnzimmer', () =>
+          HttpResponse.json({
+            entity_id: 'cover.rolladen_wohnzimmer',
+            state: 'opening',
+            attributes: {},
+          }),
+        ),
+        http.post('*/ha-api/services/cover/stop_cover', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          stopped.push(body.entity_id ?? '')
+          return HttpResponse.json([
+            { entity_id: 'cover.rolladen_wohnzimmer', state: 'opening', attributes: {} },
+          ])
+        }),
+      )
+      const { container } = render(<MainMenuView />)
+      await screen.findByText('Wohnzimmer und Esszimmer') // cover section header rendered
+
+      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
+      // walk scenes (3 slots) + placeholder lights (4 slots) onto the real
+      // cover column — slot 7
+      for (let i = 0; i < 7; i++) wheel(-10)
+
+      // ticket 9.6 W2-3: a dial hold on a REAL moving cover column stops it
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      await waitFor(() => {
+        expect(stopped).toEqual(['cover.rolladen_wohnzimmer'])
+      })
+
+      // the second column is a placeholder — a touch hold on its button fires
+      // the component toast (reused from W2-2) and no further stop request
+      const upBtns = container.querySelectorAll('[data-cover-action="up"]')
+      vi.useFakeTimers()
+      fireEvent.pointerDown(upBtns[1], { clientX: 5, clientY: 5, pointerId: 1 })
+      act(() => {
+        vi.advanceTimersByTime(CARD_HOLD_MS) // the deadline fires the column hold
+      })
+      const toast = container.querySelector('[role="status"]')
+      expect(toast?.textContent).toContain('„Esszimmer" ist noch nicht zugewiesen')
+      expect(stopped).toEqual(['cover.rolladen_wohnzimmer'])
+      vi.useRealTimers()
     })
   })
 })

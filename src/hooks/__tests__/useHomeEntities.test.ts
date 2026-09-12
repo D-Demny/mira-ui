@@ -16,6 +16,7 @@ const FIRST_LIGHT = HOME_LIGHTS[0].entityId
 const SWITCH = 'switch.wasserpumpe'
 const SCENE = 'scene.abendstimmung'
 const MEDIA = 'media_player.wohnzimmer'
+const COVER = 'cover.garage'
 
 function seedSelection(ids: string[]) {
   localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(ids))
@@ -305,10 +306,12 @@ describe('useHomeEntities', () => {
       const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow)
       let fail = false
       server.use(
-        http.get('*/ha-api/states', () =>
-          fail
-            ? HttpResponse.json({ message: 'boom' }, { status: 500 })
-            : HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]) // bug55: HA array contract,
+        http.get(
+          '*/ha-api/states',
+          () =>
+            fail
+              ? HttpResponse.json({ message: 'boom' }, { status: 500 })
+              : HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]), // bug55: HA array contract,
         ),
       )
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -370,9 +373,7 @@ describe('useHomeEntities', () => {
       seedSelection([FIRST_LIGHT, SWITCH])
       server.use(
         http.get('*/ha-api/states/light.*', ({ request }) => {
-          const id = decodeURIComponent(
-            new URL(request.url).pathname.split('/').pop() ?? '',
-          )
+          const id = decodeURIComponent(new URL(request.url).pathname.split('/').pop() ?? '')
           return HttpResponse.json({
             entity_id: id,
             state: 'off',
@@ -418,9 +419,8 @@ describe('useHomeEntities', () => {
         http.get('*/ha-api/states/switch.wasserpumpe', () =>
           HttpResponse.json({ entity_id: SWITCH, state: 'off' }),
         ),
-        http.post(
-          '*/ha-api/services/switch/toggle',
-          () => HttpResponse.json({ message: 'boom' }, { status: 500 }),
+        http.post('*/ha-api/services/switch/toggle', () =>
+          HttpResponse.json({ message: 'boom' }, { status: 500 }),
         ),
       )
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -1140,6 +1140,214 @@ describe('useHomeEntities', () => {
       expect(stats.selected).toBe(HOME_LIGHTS.length)
       expect(stats.catalogEntries).toBe(0)
       expect(stats.stateStores).toBe(HOME_LIGHTS.length)
+    })
+  })
+
+  // ticket 9.6 W2: directional cover actuation (open / close / stop) — the
+  // Home dashboard sends an explicit direction instead of a toggle
+  describe('cover actuation', () => {
+    it('open issues cover/open_cover with the entity id, flips to "opening", resyncs the real state', async () => {
+      seedSelection([COVER])
+      let served = 'closed'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/open_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'opening' // HA starts the motion — the resync read sees it
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('closed'))
+      act(() => {
+        result.current[0].coverActuate('open')
+      })
+      // optimistic motion state lands before the request resolves
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('opening')
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('opening') // resynced from the states endpoint
+      expect(result.current[0].error).toBeNull()
+    })
+
+    it('close issues cover/close_cover and flips to "closing"', async () => {
+      seedSelection([COVER])
+      let served = 'open'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/close_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'closing'
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('open'))
+      act(() => {
+        result.current[0].coverActuate('close')
+      })
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('closing')
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('closing') // resynced
+      expect(result.current[0].error).toBeNull()
+    })
+
+    it('open while already "opening" is a no-op (no request, no state change)', async () => {
+      seedSelection([COVER])
+      let openCalls = 0
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: 'opening' }),
+        ),
+        // explicit counter — the default services/* catch-all would swallow an accidental request
+        http.post('*/ha-api/services/cover/open_cover', () => {
+          openCalls += 1
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('opening'))
+      act(() => {
+        result.current[0].coverActuate('open')
+      })
+      expect(openCalls).toBe(0)
+      await waitFor(() => expect(result.current[0].loading).toBe(false))
+      expect(result.current[0].actuating).toBe(false)
+      expect(result.current[0].state).toBe('opening')
+    })
+
+    it('close while already "closing" is a no-op (no request, no state change)', async () => {
+      seedSelection([COVER])
+      let closeCalls = 0
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: 'closing' }),
+        ),
+        http.post('*/ha-api/services/cover/close_cover', () => {
+          closeCalls += 1
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('closing'))
+      act(() => {
+        result.current[0].coverActuate('close')
+      })
+      expect(closeCalls).toBe(0)
+      await waitFor(() => expect(result.current[0].loading).toBe(false))
+      expect(result.current[0].actuating).toBe(false)
+      expect(result.current[0].state).toBe('closing')
+    })
+
+    it('open while "closing" still issues open_cover (HA handles the direction change), no optimistic flip', async () => {
+      seedSelection([COVER])
+      let served = 'closing'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/open_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'opening'
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('closing'))
+      act(() => {
+        result.current[0].coverActuate('open')
+      })
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('closing') // no flip (previous not settled)
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('opening') // resynced
+    })
+
+    it('stop issues cover/stop_cover without an optimistic flip and resyncs', async () => {
+      seedSelection([COVER])
+      let served = 'opening'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/stop_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'closed' // the motion settles after the stop
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('opening'))
+      act(() => {
+        result.current[0].coverActuate('stop')
+      })
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('opening') // NO optimistic flip
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('closed') // resynced after the stop
+      expect(result.current[0].error).toBeNull()
+    })
+
+    it('stop while settled is a no-op (no request)', async () => {
+      seedSelection([COVER])
+      let stopCalls = 0
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: 'closed' }),
+        ),
+        http.post('*/ha-api/services/cover/stop_cover', () => {
+          stopCalls += 1
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('closed'))
+      act(() => {
+        result.current[0].coverActuate('stop')
+      })
+      expect(stopCalls).toBe(0)
+      await waitFor(() => expect(result.current[0].loading).toBe(false))
+      expect(result.current[0].actuating).toBe(false)
+      expect(result.current[0].state).toBe('closed')
+    })
+
+    it('reverts the optimistic state and surfaces the error when open_cover fails', async () => {
+      seedSelection([COVER])
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: 'closed' }),
+        ),
+        http.post('*/ha-api/services/cover/open_cover', () =>
+          HttpResponse.json({ message: 'boom' }, { status: 500 }),
+        ),
+      )
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const { result } = renderHook(() => useHomeSelectedEntities())
+        await waitFor(() => expect(result.current[0].state).toBe('closed'))
+        act(() => {
+          result.current[0].coverActuate('open')
+        })
+        expect(result.current[0].state).toBe('opening') // optimistic
+        await waitFor(() => expect(result.current[0].actuating).toBe(false))
+        expect(result.current[0].state).toBe('closed') // reverted
+        expect(result.current[0].error).toMatch(/500/)
+      } finally {
+        warn.mockRestore()
+      }
     })
   })
 })

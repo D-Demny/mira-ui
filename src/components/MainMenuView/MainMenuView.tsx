@@ -35,6 +35,9 @@ import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
 import { warmArt } from './warmedArt'
 import { entityArt } from './homeEntityArt'
+import { HomeDashboardView } from './HomeDashboardView'
+import { buildCoverSection, buildLightGrid, buildSceneRow, classifyEntities } from './homeDashboard'
+import type { CoverColumnModel, LightTileModel, SceneSlotModel } from './homeDashboard'
 import styles from './MainMenuView.module.scss'
 
 // bug25: the lyric sync offset range mirrors the player SettingsSheet
@@ -105,7 +108,12 @@ function buildRootSettingsRows(
 ): SettingsRow[] {
   return [
     { id: 'set-main', title: 'Settings', value: '', kind: 'open-settings' },
-    { id: 'set-lyrics', title: 'Show Lyrics', value: settings.showLyrics ? 'On' : 'Off', kind: 'toggle' },
+    {
+      id: 'set-lyrics',
+      title: 'Show Lyrics',
+      value: settings.showLyrics ? 'On' : 'Off',
+      kind: 'toggle',
+    },
     {
       id: 'set-karaoke',
       title: 'Karaoke Lyrics',
@@ -344,11 +352,10 @@ export function MainMenuView({
   // feed the cards so card identities survive the polls (bug8.2)
   // bug3: the full queue (daemon caps it) feeds the 'Läuft gerade' cards
   const nowPlayingQueueKey = (nowPlaying?.next_tracks ?? [])
-    .map(
-      (track) =>
-        track
-          ? `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`
-          : '',
+    .map((track) =>
+      track
+        ? `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`
+        : '',
     )
     .join('\u0000')
 
@@ -373,6 +380,80 @@ export function MainMenuView({
         (view.dimmable ? 1 : 0),
     )
     .join('\u0000')
+
+  // ticket 9.6 (Task C): the Home dashboard grid's view models — the same
+  // pure builders HomeDashboardView uses internally, so MainMenuView can
+  // count the dial focus slots (scenes → lights → cover columns; placeholders
+  // are focus stops too) without re-implementing the mapping math
+  const homeDashboard = useMemo(() => {
+    const { scenes, lights, covers } = classifyEntities(selectedEntities)
+    return {
+      sceneRow: buildSceneRow(scenes),
+      lightGrid: buildLightGrid(lights),
+      coverSection: buildCoverSection(covers),
+    }
+  }, [selectedEntities])
+
+  // ticket 9.6 W2: short-press actions on the Home dashboard (tap / dial
+  // confirm). Each callback receives the slot/tile/column model from
+  // HomeDashboardView; placeholder models (entityId === null) are ignored
+  // here — the component shows its own inline toast for those presses. Real
+  // slots route through the SAME actuation path as the carousel cards:
+  // scenes and lights run view.actuate(), covers use the directional
+  // coverActuate (covers cannot be toggled — the direction is explicit)
+  const homeSceneTap = (slot: SceneSlotModel) => {
+    if (slot.entityId === null) return
+    selectedEntities.find((e) => e.entityId === slot.entityId)?.actuate()
+  }
+  const homeLightTap = (tile: LightTileModel) => {
+    if (tile.entityId === null) return
+    selectedEntities.find((e) => e.entityId === tile.entityId)?.actuate()
+  }
+  const homeCoverAction = (column: CoverColumnModel, direction: 'up' | 'down') => {
+    if (column.entityId === null) return
+    selectedEntities
+      .find((e) => e.entityId === column.entityId)
+      ?.coverActuate(direction === 'up' ? 'open' : 'close')
+  }
+
+  // ticket 9.6 W2-3: shared HOLD routing for Home dashboard slots — ONE
+  // helper used by BOTH input paths (the dial hold via onHoldContent below,
+  // the touch hold via the onLightHold/onCoverHold props of
+  // <HomeDashboardView> further down), so dial-hold and touch-hold behave
+  // identically. Light slots open HALightControlModal: placeholder tiles pass
+  // 'placeholder:<label>' (the modal shows its empty demo state for unknown
+  // ids — intended per ticket), real NON-dimmable lights do nothing (the
+  // touch path only arms a hold on dimmable tiles). Cover columns stop their
+  // motion; placeholder columns no-op here (the dashboard toasts them).
+  const homeHoldRoute = (tile: LightTileModel | null, column: CoverColumnModel | null) => {
+    if (tile !== null) {
+      if (tile.entityId === null) {
+        // placeholder tile → the modal's empty demo state for unknown ids
+        onOpenLightControl?.(`placeholder:${tile.label}`, tile.label)
+        return
+      }
+      if (!tile.dimmable) return
+      onOpenLightControl?.(tile.entityId, tile.label)
+      return
+    }
+    if (column === null || column.entityId === null) return
+    selectedEntities.find((e) => e.entityId === column.entityId)?.coverActuate('stop')
+  }
+
+  // slot-index → model resolution for the dial hold — same offsets as
+  // onConfirmContent: scenes[0..s) → lights → cover columns
+  const homeHoldSlot = (index: number) => {
+    if (index < homeDashboard.sceneRow.length) return // scene slots: hold is a no-op
+    const li = index - homeDashboard.sceneRow.length
+    if (li < homeDashboard.lightGrid.length) {
+      homeHoldRoute(homeDashboard.lightGrid[li], null)
+      return
+    }
+    homeHoldRoute(
+      null,
+      homeDashboard.coverSection.columns[li - homeDashboard.lightGrid.length] ?? null,
+    )
+  }
 
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
   // single-track playback (entries with a uri but no metadata → blank card)
@@ -900,7 +981,15 @@ export function MainMenuView({
 
   const focus = useMainMenuFocus({
     sidebarCount: categories.length,
-    contentCount: confirmedCategory.cards.length,
+    // ticket 9.6 (Task C): the Home dial traverses ALL dashboard grid slots
+    // (scenes → lights → cover columns, placeholders are focus stops too);
+    // every other category keeps the carousel card count
+    contentCount:
+      confirmedCategory.id === 'home'
+        ? homeDashboard.sceneRow.length +
+          homeDashboard.lightGrid.length +
+          homeDashboard.coverSection.columns.length
+        : confirmedCategory.cards.length,
     onExit: () => onExit?.(),
     // keep the rendered pane in sync when a sidebar item is selected (dial press or tap)
     onSelectSidebar: (index) => {
@@ -918,12 +1007,33 @@ export function MainMenuView({
     },
     onConfirmContent: (index) => {
       // only ever runs in the content pane, where displayed == confirmed
+      if (confirmedCategory.id === 'home') {
+        // ticket 9.6 W2: dial confirm on a dashboard grid slot — scenes and
+        // lights actuate exactly like a tap (same homeSceneTap/homeLightTap
+        // callbacks); a cover column is an EXPLICIT up/down control, so a
+        // plain dial confirm on it is deliberately a no-op
+        if (index < homeDashboard.sceneRow.length) {
+          homeSceneTap(homeDashboard.sceneRow[index])
+        } else if (index < homeDashboard.sceneRow.length + homeDashboard.lightGrid.length) {
+          homeLightTap(homeDashboard.lightGrid[index - homeDashboard.sceneRow.length])
+        }
+        // index ≥ scenes + lights → cover column: no-op (up/down buttons only)
+        return
+      }
       const card = confirmedCategory.cards[index]
       if (card) handleCardAction(card, index)
     },
     // bug53: dial HOLD on a card — same routing as the press path, plus the
     // dimmable-light → dim view shortcut (handleCardHold covers it)
     onHoldContent: (index) => {
+      // ticket 9.6 W2-3: dial HOLD on a Home dashboard grid slot routes
+      // through the SAME shared helper as the touch hold (homeHoldRoute):
+      // scene slots no-op, light slots open the control view, cover columns
+      // stop (slot offsets: scenes[0..s) → lights → cover columns)
+      if (confirmedCategory.id === 'home') {
+        homeHoldSlot(index)
+        return
+      }
       const card = confirmedCategory.cards[index]
       if (card) handleCardHold(card, index)
     },
@@ -955,13 +1065,7 @@ export function MainMenuView({
     if (focus.contentIndex + LOAD_MORE_THRESHOLD >= trackItems.length) {
       loadTrackPage()
     }
-  }, [
-    openTracklist,
-    focus.activePane,
-    focus.contentIndex,
-    trackItems.length,
-    loadTrackPage,
-  ])
+  }, [openTracklist, focus.activePane, focus.contentIndex, trackItems.length, loadTrackPage])
 
   // bug15: the track sub-menu belongs to the playlists content pane; if focus
   // lands anywhere else (sidebar preview, another category, a swipe), close it
@@ -1003,7 +1107,7 @@ export function MainMenuView({
   // item's content; in the content pane it shows the confirmed category
   const displayedCategory =
     focus.activePane === 'sidebar'
-      ? categories[focus.sidebarIndex] ?? confirmedCategory
+      ? (categories[focus.sidebarIndex] ?? confirmedCategory)
       : confirmedCategory
 
   // bug24: the ambient background follows the focused card's artwork. The
@@ -1140,8 +1244,7 @@ export function MainMenuView({
     // right swipe enters the content pane, left swipe returns to the sidebar
     onNext: () => focus.setActivePane('content'),
     onPrev: () => focus.setActivePane('sidebar'),
-    onToggleView: () =>
-      focus.setActivePane(focus.activePane === 'sidebar' ? 'content' : 'sidebar'),
+    onToggleView: () => focus.setActivePane(focus.activePane === 'sidebar' ? 'content' : 'sidebar'),
     enabled: true,
   })
 
@@ -1157,17 +1260,15 @@ export function MainMenuView({
   return (
     <div
       ref={viewRef}
-      className={
-        [
-          styles.view,
-          focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
-          // bug54/bug58: the underflow modifier slides the content under the
-          // sidebar (applied in 'blur' mode only — see slidesUnderSidebar)
-          slidesUnderSidebar ? styles.viewUnderflow : '',
-        ]
-          .filter(Boolean)
-          .join(' ')
-      }
+      className={[
+        styles.view,
+        focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
+        // bug54/bug58: the underflow modifier slides the content under the
+        // sidebar (applied in 'blur' mode only — see slidesUnderSidebar)
+        slidesUnderSidebar ? styles.viewUnderflow : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={viewStyle}
     >
       {/* bug8/bug24: ambient background — static per category, or driven by
@@ -1205,6 +1306,23 @@ export function MainMenuView({
               onToggleAuto={() => updateSettings({ autoBrightness: !settings.autoBrightness })}
             />
           </div>
+        ) : displayedCategory.id === 'home' ? (
+          // ticket 9.6 (Task C): the Home category renders the dashboard grid
+          // instead of the content carousel. W1 keep-it-simple: no underflow
+          // geometry, no blur props, no scroll port — those are the carousel's
+          // bug54/bug58 concerns; revisit in W2 if the dial needs them.
+          <HomeDashboardView
+            entities={selectedEntities}
+            focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+            // ticket 9.6 W2: short-press wiring (tap + dial confirm)
+            onSceneTap={homeSceneTap}
+            onLightTap={homeLightTap}
+            onCoverAction={homeCoverAction}
+            // ticket 9.6 W2-3: touch HOLD — the SAME shared routing as the
+            // dial hold (homeHoldRoute), so both input paths stay in lockstep
+            onLightHold={(tile) => homeHoldRoute(tile, null)}
+            onCoverHold={(column) => homeHoldRoute(null, column)}
+          />
         ) : (
           <ContentCarousel
             cards={displayedCategory.cards}
@@ -1219,9 +1337,7 @@ export function MainMenuView({
             // first card. Keyed on the track uri/id scalars of the snapshot
             // memo, so observer re-projections of the SAME track (3s poll)
             // never re-trigger the reset
-            activeTrackKey={
-              displayedCategory.id === 'now-playing' ? nowPlayingTrackKey : undefined
-            }
+            activeTrackKey={displayedCategory.id === 'now-playing' ? nowPlayingTrackKey : undefined}
             // selectContent confirms the tapped card (runs the card action exactly once)
             onCardTap={handleCardTap}
             // bug53: touch HOLD on a card (≥ CARD_HOLD_MS) — same routing as
