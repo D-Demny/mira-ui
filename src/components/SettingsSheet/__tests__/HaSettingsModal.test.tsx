@@ -339,6 +339,52 @@ describe('HaSettingsModal: on-screen keyboard (dedicated HaKeyboardOverlay insta
     expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('1')
   })
 
+  it('URL key ":" (index 40) inserts ":" into the draft (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard for the focused URL field
+    // dial from index 0 ('1') to the ":" key (index 40, first key of row 5)
+    for (let i = 0; i < 40; i++) wheel(-40)
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue(':')
+  })
+
+  it('URL key "/" (index 41) inserts "/" into the draft (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard for the focused URL field
+    for (let i = 0; i < 41; i++) wheel(-40)
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('/')
+  })
+
+  it('URL key "-" (index 42) inserts "-" into the draft (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard for the focused URL field
+    for (let i = 0; i < 42; i++) wheel(-40)
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('-')
+  })
+
+  it('renders the URL symbols as a dedicated 5th row with the 10-key rows above (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard
+    expect(screen.getByRole('dialog', { name: 'URL/IP:Port' })).toBeInTheDocument()
+
+    const grid = screen
+      .getByRole('dialog', { name: 'URL/IP:Port' })
+      .querySelector('.grid') as HTMLElement
+    // jsdom does not compute class-based styles — the row structure is
+    // asserted on the DOM (the non-scoped module classes, like .row here)
+    const rows = Array.from(grid.children)
+    // 5 rows: four 10-key rows + the 3-key URL row
+    expect(rows).toHaveLength(5)
+    expect(rows.slice(0, 4).every((r) => r.children.length === 10)).toBe(true)
+    const urlRow = rows[4]
+    expect(urlRow.children.length).toBe(3)
+    expect(Array.from(urlRow.children).map((k) => k.textContent)).toEqual([':', '/', '-'])
+    // the existing 40 keys keep their order/indices (the dial walk wraps at 43 now)
+    expect(rows[3].lastElementChild?.textContent).toBe('␣')
+  })
+
   it('Back closes the keyboard first and the modal second; the dial focus stays on the field', () => {
     const onClose = vi.fn()
     render(<HaSettingsModal onClose={onClose} />)
