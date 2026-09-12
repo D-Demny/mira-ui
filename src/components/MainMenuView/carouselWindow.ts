@@ -37,6 +37,13 @@ export const CAROUSEL_EDGE_PADDING = 16
 // the carousel viewport extends underneath the sidebar by exactly this
 // width — keep in sync with the SCSS variable.
 export const SIDEBAR_WIDTH = 250
+// ticket8.1: the COLLAPSED sidebar width in px (SCSS source of truth:
+// $sidebar-collapsed-width in styles/_variables.scss). 72px is the ticket
+// value for the icon-only narrow state (do NOT use 64px). In underflow mode
+// ('blur') with the sidebar auto-collapsed (sidebarCollapsed in
+// MainMenuView.tsx) the viewport extends underneath the collapsed glass by
+// exactly this width — keep in sync with the SCSS variable.
+export const COLLAPSED_SIDEBAR_WIDTH = 72
 // bug59: how long (ms) after the LAST scroll write a still-settling smooth
 // animation is considered "in flight" by the live-blur rAF loop in
 // ContentCarousel.tsx. Chromium's native scroll-behavior interpolation for a

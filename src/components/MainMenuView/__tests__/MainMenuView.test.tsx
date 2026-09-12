@@ -2840,7 +2840,8 @@ describe('MainMenuView', () => {
       // card positioning, the centering target and the scroll clamps are
       // identical; the only DOM difference is the sidebar's background
       // class. bug58 T2: 'blur' DIVERGES — underflowPx=SIDEBAR_WIDTH (the
-      // cards pass under the sidebar), pinned in the dedicated test below.
+      // cards pass under the sidebar; ticket8.1: COLLAPSED_SIDEBAR_WIDTH
+      // while auto-collapsed), pinned in the dedicated tests below.
       updateSettings({ sidebarBackground: 'translucent' })
       const { container } = render(<MainMenuView />)
       // ticket 9.6: home renders the dashboard grid (no content carousel) —
@@ -2876,9 +2877,10 @@ describe('MainMenuView', () => {
       // mechanism — the content pane spans the full screen (.viewUnderflow,
       // clipped at the SCREEN edge), the carousel viewport starts under the
       // sidebar (underflowPx=SIDEBAR_WIDTH → the .underflow padding + the
-      // underflow dial centering geometry) and the settings list keeps its
-      // left inset (.settingsUnderflow). The per-card blur itself follows in
-      // T3.
+      // underflow dial centering geometry; ticket8.1: COLLAPSED_SIDEBAR_WIDTH
+      // while auto-collapsed — pinned in the 'blur + collapsed' test below)
+      // and the settings list keeps its left inset (.settingsUnderflow). The
+      // per-card blur itself follows in T3.
       updateSettings({ sidebarBackground: 'blur' })
       const { container } = render(<MainMenuView />)
       // ticket 9.6: home renders the dashboard grid (no content carousel) —
@@ -2978,6 +2980,34 @@ describe('MainMenuView', () => {
       expect(asideEl(container).className).not.toContain('collapsed')
       const nav = container.querySelector('nav') as HTMLElement
       expect(nav.className).not.toContain('collapsed')
+    })
+
+    it('shifts the carousel underflow by the collapsed width in blur + collapsed mode (ticket8.1)', async () => {
+      // 'blur' background + auto-collapse on: once the dial focus leaves the
+      // sidebar, the 72px icon-only glass takes over and the carousel
+      // viewport extends underneath it by COLLAPSED_SIDEBAR_WIDTH (not
+      // SIDEBAR_WIDTH) — MainMenuView's underflowPx ternary pins this as the
+      // .underflowCollapsed variant on top of .underflow (the 72px padding
+      // rule + the collapsed dial centering geometry)
+      updateSettings({ sidebarBackground: 'blur', autoCollapseSidebar: 'on' })
+      const { container } = render(<MainMenuView />)
+      // ticket 9.6: home renders the dashboard grid (no content carousel) —
+      // pin the geometry contract on a real ContentCarousel category
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      const carousel = () => container.querySelector('.carousel') as HTMLElement
+      // selecting a category moved the focus to the content pane → collapsed:
+      // the base underflow class stays, the collapsed variant rides on top
+      expect(asideEl(container).className).toContain('collapsed')
+      expect(carousel().className).toContain('underflow')
+      expect(carousel().className).toContain('underflowCollapsed')
+
+      // back restores the expanded glass → the variant goes away again (the
+      // 250px underflow geometry returns)
+      pressBack()
+      expect(asideEl(container).className).not.toContain('collapsed')
+      expect(carousel().className).toContain('underflow')
+      expect(carousel().className).not.toContain('underflowCollapsed')
     })
   })
 

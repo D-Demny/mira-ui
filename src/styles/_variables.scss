@@ -8,6 +8,11 @@ $screen-height: 480px;
 // components/MainMenuView/carouselWindow.ts
 $sidebar-width: 250px;
 
+// ticket8.1: the collapsed (icon-only) sidebar width — ticket value for the
+// auto-collapse state. Keep in sync with COLLAPSED_SIDEBAR_WIDTH in
+// components/MainMenuView/carouselWindow.ts
+$sidebar-collapsed-width: 72px;
+
 // layout
 $pad-x: 24px;
 $pad-y: 24px;

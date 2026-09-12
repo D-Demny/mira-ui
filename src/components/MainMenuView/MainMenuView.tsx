@@ -29,7 +29,7 @@ import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorEx
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
-import { SIDEBAR_WIDTH } from './carouselWindow'
+import { COLLAPSED_SIDEBAR_WIDTH, SIDEBAR_WIDTH } from './carouselWindow'
 import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
@@ -1386,7 +1386,14 @@ export function MainMenuView({
             // geometry underflow is the sidebar width. The three other
             // background modes ('solid' / 'translucent' / 'clear') pass 0:
             // the solid geometry (cards clipped at the sidebar's right edge).
-            underflowPx={slidesUnderSidebar ? SIDEBAR_WIDTH : 0}
+            // ticket8.1: while the sidebar is auto-collapsed (see
+            // sidebarCollapsed above) the underflow shifts by the COLLAPSED
+            // glass width instead — the blurred slides pass under the narrow
+            // 72px icon-only state, not the full 250px pane.
+            underflowPx={
+              slidesUnderSidebar ? (sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : SIDEBAR_WIDTH) : 0
+            }
+            underflowCollapsed={sidebarCollapsed}
           />
         )}
       </main>

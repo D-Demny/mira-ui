@@ -59,6 +59,17 @@ $card-blur-radius: 12px;
   padding-left: $sidebar-width + $s-4;
 }
 
+// ticket8.1: the same underflow padding, but shifted by the COLLAPSED
+// sidebar width — when the sidebar is auto-collapsed (72px, not 250px) the
+// first card's rest position and the left boundary sit at the collapsed
+// glass edge, so the scroll port must only be padded by that narrower width.
+// Applied on TOP of .underflow (ContentCarousel.tsx toggles both classes);
+// it stays AFTER .underflow so this same-specificity rule wins the cascade.
+// Keep in sync with COLLAPSED_SIDEBAR_WIDTH in carouselWindow.ts.
+.underflowCollapsed {
+  padding-left: $sidebar-collapsed-width + $s-4;
+}
+
 // bug5/bug6: invisible placeholder for the off-screen cards — keeps the
 // total scroll width identical to the unwindowed layout
 .spacer {

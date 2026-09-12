@@ -200,7 +200,18 @@ interface ContentCarouselProps {
   // positive value (SIDEBAR_WIDTH — the cards pass under the menu and get
   // blurred there); 'solid', 'translucent' and 'clear' keep the solid layout
   // (cards clipped at the menu edge, never visible under it).
+  // ticket8.1: passes COLLAPSED_SIDEBAR_WIDTH instead while the sidebar is
+  // auto-collapsed — the underflow geometry (rest position, left boundary,
+  // centering target) then shifts by the narrow glass width automatically,
+  // because every consumer below derives it from underflowPx alone.
   underflowPx?: number
+  // ticket8.1: true while the sidebar is in its collapsed (icon-only) state
+  // — mirrors sidebarCollapsed in MainMenuView.tsx. Only meaningful together
+  // with a positive underflowPx: it toggles the .underflowCollapsed padding
+  // variant on top of .underflow so the scroll port starts at the COLLAPSED
+  // glass edge (72px + edge padding) instead of the full sidebar width.
+  // Defaults to false, so standalone usage (tests, other views) is unchanged.
+  underflowCollapsed?: boolean
 }
 
 export function ContentCarousel({
@@ -213,6 +224,7 @@ export function ContentCarousel({
   blurIndex,
   focusScrollBehavior = 'smooth',
   underflowPx = 0,
+  underflowCollapsed = false,
 }: ContentCarouselProps) {
   const focusedCardRef = useRef<HTMLElement | null>(null)
   const carouselRef = useRef<HTMLDivElement | null>(null)
@@ -689,7 +701,11 @@ export function ContentCarousel({
   // dial path.
   const carouselClass = [
     styles.carousel,
+    // ticket8.1: the collapsed padding variant rides on TOP of .underflow —
+    // gated by underflowPx > 0 so the standalone (solid) layout never picks
+    // it up even if a caller passes the flag without an underflow
     underflowPx > 0 ? styles.underflow : '',
+    underflowPx > 0 && underflowCollapsed ? styles.underflowCollapsed : '',
     styles.compScroll,
     styles.animCarousel,
   ]
