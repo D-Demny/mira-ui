@@ -77,7 +77,9 @@ describe('HomeDashboardView (ticket9.6)', () => {
       light('light.flurlicht', 'Flurlampe'),
     ]
     // 3 scene slots + 4 light tiles + 2 cover columns → index 4 = 2nd light tile
-    const { container, rerender } = render(<HomeDashboardView entities={entities} focusedIndex={4} />)
+    const { container, rerender } = render(
+      <HomeDashboardView entities={entities} focusedIndex={4} />,
+    )
     const focused = container.querySelectorAll('.focused')
     expect(focused.length).toBe(1)
     expect(focused[0]).toHaveAttribute('data-entity-id', 'light.flurlicht')
