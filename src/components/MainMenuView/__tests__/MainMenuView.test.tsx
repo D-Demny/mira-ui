@@ -3028,12 +3028,13 @@ describe('MainMenuView', () => {
     })
   })
 
-  // ticket 9.6 W1: the Home category renders the dashboard grid
+  // ticket 9.6 W1/W2: the Home category renders the dashboard grid
   // (HomeDashboardView) instead of the content carousel — dial confirm/hold on
-  // the grid slots and pointer/touch gestures on the tiles are deliberate
-  // NO-OPS until the interaction wiring lands in W2 (MainMenuView:
-  // onConfirmContent / onHoldContent early-return for the home category, and
-  // the W1 tiles carry no handlers)
+  // the grid slots and pointer/touch gestures on the tiles route through
+  // MainMenuView's shared home handlers (onConfirmContent / onHoldContent
+  // plus the tap/hold callbacks passed to the dashboard): scenes and lights
+  // actuate, covers use explicit up/down + stop, placeholder nodes toast and
+  // hold a 'placeholder:<label>' control view
   describe('bug53: light-card press/hold on the home dashboard', () => {
     // the live HA facts: the first light (grid slot 0 of the Home dashboard)
     // reports dimmable color modes. The toggle POSTs are spied on — W1 must
@@ -3094,7 +3095,7 @@ describe('MainMenuView', () => {
       })
     })
 
-    it('a dial hold on a light slot is still a no-op — the dim view does not open (W2-3)', async () => {
+    it('a dial hold on a dimmable light slot opens the control view with entityId + label', async () => {
       const onOpenLightControl = vi.fn()
       const toggled = seedDimmableFirstLight()
       render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
@@ -3102,24 +3103,31 @@ describe('MainMenuView', () => {
         expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
       })
 
-      confirmDial() // enter the Home content pane, grid slot 0 focused
+      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
+      wheel(-10) // walk the three scene slots onto the first (dimmable) light
+      wheel(-10)
+      wheel(-10)
 
       // the hardware layer fires entry.onHold for a press held ≥ CARD_HOLD_MS
       act(() => {
         ListFocusContext.entry.onHold?.()
       })
 
-      // ticket 9.6 W2: long-press routing (dimmable light → HALightControlModal)
-      // lands in W2-3 — until then the hold keeps both the modal and the
-      // endpoint untouched
-      expect(onOpenLightControl).not.toHaveBeenCalled()
+      // ticket 9.6 W2-3: dial hold on a REAL dimmable light → HALightControlModal
+      // (entityId + label) — and the hold is NOT a toggle, so nothing was actuated
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
+      expect(onOpenLightControl).toHaveBeenCalledWith(
+        'light.3er_stehlampe_gold_esszimmer',
+        '3er Stehlampe Gold',
+      )
       expect(toggled).toEqual([])
     })
 
-    it('press on an all-placeholder dashboard shows the toast; hold stays a no-op (W2-3)', async () => {
+    it('press on an all-placeholder dashboard toasts; a light placeholder hold opens the control view', async () => {
       // the dashboard renders only scene/light/cover entities — a switch-only
       // selection leaves an all-placeholder grid, so there is no card to
-      // actuate at all: the press only fires the component-local toast
+      // actuate at all: presses fire the component-local toast, holds route
+      // 'placeholder:<label>' ids to the control view
       window.localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(['switch.wasserpumpe']))
       const switched: string[] = []
       server.use(
@@ -3132,10 +3140,11 @@ describe('MainMenuView', () => {
           return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
         }),
       )
-      const { container } = render(<MainMenuView />)
+      const onOpenLightControl = vi.fn()
+      const { container } = render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
       await screen.findByText('Normales Licht') // scene placeholder — grid rendered
 
-      confirmDial() // enter the Home content pane
+      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
       // a genuine pointer TAP on the placeholder node fires the component-local
       // toast (the dial-confirm path routes through onConfirmContent, which
       // bypasses the DOM and therefore can't trigger the tile's onClick)
@@ -3144,17 +3153,33 @@ describe('MainMenuView', () => {
       expect(screen.getByRole('status')).toHaveTextContent(
         '„Normales Licht" ist noch nicht zugewiesen',
       )
+
+      // ticket 9.6 W2-3: a hold on a SCENE slot does nothing — no modal,
+      // no endpoint
       act(() => {
-        ListFocusContext.entry.onHold?.() // hold → no-op until W2-3
+        ListFocusContext.entry.onHold?.()
       })
+      expect(onOpenLightControl).not.toHaveBeenCalled()
+
+      // walk the scene slots onto a placeholder LIGHT tile and hold it there —
+      // the control view opens with a 'placeholder:<label>' id (the modal then
+      // shows its empty demo state for unknown ids, intended per ticket)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
+      expect(onOpenLightControl).toHaveBeenCalledWith('placeholder:Esstisch', 'Esstisch')
 
       expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(0)
       expect(screen.queryByText('Wasserpumpe')).not.toBeInTheDocument()
-      // the placeholder press reached no endpoint of any kind
+      // the placeholder presses reached no endpoint of any kind
       expect(switched).toEqual([])
     })
 
-    it('tapping a non-dimmable light tile toggles it — the toggle request is sent', async () => {
+    it('tapping a non-dimmable light tile toggles it; a dial hold on it does NOT open the control view', async () => {
       const onOpenLightControl = vi.fn()
       const toggled: string[] = []
       server.use(
@@ -3179,7 +3204,7 @@ describe('MainMenuView', () => {
       fireEvent.click(screen.getByText('Esstisch Hängelampe'))
 
       // ticket 9.6 W2: a tap toggles dimmable and non-dimmable lights alike
-      // (view.actuate()); the dim view is a hold-only path (W2-3)
+      // (view.actuate()); the control view is a hold-only path (W2-3)
       await waitFor(() => {
         expect(toggled).toEqual(['light.esstisch_hangelampe_3er'])
       })
@@ -3188,9 +3213,24 @@ describe('MainMenuView', () => {
       await waitFor(() => {
         expect(tile?.querySelector('.state')?.textContent).toBe('An')
       })
+
+      // ticket 9.6 W2-3: a non-dimmable REAL light never opens the control view
+      // (the touch path doesn't even arm a hold on it, and the dial hold runs
+      // the same dimmability check) — slot 4 is this tile
+      confirmDial()
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      expect(onOpenLightControl).not.toHaveBeenCalled()
+      // and the hold added no toggle on top of the one from the tap
+      expect(toggled).toEqual(['light.esstisch_hangelampe_3er'])
     })
 
-    it('legacy SUPPORT_BRIGHTNESS light: press toggles it, dial hold stays a no-op (W2-3)', async () => {
+    it('legacy SUPPORT_BRIGHTNESS light counts as dimmable — press toggles, dial hold opens the control view', async () => {
       const onOpenLightControl = vi.fn()
       const toggled: string[] = []
       server.use(
@@ -3223,22 +3263,27 @@ describe('MainMenuView', () => {
       })
       expect(onOpenLightControl).not.toHaveBeenCalled()
 
-      // dial hold on a grid slot → still a no-op (the dim view lands in W2-3);
-      // the press did not change the active pane, so confirm enters the content
-      // pane first and the wheel ticks then land on scene placeholder slots —
-      // whose press would only toast, and whose hold is a no-op anyway
+      // ticket 9.6 W2-3: the legacy SUPPORT_BRIGHTNESS bit (bit 0) counts as
+      // dimmable — the press did not change the dial focus, so confirm enters
+      // the content pane first and the wheel ticks then walk scenes + the two
+      // other lights onto the '3er Deko' tile; holding it opens the control
+      // view with entityId + label (no further toggle on top of the tap)
       confirmDial()
+      wheel(-10)
+      wheel(-10)
+      wheel(-10)
       wheel(-10)
       wheel(-10)
       act(() => {
         ListFocusContext.entry.onHold?.()
       })
-      expect(onOpenLightControl).not.toHaveBeenCalled()
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
+      expect(onOpenLightControl).toHaveBeenCalledWith('light.3er_deko_esszimmer', '3er Deko')
       // the hold added no further toggle on top of the one from the tap
       expect(toggled).toEqual(['light.3er_deko_esszimmer'])
     })
 
-    it('touch tap on a light tile toggles it; held pointer and drag stay inert until W2-3', async () => {
+    it('touch tap on a light tile toggles it; a held pointer opens the control view and suppresses the click', async () => {
       const onOpenLightControl = vi.fn()
       const toggled = seedDimmableFirstLight()
       render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
@@ -3265,29 +3310,84 @@ describe('MainMenuView', () => {
       expect(onOpenLightControl).not.toHaveBeenCalled()
 
       // (b) held pointer: pointerdown → ≥ CARD_HOLD_MS — the hold routing
-      // (dim view) lands in W2-3; the follow-up click still toggles, because
-      // the dashboard tiles carry no hold-suppression wiring yet
+      // (ticket 9.6 W2-3: dimmable light → HALightControlModal) fires, and
+      // the follow-up click is SUPPRESSED by the fired hold, so no second
+      // toggle goes out
       vi.useFakeTimers()
       fireEvent.pointerDown(tile, { clientX: 20, clientY: 20, pointerId: 1 })
       vi.advanceTimersByTime(CARD_HOLD_MS + 50)
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1)
+      expect(onOpenLightControl).toHaveBeenCalledWith(
+        'light.3er_stehlampe_gold_esszimmer',
+        '3er Stehlampe Gold',
+      )
       fireEvent.pointerUp(tile, { pointerId: 1 })
       vi.useRealTimers()
-      fireEvent.click(tile) // the hold itself routed nowhere (W2-3)
-      await waitFor(() => {
-        expect(toggled).toHaveLength(2)
-      })
-      expect(onOpenLightControl).not.toHaveBeenCalled()
+      fireEvent.click(tile) // the fired hold suppresses this follow-up click
+      expect(toggled).toHaveLength(1) // still only the short-press toggle
 
       // (c) drag: movement beyond the slop before release cancels the hold —
-      // a swipe is never a press, so no further toggle goes out
+      // a swipe is never a press, so no modal and no further toggle go out
       vi.useFakeTimers()
       fireEvent.pointerDown(tile, { clientX: 30, clientY: 30, pointerId: 1 })
       fireEvent.pointerMove(tile, { clientX: 80, clientY: 30, pointerId: 1 })
       vi.advanceTimersByTime(CARD_HOLD_MS + 50)
       fireEvent.pointerUp(tile, { pointerId: 1 })
       vi.useRealTimers()
-      expect(onOpenLightControl).toHaveBeenCalledTimes(0) // no dim view (W2-3 territory)
-      expect(toggled).toHaveLength(2) // and no third toggle request at all
+      expect(onOpenLightControl).toHaveBeenCalledTimes(1) // still only the hold from (b)
+      expect(toggled).toHaveLength(1) // and no toggle request from the drag at all
+    })
+
+    it('a dial hold on a moving cover column sends cover/stop_cover; a placeholder column hold toasts', async () => {
+      // W2-1: 'stop' is only issued while the cover is actually moving, so
+      // the fixture starts in 'opening'; the stop POST is spied (the resync
+      // GET keeps the state stable)
+      window.localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(['cover.rolladen_wohnzimmer']))
+      const stopped: string[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.rolladen_wohnzimmer', () =>
+          HttpResponse.json({
+            entity_id: 'cover.rolladen_wohnzimmer',
+            state: 'opening',
+            attributes: {},
+          }),
+        ),
+        http.post('*/ha-api/services/cover/stop_cover', async ({ request }) => {
+          const body = (await request.json()) as { entity_id?: string }
+          stopped.push(body.entity_id ?? '')
+          return HttpResponse.json([
+            { entity_id: 'cover.rolladen_wohnzimmer', state: 'opening', attributes: {} },
+          ])
+        }),
+      )
+      const { container } = render(<MainMenuView />)
+      await screen.findByText('Wohnzimmer und Esszimmer') // cover section header rendered
+
+      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
+      // walk scenes (3 slots) + placeholder lights (4 slots) onto the real
+      // cover column — slot 7
+      for (let i = 0; i < 7; i++) wheel(-10)
+
+      // ticket 9.6 W2-3: a dial hold on a REAL moving cover column stops it
+      act(() => {
+        ListFocusContext.entry.onHold?.()
+      })
+      await waitFor(() => {
+        expect(stopped).toEqual(['cover.rolladen_wohnzimmer'])
+      })
+
+      // the second column is a placeholder — a touch hold on its button fires
+      // the component toast (reused from W2-2) and no further stop request
+      const upBtns = container.querySelectorAll('[data-cover-action="up"]')
+      vi.useFakeTimers()
+      fireEvent.pointerDown(upBtns[1], { clientX: 5, clientY: 5, pointerId: 1 })
+      act(() => {
+        vi.advanceTimersByTime(CARD_HOLD_MS) // the deadline fires the column hold
+      })
+      const toast = container.querySelector('[role="status"]')
+      expect(toast?.textContent).toContain('„Esszimmer" ist noch nicht zugewiesen')
+      expect(stopped).toEqual(['cover.rolladen_wohnzimmer'])
+      vi.useRealTimers()
     })
   })
 })
