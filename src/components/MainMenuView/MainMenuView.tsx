@@ -29,7 +29,7 @@ import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorEx
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
-import { SIDEBAR_WIDTH } from './carouselWindow'
+import { COLLAPSED_SIDEBAR_WIDTH, SIDEBAR_WIDTH } from './carouselWindow'
 import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
@@ -214,12 +214,19 @@ function buildAdjustSettingsRows(
         defaultValue: 5,
       },
     },
-    // bug54: LAST row on purpose — appending (not inserting) keeps every
-    // existing row index stable
+    // bug54: appended (not inserted) to keep every existing row index stable
     {
       id: 'set-sidebar-bg',
       title: 'Menü-Hintergrund',
       value: SIDEBAR_BG_LABELS[settings.sidebarBackground],
+      kind: 'toggle',
+    },
+    // ticket 8.1: LAST row on purpose — same append principle, auto-collapse
+    // the sidebar while the dial focus is off it
+    {
+      id: 'set-auto-collapse',
+      title: 'Menü Einklappen',
+      value: settings.autoCollapseSidebar === 'on' ? 'On' : 'Off',
       kind: 'toggle',
     },
   ]
@@ -899,6 +906,11 @@ export function MainMenuView({
                 ? 'blur'
                 : 'solid',
       })
+    } else if (card.id === 'set-auto-collapse') {
+      // ticket 8.1: toggle the auto-collapse behavior (Off ↔ On)
+      updateSettings({
+        autoCollapseSidebar: settings.autoCollapseSidebar === 'on' ? 'off' : 'on',
+      })
     } else if (
       // bug25: dial-confirm on a slider row toggles its adjust mode; while
       // active the wheel changes the value (handleWheelContent)
@@ -1110,6 +1122,11 @@ export function MainMenuView({
       ? (categories[focus.sidebarIndex] ?? confirmedCategory)
       : confirmedCategory
 
+  // ticket 8.1: auto-collapse — the sidebar pane shrinks to its icon-only
+  // state while the setting is on AND the dial focus has left the sidebar
+  // (selecting any item moves focus to the content pane; back restores it)
+  const sidebarCollapsed = settings.autoCollapseSidebar === 'on' && focus.activePane !== 'sidebar'
+
   // bug24: the ambient background follows the focused card's artwork. The
   // hook extracts (and caches) the focused cover; the style reads the cache
   // synchronously, so an already-processed cover applies on the very first
@@ -1274,13 +1291,19 @@ export function MainMenuView({
       {/* bug8/bug24: ambient background — static per category, or driven by
           the focused card's artwork colors */}
       <div className={styles.bg} aria-hidden="true" />
-      <aside className={styles.sidebarPane} aria-label="Menü-Navigation">
+      <aside
+        className={[styles.sidebarPane, sidebarCollapsed ? styles.collapsed : '']
+          .filter(Boolean)
+          .join(' ')}
+        aria-label="Menü-Navigation"
+      >
         <SidebarNav
           categories={categories}
           activeId={activeCategoryId}
           onSelect={onCategorySelect}
           focusedIndex={focus.activePane === 'sidebar' ? focus.sidebarIndex : undefined}
           background={sidebarNavBackground}
+          collapsed={sidebarCollapsed}
         />
       </aside>
       <main className={styles.contentPane} aria-label="Menü-Inhalt">
@@ -1363,7 +1386,14 @@ export function MainMenuView({
             // geometry underflow is the sidebar width. The three other
             // background modes ('solid' / 'translucent' / 'clear') pass 0:
             // the solid geometry (cards clipped at the sidebar's right edge).
-            underflowPx={slidesUnderSidebar ? SIDEBAR_WIDTH : 0}
+            // ticket8.1: while the sidebar is auto-collapsed (see
+            // sidebarCollapsed above) the underflow shifts by the COLLAPSED
+            // glass width instead — the blurred slides pass under the narrow
+            // 72px icon-only state, not the full 250px pane.
+            underflowPx={
+              slidesUnderSidebar ? (sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : SIDEBAR_WIDTH) : 0
+            }
+            underflowCollapsed={sidebarCollapsed}
           />
         )}
       </main>

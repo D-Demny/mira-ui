@@ -172,6 +172,7 @@ import {
   CARD_GAP,
   CARD_WIDTH,
   CAROUSEL_EDGE_PADDING,
+  COLLAPSED_SIDEBAR_WIDTH,
   dialScrollLeft,
   sidebarOverlap,
   sidebarOverlapAt,
@@ -1075,11 +1076,20 @@ describe('bug54: underflow geometry (translucent menu background)', () => {
     subtitle: '',
   }))
   const SCREEN_W = 800 // the device's full screen (the pane slides under)
-  const UNDERFLOW_PX = 250 // the sidebar width
+  const UNDERFLOW_PX = 250 // the sidebar width (SIDEBAR_WIDTH)
   const GEO = {
     leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW_PX, // 266
     minVisibleX: UNDERFLOW_PX,
     centerTarget: UNDERFLOW_PX + (SCREEN_W - UNDERFLOW_PX) / 2, // 525
+  }
+  // ticket8.1: the collapsed (icon-only) sidebar width and its underflow
+  // geometry — first card's rest position at 88, left boundary at 72,
+  // centering target in the visible zone at 436
+  const COLLAPSED_PX = COLLAPSED_SIDEBAR_WIDTH
+  const GEO_COLLAPSED = {
+    leftInset: CAROUSEL_EDGE_PADDING + COLLAPSED_PX, // 88
+    minVisibleX: COLLAPSED_PX,
+    centerTarget: COLLAPSED_PX + (SCREEN_W - COLLAPSED_PX) / 2, // 436
   }
 
   function carouselEl(container: HTMLElement): HTMLElement {
@@ -1258,6 +1268,128 @@ describe('bug54: underflow geometry (translucent menu background)', () => {
 
     rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} />)
     expect(carouselEl(container).className).not.toContain('underflow')
+  })
+
+  // ticket8.1: the COLLAPSED sidebar (72px icon-only state) — the underflow
+  // geometry shifts by the collapsed glass width and the scroll port picks up
+  // the .underflowCollapsed padding variant on top of .underflow (so the
+  // first card's rest position sits at 72 + 16 = 88px, not 250 + 16).
+  it('dial ticks center the focus in the visible zone of the COLLAPSED sidebar (436)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        focusScrollBehavior="auto"
+        underflowPx={COLLAPSED_PX}
+        underflowCollapsed
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    // the mount-time measure saw 0 (jsdom, before instrumentation) → the
+    // first tick measures once, then writes the collapsed underflow offset
+    scrollIntoView.mockClear()
+
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={COLLAPSED_PX}
+        underflowCollapsed
+      />,
+    )
+    expect(reads.width).toBe(1)
+    expect(reads.left).toBe(0)
+    expect(left.value).toBe(dialScrollLeft(50, 25, SCREEN_W, GEO_COLLAPSED))
+    // literal pin of the collapsed geometry (72px glass): focus 25 lands at 4587
+    expect(left.value).toBe(4587)
+    // ...which is NOT the expanded underflow's centering (the target moved
+    // from 525 to 436 — the visible zone shifted by the collapsed width)
+    expect(left.value).not.toBe(dialScrollLeft(50, 25, SCREEN_W, GEO))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('applies .underflowCollapsed on top of .underflow only when the sidebar is collapsed', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    // expanded underflow: base class only
+    expect(carouselEl(container).className).toContain('underflow')
+    expect(carouselEl(container).className).not.toContain('underflowCollapsed')
+
+    // collapsed + underflow: the variant rides on top of .underflow (the
+    // 72px padding rule overrides the 250px one in the cascade)
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={0}
+        underflowPx={UNDERFLOW_PX}
+        underflowCollapsed
+      />,
+    )
+    expect(carouselEl(container).className).toContain('underflow')
+    expect(carouselEl(container).className).toContain('underflowCollapsed')
+
+    // the collapsed flag WITHOUT an underflow (solid layout) never applies
+    // either class — the variant is gated on underflowPx > 0
+    rerender(
+      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} underflowCollapsed />,
+    )
+    expect(carouselEl(container).className).not.toContain('underflow')
+  })
+
+  it('re-measures and re-centers when the sidebar collapses at runtime (250 → 72)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    const { reads, left } = instrument(carouselEl(container))
+    const scrollIntoView = vi.mocked(Element.prototype.scrollIntoView)
+    // mount measured 0 (jsdom) and fell back to the native call
+    scrollIntoView.mockClear()
+
+    // runtime collapse: underflowPx 250 → 72 — the viewport re-measures and
+    // the focus re-centers with the collapsed visible-zone geometry
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={COLLAPSED_PX}
+        underflowCollapsed
+      />,
+    )
+    expect(reads.width).toBe(1)
+    expect(left.value).toBe(dialScrollLeft(50, 25, SCREEN_W, GEO_COLLAPSED))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    // and back to the expanded width: re-measured again, 525 geometry
+    rerender(
+      <ContentCarousel
+        cards={MANY}
+        categoryId="playlists"
+        focusedIndex={25}
+        focusScrollBehavior="auto"
+        underflowPx={UNDERFLOW_PX}
+      />,
+    )
+    expect(reads.width).toBe(2)
+    expect(left.value).toBe(dialScrollLeft(50, 25, SCREEN_W, GEO))
   })
 })
 

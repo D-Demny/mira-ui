@@ -14,6 +14,12 @@ interface SidebarNavProps {
   // only the menu entries). The carousel geometry is identical in all
   // three (cards clipped at the menu edge; 08.09 user change v2)
   background?: 'solid' | 'glass' | 'clear'
+  // ticket8.1: collapsed (auto-collapse) mode — icon-only narrow state:
+  // labels hidden, icon tiles centered. Purely visual (a .collapsed class
+  // on the <nav>); the pane width itself lives on .sidebarPane
+  // (MainMenuView.module.scss). Markup stays identical in both states so
+  // the width transition animates without DOM churn.
+  collapsed?: boolean
 }
 
 export function SidebarNav({
@@ -22,13 +28,16 @@ export function SidebarNav({
   onSelect,
   focusedIndex,
   background = 'solid',
+  collapsed = false,
 }: SidebarNavProps) {
-  const navClass =
-    background === 'solid'
-      ? styles.sidebar
-      : background === 'glass'
-        ? `${styles.sidebar} ${styles.glass}`
-        : `${styles.sidebar} ${styles.clear}`
+  const navClass = [
+    styles.sidebar,
+    background === 'glass' ? styles.glass : '',
+    background === 'clear' ? styles.clear : '',
+    collapsed ? styles.collapsed : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
   return (
     <nav className={navClass} aria-label="Hauptmenü">
       {categories.map((category, index) => {

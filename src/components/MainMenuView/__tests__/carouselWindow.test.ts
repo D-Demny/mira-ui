@@ -3,10 +3,13 @@ import {
   CARD_GAP,
   CARD_WIDTH,
   CAROUSEL_EDGE_PADDING,
+  COLLAPSED_SIDEBAR_WIDTH,
   NO_WINDOW_THRESHOLD,
+  SIDEBAR_WIDTH,
   WINDOW_MAX_CARDS,
   dialScrollLeft,
   leadingSpacerWidth,
+  sidebarOverlap,
   trailingSpacerWidth,
   windowRange,
 } from '../carouselWindow'
@@ -198,8 +201,7 @@ describe('bug50: margin-based geometry invariants', () => {
     ] as const) {
       const offset = start > 0 ? leadingSpacerWidth(start) + CARD_GAP : 0
       for (const index of [start, Math.floor((start + end) / 2), end - 1]) {
-        const cardLeft =
-          CAROUSEL_EDGE_PADDING + offset + (index - start) * (CARD_WIDTH + CARD_GAP)
+        const cardLeft = CAROUSEL_EDGE_PADDING + offset + (index - start) * (CARD_WIDTH + CARD_GAP)
         expect(cardLeft, `card ${index} in window [${start}, ${end})`).toBe(
           CAROUSEL_EDGE_PADDING + index * STEP,
         )
@@ -271,7 +273,8 @@ describe('bug50: margin-based geometry invariants', () => {
     const viewportW = 550
     for (const index of [17, 100, 346, 459, 475]) {
       const scrollLeft = dialScrollLeft(501, index, viewportW)
-      const cardCenterScreen = 250 + CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2 - scrollLeft
+      const cardCenterScreen =
+        250 + CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2 - scrollLeft
       expect(cardCenterScreen, `index ${index}`).toBe(250 + viewportW / 2)
     }
   })
@@ -284,8 +287,7 @@ describe('dialScrollLeft (bug47 R2, F2)', () => {
   // the unwindowed total
   const maxScroll = (count: number, viewportW: number) =>
     Math.max(0, count * CARD_WIDTH + (count - 1) * CARD_GAP + CAROUSEL_EDGE_PADDING * 2 - viewportW)
-  const cardCenter = (index: number) =>
-    CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2
+  const cardCenter = (index: number) => CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2
 
   it('centers an interior card exactly like scrollIntoView(inline: center)', () => {
     // the focused card's center lands on the viewport's center
@@ -346,7 +348,9 @@ describe('dialScrollLeft (bug47 R2, F2)', () => {
 // GATED underflow path pinned for the upcoming 'blur' mode (Bug58).
 describe('bug54: translucent geometry (CarouselGeometry)', () => {
   const VIEWPORT_W = 800 // the full device screen (the pane slides under)
-  const UNDERFLOW = 250 // the sidebar width (SIDEBAR_WIDTH)
+  // ticket8.1: pinned to the shared constant (the literal expectations below
+  // still pin 250/266/525 for the expanded sidebar)
+  const UNDERFLOW = SIDEBAR_WIDTH
   const geo = {
     leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW, // 266
     minVisibleX: UNDERFLOW,
@@ -356,7 +360,11 @@ describe('bug54: translucent geometry (CarouselGeometry)', () => {
   const maxScroll = (count: number) =>
     Math.max(
       0,
-      count * CARD_WIDTH + (count - 1) * CARD_GAP + geo.leftInset + CAROUSEL_EDGE_PADDING - VIEWPORT_W,
+      count * CARD_WIDTH +
+        (count - 1) * CARD_GAP +
+        geo.leftInset +
+        CAROUSEL_EDGE_PADDING -
+        VIEWPORT_W,
     )
 
   it('keeps the default (no-geometry) path bit-exact', () => {
@@ -373,9 +381,10 @@ describe('bug54: translucent geometry (CarouselGeometry)', () => {
     for (const viewportW of [550, 800, 1000]) {
       for (const count of [0, 1, 2, 50, 101, 501]) {
         for (let index = 0; index < count; index++) {
-          expect(dialScrollLeft(count, index, viewportW), `[${count}, ${index}, ${viewportW}]`).toBe(
-            legacy(count, index, viewportW),
-          )
+          expect(
+            dialScrollLeft(count, index, viewportW),
+            `[${count}, ${index}, ${viewportW}]`,
+          ).toBe(legacy(count, index, viewportW))
         }
       }
     }
@@ -429,5 +438,90 @@ describe('bug54: translucent geometry (CarouselGeometry)', () => {
     // 2 cards = 364 px content + 266 + 16 = 646 px < 800 px viewport
     expect(dialScrollLeft(2, 0, VIEWPORT_W, geo)).toBe(0)
     expect(dialScrollLeft(2, 1, VIEWPORT_W, geo)).toBe(0)
+  })
+})
+
+// ticket8.1: the same underflow geometry with the COLLAPSED sidebar (72px,
+// the ticket value — COLLAPSED_SIDEBAR_WIDTH, synced to $sidebar-collapsed-width).
+// While the sidebar is auto-collapsed and the 'blur' background is active,
+// MainMenuView passes this width as underflowPx: the first card's rest
+// position shifts to 16 + 72 = 88px, the left boundary (the Bug50 invariant —
+// focused card always fully visible) sits at 72px, and the centering target
+// is the middle of the visible zone (72 + (800-72)/2 = 436).
+describe('ticket8.1: collapsed sidebar geometry (COLLAPSED_SIDEBAR_WIDTH)', () => {
+  const VIEWPORT_W = 800 // the full device screen (the pane slides under)
+  const UNDERFLOW = COLLAPSED_SIDEBAR_WIDTH
+  const geo = {
+    leftInset: CAROUSEL_EDGE_PADDING + UNDERFLOW, // 88
+    minVisibleX: UNDERFLOW,
+    centerTarget: UNDERFLOW + (VIEWPORT_W - UNDERFLOW) / 2, // 436
+  }
+  const cardCenter = (index: number) => geo.leftInset + index * STEP + CARD_WIDTH / 2
+  const maxScroll = (count: number) =>
+    Math.max(
+      0,
+      count * CARD_WIDTH +
+        (count - 1) * CARD_GAP +
+        geo.leftInset +
+        CAROUSEL_EDGE_PADDING -
+        VIEWPORT_W,
+    )
+
+  it('card 0 focused: scrollLeft stays 0 and the card rests at 88px (fully right of the collapsed edge)', () => {
+    for (const count of [1, 50, 501]) {
+      const scrollLeft = dialScrollLeft(count, 0, VIEWPORT_W, geo)
+      expect(scrollLeft, `count ${count}`).toBe(0)
+      // screen x of card 0's left edge = rest position - scroll
+      expect(geo.leftInset - scrollLeft).toBe(88)
+      expect(geo.leftInset - scrollLeft).toBeGreaterThanOrEqual(geo.minVisibleX)
+    }
+  })
+
+  it('keeps the focused card right of the collapsed boundary for EVERY index (Bug50 stays intact)', () => {
+    const count = 101
+    for (let index = 0; index < count; index++) {
+      const scrollLeft = dialScrollLeft(count, index, VIEWPORT_W, geo)
+      const cardLeft = geo.leftInset + index * STEP - scrollLeft
+      expect(cardLeft, `index ${index}`).toBeGreaterThanOrEqual(geo.minVisibleX)
+    }
+  })
+
+  it('centers the focused card on the visible zone middle (436)', () => {
+    const count = 101
+    expect(geo.centerTarget).toBe(436)
+    const scrollLeft = dialScrollLeft(count, 50, VIEWPORT_W, geo)
+    expect(scrollLeft + geo.centerTarget).toBe(cardCenter(50))
+  })
+
+  it('clamps to maxScroll at the end of the list and survives the clamp', () => {
+    const count = 101
+    const scrollLeft = dialScrollLeft(count, count - 1, VIEWPORT_W, geo)
+    expect(scrollLeft).toBe(maxScroll(count))
+    // the unclamped target would overshoot (the clamp is real)
+    expect(cardCenter(count - 1) - geo.centerTarget).toBeGreaterThan(maxScroll(count))
+    // and the Bug50 boundary survives the clamp
+    const cardLeft = geo.leftInset + (count - 1) * STEP - scrollLeft
+    expect(cardLeft).toBeGreaterThanOrEqual(geo.minVisibleX)
+  })
+
+  it('stays at 0 when the list is shorter than the full-screen viewport', () => {
+    // 2 cards = 364 px content + 88 + 16 = 468 px < 800 px viewport
+    expect(dialScrollLeft(2, 0, VIEWPORT_W, geo)).toBe(0)
+    expect(dialScrollLeft(2, 1, VIEWPORT_W, geo)).toBe(0)
+  })
+
+  it('blurs fewer cards under the collapsed glass than under the expanded one', () => {
+    // worked example (count 50, focus 4): expanded (250px) blurs cards 1+2;
+    // collapsed (72px) the covered area is narrower — card 1 is fully
+    // off-screen by then and only card 2 sits more than half under the edge.
+    // The focused card is never in either set (minVisibleX).
+    const expanded = sidebarOverlap(50, 4, VIEWPORT_W, SIDEBAR_WIDTH)
+    expect(expanded).toEqual(new Set([1, 2]))
+    expect(expanded.has(4)).toBe(false)
+
+    const collapsed = sidebarOverlap(50, 4, VIEWPORT_W, COLLAPSED_SIDEBAR_WIDTH)
+    expect(collapsed).toEqual(new Set([2]))
+    expect(collapsed.has(4)).toBe(false)
+    expect(collapsed.size).toBeLessThan(expanded.size)
   })
 })

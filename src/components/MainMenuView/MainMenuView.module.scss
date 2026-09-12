@@ -68,6 +68,16 @@
   width: $sidebar-width;
   flex-shrink: 0;
   box-sizing: border-box;
+  // ticket8.1: animate the expand/collapse width change (CR69-safe: width
+  // transitions, no modern CSS)
+  transition: width 0.2s ease;
+}
+
+// ticket 8.1: auto-collapse state — the icon-only narrow sidebar width
+// ($sidebar-collapsed-width = 72px, the ticket value). Must stay AFTER
+// .sidebarPane so the same-specificity rule overrides the base width.
+.collapsed {
+  width: $sidebar-collapsed-width;
 }
 
 .contentPane {
@@ -94,7 +104,23 @@
 .viewUnderflow {
   .contentPane {
     margin-left: -$sidebar-width;
+    // ticket8.1: animate the margin in lockstep with the .sidebarPane width
+    // transition (same duration/easing) so the pane stays pinned to x=0..800
+    // while the sidebar animates between its expanded and collapsed widths
+    transition: margin-left 0.2s ease;
   }
+}
+
+// ticket8.1: in underflow mode the negative pane margin must track the ACTUAL
+// (collapsed) sidebar width — with the icon-only state the full -250px margin
+// would pull the pane's left edge to x=-178, desyncing the 72px glass from
+// the carousel's underflow geometry (cards under the glass would stay
+// unblurred, early cards could hide under it). Keyed on the SAME .collapsed
+// class that drives the width transition (general sibling combinator, no
+// extra TSX), so width and margin animate in lockstep. Higher specificity
+// than .viewUnderflow .contentPane above, order-independent.
+.viewUnderflow .sidebarPane.collapsed ~ .contentPane {
+  margin-left: -$sidebar-collapsed-width;
 }
 
 // bug54/bug58: the vertical settings list must never slide under the glass —

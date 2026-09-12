@@ -46,6 +46,36 @@
   background: transparent;
 }
 
+// ticket8.1: collapsed (auto-collapse) state — icon-only narrow sidebar.
+// The pane width is set by the parent (.sidebarPane.collapsed in
+// MainMenuView.module.scss); here we hide the labels and center the icon
+// tiles inside it. Label hiding uses display:none (NOT opacity/visibility):
+// the label is removed from the flex flow, so the icon tile becomes the only
+// in-flow child and justify-content: center can center it cleanly — an
+// invisible-but-present label would still take up flex width and offset the
+// tile. CR69-safe: display:none + flexbox only (no gap, no backdrop-filter,
+// no modern CSS).
+.collapsed {
+  // reclaim horizontal room in the narrow pane so the 56px tile fits with a
+  // little margin instead of being clipped at the panel edge
+  padding-right: $s-2;
+
+  .item {
+    padding-left: 0;
+    padding-right: 0;
+    justify-content: center;
+  }
+
+  .iconTile {
+    // the label is gone, so the trailing gap before it would skew the tile
+    margin-right: 0;
+  }
+
+  .label {
+    display: none;
+  }
+}
+
 .item {
   position: relative;
   display: flex;

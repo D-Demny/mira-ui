@@ -174,8 +174,22 @@ describe('settings store', () => {
     it('round-trips profiles + active id through localStorage', () => {
       updateSettings({
         piProfiles: [
-          { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: 'a', keyInstalled: true },
-          { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.2', user: 'root', password: 'b', keyInstalled: false },
+          {
+            id: 'pi-1',
+            label: 'Pi 1',
+            ip: '10.0.0.1',
+            user: 'root',
+            password: 'a',
+            keyInstalled: true,
+          },
+          {
+            id: 'pi-2',
+            label: 'Pi 2',
+            ip: '10.0.0.2',
+            user: 'root',
+            password: 'b',
+            keyInstalled: false,
+          },
         ],
         activePiId: 'pi-2',
       })
@@ -201,7 +215,14 @@ describe('settings store', () => {
       )
       __resetSettings()
       expect(getSettings().piProfiles).toEqual([
-        { id: 'a', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: 'p1', keyInstalled: false },
+        {
+          id: 'a',
+          label: 'Pi 1',
+          ip: '10.0.0.1',
+          user: 'root',
+          password: 'p1',
+          keyInstalled: false,
+        },
       ])
       // a stale active id falls back to the first profile
       expect(getSettings().activePiId).toBe('a')
@@ -217,7 +238,10 @@ describe('settings store', () => {
       )
       __resetSettings()
       expect(getSettings().activePiId).toBe('b')
-      localStorage.setItem('mira.settings.v1', JSON.stringify({ piProfiles: [], activePiId: 'gone' }))
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ piProfiles: [], activePiId: 'gone' }),
+      )
       __resetSettings()
       expect(getSettings().activePiId).toBeNull()
     })
@@ -226,7 +250,14 @@ describe('settings store', () => {
       expect(activePiProfile(getSettings())).toBeNull()
       updateActivePiProfileField('ip', '10.9.9.9')
       expect(getSettings().piProfiles).toEqual([
-        { id: 'pi-1', label: 'Pi 1', ip: '10.9.9.9', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '10.9.9.9',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ])
       expect(getSettings().activePiId).toBe('pi-1')
       updateActivePiProfileField('user', 'dietpi')
@@ -358,6 +389,42 @@ describe('settings store', () => {
     // backward compat: blobs predating bug58 never held 'blur' — a missing
     // field stays 'solid' (no migration needed; the strict coercion above is
     // the null-op migration), so the pre-bug58 tests keep running unchanged
+  })
+
+  describe('autoCollapseSidebar (ticket 8.1)', () => {
+    it('defaults to off on a fresh install', () => {
+      expect(getSettings().autoCollapseSidebar).toBe('off')
+    })
+
+    it('coerces a missing field in an old blob to off (idempotent, null-op migration)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
+      )
+      __resetSettings()
+      expect(getSettings().autoCollapseSidebar).toBe('off')
+    })
+
+    it.each([
+      ['the exact "on" string', 'on', 'on'],
+      ['the exact "off" string', 'off', 'off'],
+      ['"auto"', 'auto', 'off'],
+      ['"ON"', 'ON', 'off'],
+      ['true', true, 'off'],
+      ['null', null, 'off'],
+      ['an object', {}, 'off'],
+    ])('strict coercion: stored %s → %s', (_label, stored, expected) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ autoCollapseSidebar: stored }))
+      __resetSettings()
+      expect(getSettings().autoCollapseSidebar).toBe(expected)
+    })
+
+    it('round-trips on through localStorage', () => {
+      updateSettings({ autoCollapseSidebar: 'on' })
+      expect(getSettings().autoCollapseSidebar).toBe('on')
+      __resetSettings()
+      expect(getSettings().autoCollapseSidebar).toBe('on')
+    })
   })
 
   describe('ha (ticket 9.4)', () => {

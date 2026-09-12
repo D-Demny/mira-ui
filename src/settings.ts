@@ -73,6 +73,11 @@ export interface Settings {
   // The enum values keep their pre-v2 names, so stored blobs (only 'solid' /
   // 'translucent' ever existed) need no migration.
   sidebarBackground: 'solid' | 'translucent' | 'clear' | 'blur'
+  // ticket 8.1: auto-collapse the main-menu sidebar when focus moves away
+  // from the sidebar pane (see MainMenuView). Off by default; blobs
+  // predating the field coerce to 'off' — additive field, no schema version
+  // bump (old builds ignore unknown keys, same as hybridDisabled).
+  autoCollapseSidebar: 'off' | 'on'
   // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
   ha: HaSettingsValue
 }
@@ -130,6 +135,7 @@ const DEFAULTS: Settings = {
   activePiId: null,
   hybridDisabled: false,
   sidebarBackground: 'solid',
+  autoCollapseSidebar: 'off',
   // ticket 9.4: empty = not configured → the daemon's build-time config.yml
   // defaults apply (the modal pre-fills the default URL from the
   // POST /api/ha/test response, task 7)
@@ -179,11 +185,16 @@ function coercePiProfile(raw: unknown, index: number): PiProfile | null {
   const obj = raw as Partial<PiProfile>
   const ip = typeof obj.ip === 'string' ? obj.ip.trim() : ''
   if (ip === '') return null
-  const user = typeof obj.user === 'string' && obj.user.trim() !== '' ? obj.user.trim() : PI_SERVER_DEFAULT_USER
+  const user =
+    typeof obj.user === 'string' && obj.user.trim() !== ''
+      ? obj.user.trim()
+      : PI_SERVER_DEFAULT_USER
   return {
     id: typeof obj.id === 'string' && obj.id.trim() !== '' ? obj.id.trim() : `pi-${index + 1}`,
     label:
-      typeof obj.label === 'string' && obj.label.trim() !== '' ? obj.label.trim() : `Pi ${index + 1}`,
+      typeof obj.label === 'string' && obj.label.trim() !== ''
+        ? obj.label.trim()
+        : `Pi ${index + 1}`,
     ip,
     user,
     password: typeof obj.password === 'string' ? obj.password : '',
@@ -268,9 +279,7 @@ function coerceHa(raw: unknown): HaSettingsValue {
     password: typeof obj.password === 'string' ? obj.password : '',
     token: typeof obj.token === 'string' ? obj.token : '',
     tokenSource:
-      obj.tokenSource === 'manual' || obj.tokenSource === 'login'
-        ? obj.tokenSource
-        : 'default',
+      obj.tokenSource === 'manual' || obj.tokenSource === 'login' ? obj.tokenSource : 'default',
   }
 }
 
@@ -312,6 +321,11 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
           : partial?.sidebarBackground === 'blur'
             ? 'blur'
             : 'solid',
+    // ticket 8.1: strict like hybridDisabled — only the exact strings
+    // 'on' / 'off' pass (hand-edited blobs with foreign values, blobs
+    // predating the field) coerce to 'off'. Additive field, so no schema
+    // version bump; the coercion is the null-op migration.
+    autoCollapseSidebar: partial?.autoCollapseSidebar === 'on' ? 'on' : 'off',
     // ticket 9.4: strict coercion, see coerceHa — a blob without the `ha`
     // key (every blob predating v3) coerces to the empty defaults, which is
     // the whole v2→v3 migration (idempotent, no separate step)
