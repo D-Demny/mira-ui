@@ -32,7 +32,9 @@ const FULL_HA = {
   tokenSource: 'login' as const,
 }
 
-function haTestOk(opts: { reachable?: boolean; authenticated?: boolean; defaultUrl?: string } = {}) {
+function haTestOk(
+  opts: { reachable?: boolean; authenticated?: boolean; defaultUrl?: string } = {},
+) {
   return HttpResponse.json({
     reachable: opts.reachable ?? true,
     authenticated: opts.authenticated ?? true,
@@ -79,9 +81,7 @@ describe('HaSettingsModal: status line per status state', () => {
 
   it('shows "Konfiguriert — verbunden, N Entitäten" for an authenticated probe (count via the 60 s-TTL catalog)', async () => {
     updateSettings({ ha: FULL_HA })
-    server.use(
-      http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })),
-    )
+    server.use(http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })))
     render(<HaSettingsModal onClose={() => {}} />)
     await screen.findByText(`Konfiguriert — verbunden, ${CATALOG_SIZE} Entitäten`)
   })
@@ -89,9 +89,7 @@ describe('HaSettingsModal: status line per status state', () => {
   it('shows "Konfiguriert — nicht authentifiziert (401)" for a reachable-unauth probe', async () => {
     updateSettings({ ha: FULL_HA })
     server.use(
-      http.post('*/api/ha/test', () =>
-        haTestOk({ reachable: true, authenticated: false }),
-      ),
+      http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: false })),
     )
     render(<HaSettingsModal onClose={() => {}} />)
     await screen.findByText('Konfiguriert — nicht authentifiziert (401)')
@@ -127,7 +125,13 @@ describe('HaSettingsModal: status line per status state', () => {
     vi.useFakeTimers()
     // url saved without a token (base 'default', partial config)
     updateSettings({
-      ha: { url: 'http://10.10.1.104:8123', username: '', password: '', token: '', tokenSource: 'default' },
+      ha: {
+        url: 'http://10.10.1.104:8123',
+        username: '',
+        password: '',
+        token: '',
+        tokenSource: 'default',
+      },
     })
     server.use(
       http.post('*/api/ha/test', () =>
@@ -147,7 +151,9 @@ describe('HaSettingsModal: status line per status state', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000)
     })
-    expect(screen.getByText('Nicht konfiguriert (Default: http://10.10.1.104:8123)')).toBeInTheDocument()
+    expect(
+      screen.getByText('Nicht konfiguriert (Default: http://10.10.1.104:8123)'),
+    ).toBeInTheDocument()
     expect(screen.getByText('Zeitüberschreitung — Daemon antwortet nicht')).toBeInTheDocument()
   })
 })
@@ -155,11 +161,11 @@ describe('HaSettingsModal: status line per status state', () => {
 describe('HaSettingsModal: field pre-fills', () => {
   it('pre-fills all three fields from the saved ha config (password masked)', () => {
     updateSettings({ ha: FULL_HA })
-    server.use(
-      http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })),
-    )
+    server.use(http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })))
     render(<HaSettingsModal onClose={() => {}} />)
-    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('http://10.10.1.104:8123')
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue(
+      'http://10.10.1.104:8123',
+    )
     expect(screen.getByRole('textbox', { name: 'Username' })).toHaveValue('mira')
     const password = screen.getByLabelText('Passwort')
     expect(password).toHaveValue('pw-secret')
@@ -309,6 +315,76 @@ describe('HaSettingsModal: on-screen keyboard (dedicated HaKeyboardOverlay insta
     expect(screen.getByText('•')).toBeInTheDocument()
   })
 
+  it('backspace key (index 29) has a visible label and removes the last character', () => {
+    // issue #16: the old glyph U+232B is missing from the CR69 font (empty
+    // cell on the device) — the key now renders '←' with an explicit aria-label
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard for the focused URL field
+    expect(screen.getByRole('dialog', { name: 'URL/IP:Port' })).toBeInTheDocument()
+
+    const backspace = screen.getByRole('button', { name: 'Löschen' })
+    expect(backspace).toHaveTextContent('←')
+    expect(screen.queryByText('⌫')).not.toBeInTheDocument()
+
+    // type two characters ('1' at index 0, then dial one step to '2')
+    confirm()
+    wheel(-40)
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('12')
+
+    // dial from index 1 to the backspace key (index 29) and press it
+    for (let i = 0; i < 28; i++) wheel(-40)
+    expect(backspace).toHaveClass('focused')
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('1')
+  })
+
+  it('URL key ":" (index 40) inserts ":" into the draft (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard for the focused URL field
+    // dial from index 0 ('1') to the ":" key (index 40, first key of row 5)
+    for (let i = 0; i < 40; i++) wheel(-40)
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue(':')
+  })
+
+  it('URL key "/" (index 41) inserts "/" into the draft (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard for the focused URL field
+    for (let i = 0; i < 41; i++) wheel(-40)
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('/')
+  })
+
+  it('URL key "-" (index 42) inserts "-" into the draft (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard for the focused URL field
+    for (let i = 0; i < 42; i++) wheel(-40)
+    confirm()
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('-')
+  })
+
+  it('renders the URL symbols as a dedicated 5th row with the 10-key rows above (issue #17)', () => {
+    render(<HaSettingsModal onClose={() => {}} />)
+    confirm() // opens the keyboard
+    expect(screen.getByRole('dialog', { name: 'URL/IP:Port' })).toBeInTheDocument()
+
+    const grid = screen
+      .getByRole('dialog', { name: 'URL/IP:Port' })
+      .querySelector('.grid') as HTMLElement
+    // jsdom does not compute class-based styles — the row structure is
+    // asserted on the DOM (the non-scoped module classes, like .row here)
+    const rows = Array.from(grid.children)
+    // 5 rows: four 10-key rows + the 3-key URL row
+    expect(rows).toHaveLength(5)
+    expect(rows.slice(0, 4).every((r) => r.children.length === 10)).toBe(true)
+    const urlRow = rows[4]
+    expect(urlRow.children.length).toBe(3)
+    expect(Array.from(urlRow.children).map((k) => k.textContent)).toEqual([':', '/', '-'])
+    // the existing 40 keys keep their order/indices (the dial walk wraps at 43 now)
+    expect(rows[3].lastElementChild?.textContent).toBe('␣')
+  })
+
   it('Back closes the keyboard first and the modal second; the dial focus stays on the field', () => {
     const onClose = vi.fn()
     render(<HaSettingsModal onClose={onClose} />)
@@ -452,7 +528,9 @@ describe('HaSettingsModal: Speichern (transactional)', () => {
     // the modal stays open — the status line settles on the fresh
     // connection (the probe runs with the newly saved token)
     await waitFor(() =>
-      expect(screen.getByText(`Konfiguriert — verbunden, ${CATALOG_SIZE} Entitäten`)).toBeInTheDocument(),
+      expect(
+        screen.getByText(`Konfiguriert — verbunden, ${CATALOG_SIZE} Entitäten`),
+      ).toBeInTheDocument(),
     )
     expect(screen.getByText('Home Assistant')).toBeInTheDocument()
   })
@@ -529,7 +607,9 @@ describe('HaSettingsModal: Speichern (transactional)', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'URL/IP:Port' }), {
       target: { value: 'http://10.10.1.104:8123' },
     })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Username' }), { target: { value: 'mira' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Username' }), {
+      target: { value: 'mira' },
+    })
     fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'pw' } })
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     expect(screen.getByRole('button', { name: 'Speichere…' })).toBeDisabled()
@@ -586,7 +666,9 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
     fillFields()
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() =>
-      expect(screen.getByText('2FA aktiv — Access Token manuell eingeben (Phase 2)')).toBeInTheDocument(),
+      expect(
+        screen.getByText('2FA aktiv — Access Token manuell eingeben (Phase 2)'),
+      ).toBeInTheDocument(),
     )
     expect(storeWrites).toHaveLength(0)
   })
@@ -602,7 +684,9 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
     fillFields()
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() =>
-      expect(screen.getByText('Nicht erreichbar (Timeout für 10.10.1.104:8123)')).toBeInTheDocument(),
+      expect(
+        screen.getByText('Nicht erreichbar (Timeout für 10.10.1.104:8123)'),
+      ).toBeInTheDocument(),
     )
     expect(storeWrites).toHaveLength(0)
   })
@@ -664,7 +748,9 @@ describe('HaSettingsModal: security (no credential logging)', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Username' }), {
       target: { value: 'mira-secret-user' },
     })
-    fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'pw-super-secret-xyz' } })
+    fireEvent.change(screen.getByLabelText('Passwort'), {
+      target: { value: 'pw-super-secret-xyz' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() =>
       expect(screen.getByText('Benutzername oder Passwort falsch')).toBeInTheDocument(),

@@ -80,6 +80,17 @@ $key-gap: 6px;
   @include flex-gap-x($key-gap);
 }
 
+// issue #17: the URL-symbol row (':', '/', '-') has fewer keys than ROW_SIZE —
+// pin its keys to the full-row key width and center the row instead of
+// stretching three keys across it
+.urlRow {
+  justify-content: center;
+
+  .key {
+    flex: 0 0 calc((100% - #{$key-gap * 9}) / 10);
+  }
+}
+
 .key {
   flex: 1 1 0;
   height: 64px;
