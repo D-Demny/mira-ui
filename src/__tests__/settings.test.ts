@@ -360,6 +360,42 @@ describe('settings store', () => {
     // the null-op migration), so the pre-bug58 tests keep running unchanged
   })
 
+  describe('autoCollapseSidebar (ticket 8.1)', () => {
+    it('defaults to off on a fresh install', () => {
+      expect(getSettings().autoCollapseSidebar).toBe('off')
+    })
+
+    it('coerces a missing field in an old blob to off (idempotent, null-op migration)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
+      )
+      __resetSettings()
+      expect(getSettings().autoCollapseSidebar).toBe('off')
+    })
+
+    it.each([
+      ['the exact "on" string', 'on', 'on'],
+      ['the exact "off" string', 'off', 'off'],
+      ['"auto"', 'auto', 'off'],
+      ['"ON"', 'ON', 'off'],
+      ['true', true, 'off'],
+      ['null', null, 'off'],
+      ['an object', {}, 'off'],
+    ])('strict coercion: stored %s → %s', (_label, stored, expected) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ autoCollapseSidebar: stored }))
+      __resetSettings()
+      expect(getSettings().autoCollapseSidebar).toBe(expected)
+    })
+
+    it('round-trips on through localStorage', () => {
+      updateSettings({ autoCollapseSidebar: 'on' })
+      expect(getSettings().autoCollapseSidebar).toBe('on')
+      __resetSettings()
+      expect(getSettings().autoCollapseSidebar).toBe('on')
+    })
+  })
+
   describe('ha (ticket 9.4)', () => {
     const DEFAULT_HA = {
       url: '',

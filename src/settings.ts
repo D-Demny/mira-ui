@@ -73,6 +73,11 @@ export interface Settings {
   // The enum values keep their pre-v2 names, so stored blobs (only 'solid' /
   // 'translucent' ever existed) need no migration.
   sidebarBackground: 'solid' | 'translucent' | 'clear' | 'blur'
+  // ticket 8.1: auto-collapse the main-menu sidebar when focus moves away
+  // from the sidebar pane (see MainMenuView). Off by default; blobs
+  // predating the field coerce to 'off' — additive field, no schema version
+  // bump (old builds ignore unknown keys, same as hybridDisabled).
+  autoCollapseSidebar: 'off' | 'on'
   // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
   ha: HaSettingsValue
 }
@@ -130,6 +135,7 @@ const DEFAULTS: Settings = {
   activePiId: null,
   hybridDisabled: false,
   sidebarBackground: 'solid',
+  autoCollapseSidebar: 'off',
   // ticket 9.4: empty = not configured → the daemon's build-time config.yml
   // defaults apply (the modal pre-fills the default URL from the
   // POST /api/ha/test response, task 7)
@@ -310,8 +316,13 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
         : partial?.sidebarBackground === 'clear'
           ? 'clear'
           : partial?.sidebarBackground === 'blur'
-            ? 'blur'
-            : 'solid',
+             ? 'blur'
+             : 'solid',
+    // ticket 8.1: strict like hybridDisabled — only the exact strings
+    // 'on' / 'off' pass (hand-edited blobs with foreign values, blobs
+    // predating the field) coerce to 'off'. Additive field, so no schema
+    // version bump; the coercion is the null-op migration.
+    autoCollapseSidebar: partial?.autoCollapseSidebar === 'on' ? 'on' : 'off',
     // ticket 9.4: strict coercion, see coerceHa — a blob without the `ha`
     // key (every blob predating v3) coerces to the empty defaults, which is
     // the whole v2→v3 migration (idempotent, no separate step)
