@@ -20,9 +20,11 @@
 // [0..coverColumns). Slot COUNTS drive the offsets (placeholders are focus
 // stops too): offset 1 = sceneRow.length, offset 2 = sceneRow.length +
 // lightGrid.length. focusedIndex undefined / out of range → nothing focused.
-// Fine dial scrolling behavior is W2/C — this task only applies the focus class.
+// ticket 9.6 W2-4: fine dial scrolling — a useLayoutEffect on focusedIndex
+// scrolls the focused slot into view when the grid overflows its container
+// (the ContentCarousel house pattern, zero-geometry fallback included).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import styles from './HomeDashboardView.module.scss'
 import type { MenuIconName } from './mockData'
@@ -105,6 +107,50 @@ export function HomeDashboardView({
       coverFocus = focusedIndex - sceneRow.length - lightGrid.length
     }
   }
+
+  // ticket 9.6 W2-4: fine dial navigation — per-slot DOM node registry, keyed
+  // by the LINEAR focus-chain index (scene i → i; light i → sceneRow.length + i;
+  // cover i → sceneRow.length + lightGrid.length + i). Refs attach in the same
+  // .map() render paths as the zones below.
+  const gridRef = useRef<HTMLDivElement>(null)
+  const slotEls = useRef(new Map<number, HTMLElement>())
+  const setSlotEl = (index: number, el: HTMLElement | null) => {
+    if (el) {
+      slotEls.current.set(index, el)
+    } else {
+      slotEls.current.delete(index)
+    }
+  }
+
+  // keep the focused slot visible while the dial rotates across the grid —
+  // mirrors the ContentCarousel house pattern (useLayoutEffect on focusedIndex:
+  // same frame as the .focused class commit; instant 'auto' behavior for dial
+  // ticks). The grid itself never scrolls (.root is a plain column, the app
+  // shell clips), so containment is checked against the hosting container —
+  // MainMenuView's content pane in production, the test wrapper in jsdom.
+  // Zero-geometry environments (jsdom / first paint pending) fall back to the
+  // native call exactly like the carousel's zero-viewport branch.
+  useLayoutEffect(() => {
+    if (focusedIndex === undefined) return
+    const slot = slotEls.current.get(focusedIndex)
+    const grid = gridRef.current
+    if (!slot || !grid) return
+    const container = grid.parentElement ?? grid
+    if (container.clientWidth <= 0 || container.clientHeight <= 0) {
+      slot.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' })
+      return
+    }
+    const cRect = container.getBoundingClientRect()
+    const sRect = slot.getBoundingClientRect()
+    const inside =
+      sRect.top >= cRect.top &&
+      sRect.bottom <= cRect.bottom &&
+      sRect.left >= cRect.left &&
+      sRect.right <= cRect.right
+    if (!inside) {
+      slot.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' })
+    }
+  }, [focusedIndex, sceneRow, lightGrid, coverSection])
 
   // ticket 9.6 W2: placeholder-press feedback — a transient inline pill in
   // the dashboard root (one message at a time, auto-dismiss after ~2 s).
@@ -227,7 +273,7 @@ export function HomeDashboardView({
   }
 
   return (
-    <div className={styles.root}>
+    <div className={styles.root} ref={gridRef}>
       {/* ticket 9.6 W2: placeholder toast — absolute-positioned pill above the
           grid, so showing/hiding it never reflows the zones */}
       {toast !== null && (
@@ -240,6 +286,8 @@ export function HomeDashboardView({
         {sceneRow.map((slot, i) => (
           <div
             key={slot.entityId ?? `scene-placeholder-${i}`}
+            // W2-4: focus-chain registry (scene slots occupy chain indices 0..sceneRow)
+            ref={(el) => setSlotEl(i, el)}
             className={`${styles.sceneBtn}${slot.isPlaceholder ? ` ${styles.placeholder}` : ''}${
               i === sceneFocus ? ` ${styles.focused}` : ''
             }`}
@@ -260,6 +308,8 @@ export function HomeDashboardView({
         {lightGrid.map((tile, i) => (
           <div
             key={tile.entityId ?? `light-placeholder-${i}`}
+            // W2-4: focus-chain registry (lights start after the scene row)
+            ref={(el) => setSlotEl(sceneRow.length + i, el)}
             className={`${styles.lightTile}${tile.isPlaceholder ? ` ${styles.placeholder}` : ''}${
               i === lightFocus ? ` ${styles.focused}` : ''
             }`}
@@ -324,6 +374,8 @@ export function HomeDashboardView({
           {coverSection.columns.map((col, i) => (
             <div
               key={col.entityId ?? `cover-placeholder-${i}`}
+              // W2-4: focus-chain registry (covers start after scenes + lights)
+              ref={(el) => setSlotEl(sceneRow.length + lightGrid.length + i, el)}
               className={`${styles.coverColumn}${col.isPlaceholder ? ` ${styles.placeholder}` : ''}${
                 i === coverFocus ? ` ${styles.focused}` : ''
               }`}

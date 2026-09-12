@@ -225,3 +225,54 @@ describe('HomeDashboardView touch hold (ticket 9.6 W2-3a)', () => {
     expect(onLightHold).not.toHaveBeenCalled()
   })
 })
+
+// ticket 9.6 W2-4: fine dial navigation — a focused slot outside the grid's
+// visible area is scrolled into view on every dial tick (useLayoutEffect,
+// ContentCarousel house pattern). jsdom has no geometry, so the zero-viewport
+// fallback branch runs: the native scrollIntoView call is made unconditionally.
+describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('scrolls the focused slot into view when focusedIndex changes', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const entities = [
+      scene('scene.abendstimmung', 'Abendstimmung'),
+      light('light.esstisch_lampe', 'Esstisch Lampe'),
+      light('light.flurlicht', 'Flurlampe'),
+    ]
+    // 3 scene slots + 4 light tiles + 2 cover columns → index 4 = 2nd light tile
+    const { rerender } = render(<HomeDashboardView entities={entities} focusedIndex={1} />)
+    expect(scrollIntoView).toHaveBeenCalled() // the mount focus already scrolled
+    scrollIntoView.mockClear()
+
+    rerender(<HomeDashboardView entities={entities} focusedIndex={4} />)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenLastCalledWith({
+      behavior: 'auto',
+      block: 'nearest',
+      inline: 'center',
+    })
+    // the LIGHT TILE node (light.flurlicht), not a scene or cover slot —
+    // `instances` carries the call's `this` (the prototype spy sees no args'
+    // receiver, only the options object as an argument)
+    const scrolled = scrollIntoView.mock.instances.at(-1) as unknown as HTMLElement | undefined
+    expect(scrolled).not.toBeUndefined()
+    expect(scrolled).toHaveAttribute('data-entity-id', 'light.flurlicht')
+  })
+
+  it('is a no-op for out-of-range or undefined focusedIndex', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const entities = [light('light.esstisch_lampe', 'Esstisch Lampe')]
+    // 3 scene slots + 4 light tiles + 2 cover columns → 9 total focus stops
+    const { rerender } = render(<HomeDashboardView entities={entities} focusedIndex={0} />)
+    expect(scrollIntoView).toHaveBeenCalled() // valid focus at mount
+    scrollIntoView.mockClear()
+
+    rerender(<HomeDashboardView entities={entities} focusedIndex={99} />) // out of range
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    rerender(<HomeDashboardView entities={entities} />) // undefined → still nothing
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+})
