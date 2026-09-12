@@ -83,12 +83,6 @@ interface Props {
 
 type LineVariant = 'active' | 'adjacent' | 'far' | 'unsynced'
 
-function isInstrumental(lines: { words: string }[]): boolean {
-  if (lines.length !== 1) return false
-  const w = lines[0].words.trim()
-  return /instrumental/i.test(w)
-}
-
 const ACTIVE_Y_RATIO = 0.33
 const TALL_LINE_TOP_RATIO = 0.12
 const SNAP_BACK_MS = 4000
@@ -339,13 +333,9 @@ function LyricsImpl({ status, onSeek, active = true, lyricsState }: Props) {
     )
   }
 
-  if (isInstrumental(lyrics.lines)) {
-    return (
-      <div className={`${styles.lyrics} ${styles.state}`} style={bgStyle} ref={containerRef}>
-        <div className={styles.stateText}>♪ Instrumental</div>
-      </div>
-    )
-  }
+  // issue #25: a bare "Instrumental" placeholder is already normalized to null at
+  // fetch time (api/client.ts), so it takes the no-lyrics path above — the split
+  // view never renders for such tracks
 
   return (
     <div className={styles.lyrics} style={bgStyle} ref={containerRef}>

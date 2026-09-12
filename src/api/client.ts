@@ -121,6 +121,30 @@ export async function transferToDevice(deviceId: string): Promise<void> {
   if (!res.ok) throw new Error(`connect/transfer ${res.status}`)
 }
 
+// issue #25: some lyrics sources answer instrumental tracks with a bare
+// "Instrumental" placeholder line instead of no result. That is not usable lyric
+// content, so it is classified as no-lyrics (null) exactly like a 404 — every
+// layout decision then renders the standard full-width view. The check is the
+// single shared derivation for this classification (trim, collapse whitespace,
+// case-insensitive); it is applied at the one point where fetched lyrics enter
+// the app (fetchLyrics below) and stays available for reuse (e.g. #26).
+export function isInstrumentalPlaceholder(lines: { words: string }[]): boolean {
+  const text = lines
+    .map((l) => l.words)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+  return text === 'instrumental'
+}
+
+// null passes through; a result consisting solely of the instrumental placeholder
+// becomes null; everything else (incl. zero-line results) is returned unchanged
+export function normalizeLyrics(result: LyricsResult | null): LyricsResult | null {
+  if (result !== null && isInstrumentalPlaceholder(result.lines)) return null
+  return result
+}
+
 export async function fetchLyrics(
   trackId: string,
   meta: {
@@ -145,10 +169,11 @@ export async function fetchLyrics(
   if (meta.richsync) params.set('richsync', '1')
 
   const res = await fetch(`${API_BASE}/lyrics/${encodeURIComponent(trackId)}?${params}`, { signal })
-  // 404 means nothing was found (instrumental or too niche)
+  // 404 means nothing was found (instrumental or too niche); a 200 whose content
+  // is just the "Instrumental" placeholder is equivalent (issue #25)
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`lyrics ${res.status}`)
-  return (await res.json()) as LyricsResult
+  return normalizeLyrics((await res.json()) as LyricsResult)
 }
 
 // whether the given track is in the liked songs
@@ -258,7 +283,9 @@ export async function fetchPlaylistTracks(
       { signal },
     )
     if (!res.ok) throw new Error(`web-api/playlists/${playlistId}/tracks ${res.status}`)
-    const body: SpotifyPlaylistTracksResponse = (await safeJson(res)) as SpotifyPlaylistTracksResponse
+    const body: SpotifyPlaylistTracksResponse = (await safeJson(
+      res,
+    )) as SpotifyPlaylistTracksResponse
     return {
       items: Array.isArray(body.items) ? body.items : [],
       total: body.total ?? 0,
@@ -280,12 +307,13 @@ export async function fetchSavedTracks(
   signal?: AbortSignal,
 ): Promise<SpotifyPlaylistTracksResponse> {
   try {
-    const res = await fetch(
-      `${API_BASE}/web-api/me/tracks?limit=${limit}&offset=${offset}`,
-      { signal },
-    )
+    const res = await fetch(`${API_BASE}/web-api/me/tracks?limit=${limit}&offset=${offset}`, {
+      signal,
+    })
     if (!res.ok) throw new Error(`web-api/me/tracks ${res.status}`)
-    const body: SpotifyPlaylistTracksResponse = (await safeJson(res)) as SpotifyPlaylistTracksResponse
+    const body: SpotifyPlaylistTracksResponse = (await safeJson(
+      res,
+    )) as SpotifyPlaylistTracksResponse
     return {
       items: Array.isArray(body.items) ? body.items : [],
       total: body.total ?? 0,
@@ -304,12 +332,13 @@ export async function fetchRecentlyPlayed(
   signal?: AbortSignal,
 ): Promise<SpotifyRecentlyPlayedItem[]> {
   try {
-    const res = await fetch(
-      `${API_BASE}/web-api/me/player/recently-played?limit=${limit}`,
-      { signal },
-    )
+    const res = await fetch(`${API_BASE}/web-api/me/player/recently-played?limit=${limit}`, {
+      signal,
+    })
     if (!res.ok) throw new Error(`web-api/me/player/recently-played ${res.status}`)
-    const body: SpotifyRecentlyPlayedResponse = (await safeJson(res)) as SpotifyRecentlyPlayedResponse
+    const body: SpotifyRecentlyPlayedResponse = (await safeJson(
+      res,
+    )) as SpotifyRecentlyPlayedResponse
     return body.items ?? []
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
