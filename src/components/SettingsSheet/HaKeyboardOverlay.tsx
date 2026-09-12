@@ -32,10 +32,7 @@ const FIELD_LABELS: Record<HaKeyboardField, string> = {
 }
 
 type KeyDef =
-  | { kind: 'char'; char: string }
-  | { kind: 'backspace' }
-  | { kind: 'space' }
-  | { kind: 'case' }
+  { kind: 'char'; char: string } | { kind: 'backspace' } | { kind: 'space' } | { kind: 'case' }
 
 function charKey(c: string): KeyDef {
   return { kind: 'char', char: c }
@@ -57,8 +54,11 @@ const KEYS: KeyDef[] = [
 const ROW_SIZE = 10
 const ROWS: KeyDef[][] = [0, 1, 2, 3].map((r) => KEYS.slice(r * ROW_SIZE, r * ROW_SIZE + ROW_SIZE))
 
+// issue #16: the backspace glyph U+232B ('⌫') is missing from the embedded
+// CR69 font set, so the key rendered as an empty cell — use the plain arrow
+// '←' (U+2190) instead and name the key explicitly for screen readers.
 const SPECIAL_LABELS: Record<'backspace' | 'space' | 'case', string> = {
-  backspace: '⌫',
+  backspace: '←',
   space: '␣',
   case: 'Aa',
 }
@@ -100,7 +100,11 @@ export function HaKeyboardOverlay({ field, value, onChange, onClose }: HaKeyboar
         return
       }
       const ch =
-        key.kind === 'char' ? (upper && isLetter(key.char) ? key.char.toUpperCase() : key.char) : ' '
+        key.kind === 'char'
+          ? upper && isLetter(key.char)
+            ? key.char.toUpperCase()
+            : key.char
+          : ' '
       onChange(value + ch)
     },
     [onChange, upper, value],
@@ -160,6 +164,10 @@ export function HaKeyboardOverlay({ field, value, onChange, onClose }: HaKeyboar
                     className={`${styles.key} ${focused ? styles.focused : ''}`}
                     ref={focused ? setFocusRef : undefined}
                     tabIndex={focused ? 0 : -1}
+                    // issue #16: the '←' label is ambiguous for screen readers,
+                    // so name the backspace key explicitly (no aria-label on
+                    // the other keys — their glyph IS the accessible name)
+                    aria-label={key.kind === 'backspace' ? 'Löschen' : undefined}
                     onClick={() => {
                       tapItem(index)
                       activate(index)
