@@ -200,7 +200,18 @@ interface ContentCarouselProps {
   // positive value (SIDEBAR_WIDTH — the cards pass under the menu and get
   // blurred there); 'solid', 'translucent' and 'clear' keep the solid layout
   // (cards clipped at the menu edge, never visible under it).
+  // ticket8.1: passes COLLAPSED_SIDEBAR_WIDTH instead while the sidebar is
+  // auto-collapsed — the underflow geometry (rest position, left boundary,
+  // centering target) then shifts by the narrow glass width automatically,
+  // because every consumer below derives it from underflowPx alone.
   underflowPx?: number
+  // ticket8.1: true while the sidebar is in its collapsed (icon-only) state
+  // — mirrors sidebarCollapsed in MainMenuView.tsx. Only meaningful together
+  // with a positive underflowPx: it toggles the .underflowCollapsed padding
+  // variant on top of .underflow so the scroll port starts at the COLLAPSED
+  // glass edge (72px + edge padding) instead of the full sidebar width.
+  // Defaults to false, so standalone usage (tests, other views) is unchanged.
+  underflowCollapsed?: boolean
 }
 
 export function ContentCarousel({
@@ -213,6 +224,7 @@ export function ContentCarousel({
   blurIndex,
   focusScrollBehavior = 'smooth',
   underflowPx = 0,
+  underflowCollapsed = false,
 }: ContentCarouselProps) {
   const focusedCardRef = useRef<HTMLElement | null>(null)
   const carouselRef = useRef<HTMLDivElement | null>(null)
@@ -287,13 +299,10 @@ export function ContentCarousel({
   // closure factory to call during render. Ref access happens ONLY when React
   // invokes the callback at commit time (attach/detach), never during render
   // (react-hooks/refs); the null call on unmount deregisters the element.
-  const registerCardElBase = useCallback(
-    (index: number, el: HTMLElement | null) => {
-      if (el) cardElsRef.current.set(index, el)
-      else cardElsRef.current.delete(index)
-    },
-    [],
-  )
+  const registerCardElBase = useCallback((index: number, el: HTMLElement | null) => {
+    if (el) cardElsRef.current.set(index, el)
+    else cardElsRef.current.delete(index)
+  }, [])
 
   // bug39: a category change fully purges the carousel's per-view state. The
   // measured scroll offset is the bug18 guard's baseline and belongs to the
@@ -569,7 +578,8 @@ export function ContentCarousel({
       // frame. Only an unconditional add per frame heals that within one
       // frame; Removals run diff-based (only what left the set).
       for (const i of next) cardElsRef.current.get(i)?.classList.add(styles.blurred)
-      for (const i of prev) if (!next.has(i)) cardElsRef.current.get(i)?.classList.remove(styles.blurred)
+      for (const i of prev)
+        if (!next.has(i)) cardElsRef.current.get(i)?.classList.remove(styles.blurred)
       liveSetRef.current = next
       rafId = requestAnimationFrame(frame)
     }
@@ -689,7 +699,11 @@ export function ContentCarousel({
   // dial path.
   const carouselClass = [
     styles.carousel,
+    // ticket8.1: the collapsed padding variant rides on TOP of .underflow —
+    // gated by underflowPx > 0 so the standalone (solid) layout never picks
+    // it up even if a caller passes the flag without an underflow
     underflowPx > 0 ? styles.underflow : '',
+    underflowPx > 0 && underflowCollapsed ? styles.underflowCollapsed : '',
     styles.compScroll,
     styles.animCarousel,
   ]
