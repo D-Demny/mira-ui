@@ -30,7 +30,12 @@ import styles from './HomeDashboardView.module.scss'
 import type { MenuIconName } from './mockData'
 import { MenuIcon } from './MenuIcon'
 import { buildCoverSection, buildLightGrid, buildSceneRow, classifyEntities } from './homeDashboard'
-import type { CoverColumnModel, DashboardEntity, LightTileModel, SceneSlotModel } from './homeDashboard'
+import type {
+  CoverColumnModel,
+  DashboardEntity,
+  LightTileModel,
+  SceneSlotModel,
+} from './homeDashboard'
 
 export interface HomeDashboardViewProps {
   // structurally satisfied by HomeEntityView (useHomeSelectedEntities, 9.3)
@@ -183,7 +188,10 @@ export function HomeDashboardView({
   // matching callback prop is absent (or the tile is not dimmable) no pointer
   // handlers attach and W2-2 short-press behavior stays untouched.
   const holdStateRef = useRef<
-    Map<string, { timer: number | undefined; origin: { x: number; y: number } | null; held: boolean }>
+    Map<
+      string,
+      { timer: number | undefined; origin: { x: number; y: number } | null; held: boolean }
+    >
   >(new Map())
 
   // an unmount with a timer still armed must not fire the hold later

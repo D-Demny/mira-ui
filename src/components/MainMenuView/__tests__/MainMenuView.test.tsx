@@ -924,18 +924,29 @@ describe('MainMenuView', () => {
       // (which flips with the entity state), and the color extractor's img
       // cleanup resets its src — which jsdom resolves to the document url.
       // The pre-decode assertion concerns the network covers only.
-      const netSrcs = () => created.map((img) => img.src).filter((src) => src.startsWith('http://img/'))
+      const netSrcs = () =>
+        created.map((img) => img.src).filter((src) => src.startsWith('http://img/'))
 
       // wait until the dynamic card data (playlists/recent) has arrived and
       // every dynamic cover is warmed (pl-2 has no images → no entry)
       await waitFor(() => {
         expect(new Set(netSrcs())).toEqual(
-          new Set(['http://img/h.jpg', 'http://img/r.jpg', 'http://img/s.jpg', 'http://img/liked.jpg']),
+          new Set([
+            'http://img/h.jpg',
+            'http://img/r.jpg',
+            'http://img/s.jpg',
+            'http://img/liked.jpg',
+          ]),
         )
       })
 
       const srcs = netSrcs().sort()
-      expect(srcs).toEqual(['http://img/h.jpg', 'http://img/liked.jpg', 'http://img/r.jpg', 'http://img/s.jpg'])
+      expect(srcs).toEqual([
+        'http://img/h.jpg',
+        'http://img/liked.jpg',
+        'http://img/r.jpg',
+        'http://img/s.jpg',
+      ])
       // no duplicate warming: each cover URL is fetched exactly once
       expect(new Set(netSrcs()).size).toBe(netSrcs().length)
       // same fetch attributes as AlbumArt so the browser reuses one cache entry
@@ -949,9 +960,7 @@ describe('MainMenuView', () => {
   describe('bug2.6: zuletzt empty state', () => {
     it('shows a placeholder card when there is no recent history', async () => {
       server.use(
-        http.get('*/web-api/me/player/recently-played', () =>
-          HttpResponse.json({ items: [] }),
-        ),
+        http.get('*/web-api/me/player/recently-played', () => HttpResponse.json({ items: [] })),
       )
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
@@ -1081,9 +1090,7 @@ describe('MainMenuView', () => {
     it('still exits on the current track card without a play call', async () => {
       const onPlay = vi.fn()
       const onExit = vi.fn()
-      render(
-        <MainMenuView nowPlaying={longQueueNowPlaying} onPlay={onPlay} onExit={onExit} />,
-      )
+      render(<MainMenuView nowPlaying={longQueueNowPlaying} onPlay={onPlay} onExit={onExit} />)
 
       fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
       await waitFor(() => expect(screen.getByText('Siamese Dream')).toBeInTheDocument())
@@ -1186,7 +1193,14 @@ describe('MainMenuView', () => {
       ...nowPlaying,
       context_uri: 'spotify:track:t-9',
       next_tracks: [
-        { uri: 'spotify:track:t-9', track_id: 't-9', name: '', artist: '', album: '', image_url: '' },
+        {
+          uri: 'spotify:track:t-9',
+          track_id: 't-9',
+          name: '',
+          artist: '',
+          album: '',
+          image_url: '',
+        },
         {
           uri: 'spotify:track:t-9',
           track_id: 't-9',
@@ -1287,7 +1301,14 @@ describe('MainMenuView', () => {
           nowPlaying={{
             ...queueNowPlaying,
             next_tracks: [
-              { uri: 'spotify:track:t-99', track_id: 't-99', name: '', artist: '', album: '', image_url: '' },
+              {
+                uri: 'spotify:track:t-99',
+                track_id: 't-99',
+                name: '',
+                artist: '',
+                album: '',
+                image_url: '',
+              },
               {
                 uri: 'spotify:track:t-10',
                 track_id: 't-10',
@@ -1418,9 +1439,9 @@ describe('MainMenuView', () => {
       expect(titles).toEqual(HOME_LIGHTS.map((light) => light.label))
       // no scenes/covers selected → the scene row and cover section are pure
       // W1 placeholder zones (mock content, marked data-dashboard-placeholder)
-      expect(
-        content.querySelectorAll('.sceneBtn[data-dashboard-placeholder="true"]'),
-      ).toHaveLength(3)
+      expect(content.querySelectorAll('.sceneBtn[data-dashboard-placeholder="true"]')).toHaveLength(
+        3,
+      )
       for (const label of ['Normales Licht', 'Cosy time', 'Betti Zeit']) {
         expect(screen.getByText(label)).toBeInTheDocument()
       }
@@ -1475,9 +1496,7 @@ describe('MainMenuView', () => {
         http.post('*/ha-api/services/light/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           toggled.push(body.entity_id ?? '')
-          return HttpResponse.json([
-            { entity_id: body.entity_id, state: 'on', attributes: {} },
-          ])
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
         }),
       )
       render(<MainMenuView />)
@@ -1504,9 +1523,7 @@ describe('MainMenuView', () => {
         http.post('*/ha-api/services/light/toggle', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           toggled.push(body.entity_id ?? '')
-          return HttpResponse.json([
-            { entity_id: body.entity_id, state: 'on', attributes: {} },
-          ])
+          return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
         }),
       )
       render(<MainMenuView />)
@@ -1627,17 +1644,25 @@ describe('MainMenuView', () => {
       )
       server.use(
         http.get('*/ha-api/states/cover.wohnzimmer_rollo', () =>
-          HttpResponse.json({ entity_id: 'cover.wohnzimmer_rollo', state: 'closed', attributes: {} }),
+          HttpResponse.json({
+            entity_id: 'cover.wohnzimmer_rollo',
+            state: 'closed',
+            attributes: {},
+          }),
         ),
         http.post('*/ha-api/services/cover/open_cover', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           opened.push(body.entity_id ?? '')
-          return HttpResponse.json([{ entity_id: body.entity_id, state: 'opening', attributes: {} }])
+          return HttpResponse.json([
+            { entity_id: body.entity_id, state: 'opening', attributes: {} },
+          ])
         }),
         http.post('*/ha-api/services/cover/close_cover', async ({ request }) => {
           const body = (await request.json()) as { entity_id?: string }
           closed.push(body.entity_id ?? '')
-          return HttpResponse.json([{ entity_id: body.entity_id, state: 'closing', attributes: {} }])
+          return HttpResponse.json([
+            { entity_id: body.entity_id, state: 'closing', attributes: {} },
+          ])
         }),
       )
       render(<MainMenuView />)
@@ -1684,24 +1709,20 @@ describe('MainMenuView', () => {
 
       fireEvent.click(screen.getByText('Normales Licht')) // scene placeholder
       await screen.findByRole('status')
-      expect(
-        screen.getByRole('status'),
-      ).toHaveTextContent('„Normales Licht" ist noch nicht zugewiesen')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '„Normales Licht" ist noch nicht zugewiesen',
+      )
       expect(toggled).toEqual([])
       expect(turnedOn).toEqual([])
 
       fireEvent.click(screen.getByText('Esstisch')) // light placeholder
-      expect(
-        screen.getByRole('status'),
-      ).toHaveTextContent('„Esstisch" ist noch nicht zugewiesen')
+      expect(screen.getByRole('status')).toHaveTextContent('„Esstisch" ist noch nicht zugewiesen')
 
       // the cover section is fully a placeholder (no cover selected): pressing
       // the first column's up button toasts for that column's label
       const up = container.querySelector('[data-cover-action="up"]') as Element
       fireEvent.click(up)
-      expect(screen.getByRole('status')).toHaveTextContent(
-        '„Wohnzimmer" ist noch nicht zugewiesen',
-      )
+      expect(screen.getByRole('status')).toHaveTextContent('„Wohnzimmer" ist noch nicht zugewiesen')
 
       // still no request of any kind left the component
       expect(toggled).toEqual([])
@@ -1718,9 +1739,7 @@ describe('MainMenuView', () => {
       // no real entity nodes — 3 scene slots + 4 light tiles + the cover
       // section + 2 cover columns = 10 placeholder-marked nodes, zero .card
       expect(content.querySelectorAll('[data-entity-id]')).toHaveLength(0)
-      expect(
-        content.querySelectorAll('[data-dashboard-placeholder="true"]'),
-      ).toHaveLength(10)
+      expect(content.querySelectorAll('[data-dashboard-placeholder="true"]')).toHaveLength(10)
       expect(content.querySelectorAll('.card')).toHaveLength(0)
     })
   })
@@ -2307,9 +2326,7 @@ describe('MainMenuView', () => {
     it('Devices and Bluetooth Pairing open their panels', async () => {
       const onOpenDevices = vi.fn()
       const onOpenBluetooth = vi.fn()
-      render(
-        <MainMenuView onOpenDevices={onOpenDevices} onOpenBluetooth={onOpenBluetooth} />,
-      )
+      render(<MainMenuView onOpenDevices={onOpenDevices} onOpenBluetooth={onOpenBluetooth} />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       await screen.findByText('Settings')
 
@@ -2385,7 +2402,12 @@ describe('MainMenuView', () => {
 
       server.use(
         http.get('*/api/v1/capabilities', () =>
-          HttpResponse.json({ tier: 'compute', disk_cache: true, remote_colors: true, remote_blur: true }),
+          HttpResponse.json({
+            tier: 'compute',
+            disk_cache: true,
+            remote_colors: true,
+            remote_blur: true,
+          }),
         ),
       )
       await act(async () => {
@@ -2538,13 +2560,13 @@ describe('MainMenuView', () => {
       wheel(-10) // value stays clamped, the focus moves on to the appended
       // 'Menü-Hintergrund' row (bug54: the row is APPENDED — index 5, the
       // old end-of-list was Brightness)
-      expect(
-        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
-      ).toContain('rowFocused')
+      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
       wheel(-10) // at the new end of the list: the focus clamps on the row
-      expect(
-        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
-      ).toContain('rowFocused')
+      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
     })
 
     it('the wheel never changes the level while auto is on (row navigation stays)', async () => {
@@ -2566,9 +2588,9 @@ describe('MainMenuView', () => {
       wheel(-10) // to the appended 'Menü-Hintergrund' row (bug54)
       wheel(-10) // at the end of the list: the focus stays on the row
       expect(getSettings().brightness).toBe(5)
-      expect(
-        screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className,
-      ).toContain('rowFocused')
+      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
     })
 
     it('the slider drag stays locked while auto is on and adjusts the level when auto is off', async () => {
@@ -3000,9 +3022,7 @@ describe('MainMenuView', () => {
     })
 
     it('an observer re-projection without a track change does NOT reset the scroll', async () => {
-      const { container, rerender } = render(
-        <MainMenuView nowPlaying={hundredQueueNowPlaying} />,
-      )
+      const { container, rerender } = render(<MainMenuView nowPlaying={hundredQueueNowPlaying} />)
 
       enterNowPlaying()
       for (let i = 0; i < 20; i++) wheel(-10)

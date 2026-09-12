@@ -108,7 +108,12 @@ function buildRootSettingsRows(
 ): SettingsRow[] {
   return [
     { id: 'set-main', title: 'Settings', value: '', kind: 'open-settings' },
-    { id: 'set-lyrics', title: 'Show Lyrics', value: settings.showLyrics ? 'On' : 'Off', kind: 'toggle' },
+    {
+      id: 'set-lyrics',
+      title: 'Show Lyrics',
+      value: settings.showLyrics ? 'On' : 'Off',
+      kind: 'toggle',
+    },
     {
       id: 'set-karaoke',
       title: 'Karaoke Lyrics',
@@ -347,11 +352,10 @@ export function MainMenuView({
   // feed the cards so card identities survive the polls (bug8.2)
   // bug3: the full queue (daemon caps it) feeds the 'Läuft gerade' cards
   const nowPlayingQueueKey = (nowPlaying?.next_tracks ?? [])
-    .map(
-      (track) =>
-        track
-          ? `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`
-          : '',
+    .map((track) =>
+      track
+        ? `${track.track_id}|${track.uri}|${track.name}|${track.artist}|${track.image_url}`
+        : '',
     )
     .join('\u0000')
 
@@ -445,7 +449,10 @@ export function MainMenuView({
       homeHoldRoute(homeDashboard.lightGrid[li], null)
       return
     }
-    homeHoldRoute(null, homeDashboard.coverSection.columns[li - homeDashboard.lightGrid.length] ?? null)
+    homeHoldRoute(
+      null,
+      homeDashboard.coverSection.columns[li - homeDashboard.lightGrid.length] ?? null,
+    )
   }
 
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
@@ -1058,13 +1065,7 @@ export function MainMenuView({
     if (focus.contentIndex + LOAD_MORE_THRESHOLD >= trackItems.length) {
       loadTrackPage()
     }
-  }, [
-    openTracklist,
-    focus.activePane,
-    focus.contentIndex,
-    trackItems.length,
-    loadTrackPage,
-  ])
+  }, [openTracklist, focus.activePane, focus.contentIndex, trackItems.length, loadTrackPage])
 
   // bug15: the track sub-menu belongs to the playlists content pane; if focus
   // lands anywhere else (sidebar preview, another category, a swipe), close it
@@ -1106,7 +1107,7 @@ export function MainMenuView({
   // item's content; in the content pane it shows the confirmed category
   const displayedCategory =
     focus.activePane === 'sidebar'
-      ? categories[focus.sidebarIndex] ?? confirmedCategory
+      ? (categories[focus.sidebarIndex] ?? confirmedCategory)
       : confirmedCategory
 
   // bug24: the ambient background follows the focused card's artwork. The
@@ -1243,8 +1244,7 @@ export function MainMenuView({
     // right swipe enters the content pane, left swipe returns to the sidebar
     onNext: () => focus.setActivePane('content'),
     onPrev: () => focus.setActivePane('sidebar'),
-    onToggleView: () =>
-      focus.setActivePane(focus.activePane === 'sidebar' ? 'content' : 'sidebar'),
+    onToggleView: () => focus.setActivePane(focus.activePane === 'sidebar' ? 'content' : 'sidebar'),
     enabled: true,
   })
 
@@ -1260,17 +1260,15 @@ export function MainMenuView({
   return (
     <div
       ref={viewRef}
-      className={
-        [
-          styles.view,
-          focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
-          // bug54/bug58: the underflow modifier slides the content under the
-          // sidebar (applied in 'blur' mode only — see slidesUnderSidebar)
-          slidesUnderSidebar ? styles.viewUnderflow : '',
-        ]
-          .filter(Boolean)
-          .join(' ')
-      }
+      className={[
+        styles.view,
+        focus.activePane === 'sidebar' ? styles.sidebarFocus : styles.contentFocus,
+        // bug54/bug58: the underflow modifier slides the content under the
+        // sidebar (applied in 'blur' mode only — see slidesUnderSidebar)
+        slidesUnderSidebar ? styles.viewUnderflow : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={viewStyle}
     >
       {/* bug8/bug24: ambient background — static per category, or driven by
@@ -1339,9 +1337,7 @@ export function MainMenuView({
             // first card. Keyed on the track uri/id scalars of the snapshot
             // memo, so observer re-projections of the SAME track (3s poll)
             // never re-trigger the reset
-            activeTrackKey={
-              displayedCategory.id === 'now-playing' ? nowPlayingTrackKey : undefined
-            }
+            activeTrackKey={displayedCategory.id === 'now-playing' ? nowPlayingTrackKey : undefined}
             // selectContent confirms the tapped card (runs the card action exactly once)
             onCardTap={handleCardTap}
             // bug53: touch HOLD on a card (≥ CARD_HOLD_MS) — same routing as

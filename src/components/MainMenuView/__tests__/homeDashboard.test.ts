@@ -112,12 +112,7 @@ describe('buildSceneRow (ticket9.6)', () => {
       entity({ entityId: 'scene.c', domain: 'scene' }),
       entity({ entityId: 'scene.d', domain: 'scene' }),
     ])
-    expect(row.map((slot) => slot.entityId)).toEqual([
-      'scene.a',
-      'scene.b',
-      'scene.c',
-      'scene.d',
-    ])
+    expect(row.map((slot) => slot.entityId)).toEqual(['scene.a', 'scene.b', 'scene.c', 'scene.d'])
     expect(row.every((slot) => !slot.isPlaceholder)).toBe(true)
   })
 })
@@ -179,7 +174,12 @@ describe('buildLightGrid (ticket9.6)', () => {
   })
 
   it('uses no placeholders for exactly 4 configured lights', () => {
-    const grid = buildLightGrid([light('light.a'), light('light.b'), light('light.c'), light('light.d')])
+    const grid = buildLightGrid([
+      light('light.a'),
+      light('light.b'),
+      light('light.c'),
+      light('light.d'),
+    ])
     expect(grid).toHaveLength(4)
     expect(grid.every((t) => !t.isPlaceholder && t.entityId !== null)).toBe(true)
   })
@@ -227,7 +227,9 @@ describe('clampBrightnessPct (ticket9.6)', () => {
   })
 
   it('keeps null brightness null through buildLightGrid (off / unknown light)', () => {
-    const grid = buildLightGrid([light('light.off', { active: false, state: 'off', brightnessPct: null })])
+    const grid = buildLightGrid([
+      light('light.off', { active: false, state: 'off', brightnessPct: null }),
+    ])
     expect(grid[0].brightnessPct).toBeNull()
   })
 })

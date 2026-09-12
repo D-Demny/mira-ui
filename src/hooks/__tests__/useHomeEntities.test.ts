@@ -306,10 +306,12 @@ describe('useHomeEntities', () => {
       const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow)
       let fail = false
       server.use(
-        http.get('*/ha-api/states', () =>
-          fail
-            ? HttpResponse.json({ message: 'boom' }, { status: 500 })
-            : HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]) // bug55: HA array contract,
+        http.get(
+          '*/ha-api/states',
+          () =>
+            fail
+              ? HttpResponse.json({ message: 'boom' }, { status: 500 })
+              : HttpResponse.json([{ entity_id: SWITCH, state: 'off' }]), // bug55: HA array contract,
         ),
       )
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -371,9 +373,7 @@ describe('useHomeEntities', () => {
       seedSelection([FIRST_LIGHT, SWITCH])
       server.use(
         http.get('*/ha-api/states/light.*', ({ request }) => {
-          const id = decodeURIComponent(
-            new URL(request.url).pathname.split('/').pop() ?? '',
-          )
+          const id = decodeURIComponent(new URL(request.url).pathname.split('/').pop() ?? '')
           return HttpResponse.json({
             entity_id: id,
             state: 'off',
@@ -419,9 +419,8 @@ describe('useHomeEntities', () => {
         http.get('*/ha-api/states/switch.wasserpumpe', () =>
           HttpResponse.json({ entity_id: SWITCH, state: 'off' }),
         ),
-        http.post(
-          '*/ha-api/services/switch/toggle',
-          () => HttpResponse.json({ message: 'boom' }, { status: 500 }),
+        http.post('*/ha-api/services/switch/toggle', () =>
+          HttpResponse.json({ message: 'boom' }, { status: 500 }),
         ),
       )
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -1331,9 +1330,8 @@ describe('useHomeEntities', () => {
         http.get('*/ha-api/states/cover.garage', () =>
           HttpResponse.json({ entity_id: COVER, state: 'closed' }),
         ),
-        http.post(
-          '*/ha-api/services/cover/open_cover',
-          () => HttpResponse.json({ message: 'boom' }, { status: 500 }),
+        http.post('*/ha-api/services/cover/open_cover', () =>
+          HttpResponse.json({ message: 'boom' }, { status: 500 }),
         ),
       )
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
