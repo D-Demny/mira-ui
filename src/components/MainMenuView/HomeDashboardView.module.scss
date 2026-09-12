@@ -8,11 +8,30 @@
 // MainMenuView (Task C) owns the content-area geometry.
 
 .root {
+  position: relative; // anchor for the placeholder toast (ticket 9.6 W2)
   display: flex;
   flex-direction: column;
   @include flex-gap-y($s-4);
   box-sizing: border-box;
   padding: $s-5 $s-6;
+}
+
+// ticket 9.6 W2: placeholder-press toast — a small pill above the grid,
+// absolutely positioned so showing/hiding it never reflows the zones.
+// CR69-safe: no backdrop-filter, margin/transform-based placement only
+.toast {
+  position: absolute;
+  top: $s-1;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 80%;
+  padding: $s-1 $s-3;
+  border-radius: $r-pill;
+  background: rgba(255, 255, 255, 0.16);
+  color: $text-primary;
+  font-size: $fs-sm;
+  line-height: 1.3;
+  @include truncate(1);
 }
 
 // ------------------------------------------------------------ Z1 scene row
