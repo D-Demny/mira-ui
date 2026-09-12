@@ -37,6 +37,7 @@ import { warmArt } from './warmedArt'
 import { entityArt } from './homeEntityArt'
 import { HomeDashboardView } from './HomeDashboardView'
 import { buildCoverSection, buildLightGrid, buildSceneRow, classifyEntities } from './homeDashboard'
+import type { CoverColumnModel, LightTileModel, SceneSlotModel } from './homeDashboard'
 import styles from './MainMenuView.module.scss'
 
 // bug25: the lyric sync offset range mirrors the player SettingsSheet
@@ -388,6 +389,28 @@ export function MainMenuView({
       coverSection: buildCoverSection(covers),
     }
   }, [selectedEntities])
+
+  // ticket 9.6 W2: short-press actions on the Home dashboard (tap / dial
+  // confirm). Each callback receives the slot/tile/column model from
+  // HomeDashboardView; placeholder models (entityId === null) are ignored
+  // here — the component shows its own inline toast for those presses. Real
+  // slots route through the SAME actuation path as the carousel cards:
+  // scenes and lights run view.actuate(), covers use the directional
+  // coverActuate (covers cannot be toggled — the direction is explicit)
+  const homeSceneTap = (slot: SceneSlotModel) => {
+    if (slot.entityId === null) return
+    selectedEntities.find((e) => e.entityId === slot.entityId)?.actuate()
+  }
+  const homeLightTap = (tile: LightTileModel) => {
+    if (tile.entityId === null) return
+    selectedEntities.find((e) => e.entityId === tile.entityId)?.actuate()
+  }
+  const homeCoverAction = (column: CoverColumnModel, direction: 'up' | 'down') => {
+    if (column.entityId === null) return
+    selectedEntities
+      .find((e) => e.entityId === column.entityId)
+      ?.coverActuate(direction === 'up' ? 'open' : 'close')
+  }
 
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
   // single-track playback (entries with a uri but no metadata → blank card)
@@ -941,10 +964,19 @@ export function MainMenuView({
     },
     onConfirmContent: (index) => {
       // only ever runs in the content pane, where displayed == confirmed
-      // ticket 9.6 W2: dashboard interaction wiring (scene activate / light
-      // toggle / cover up-down, long-press → HALightControlModal) keys off the
-      // grid slots — no-op until then
-      if (confirmedCategory.id === 'home') return
+      if (confirmedCategory.id === 'home') {
+        // ticket 9.6 W2: dial confirm on a dashboard grid slot — scenes and
+        // lights actuate exactly like a tap (same homeSceneTap/homeLightTap
+        // callbacks); a cover column is an EXPLICIT up/down control, so a
+        // plain dial confirm on it is deliberately a no-op
+        if (index < homeDashboard.sceneRow.length) {
+          homeSceneTap(homeDashboard.sceneRow[index])
+        } else if (index < homeDashboard.sceneRow.length + homeDashboard.lightGrid.length) {
+          homeLightTap(homeDashboard.lightGrid[index - homeDashboard.sceneRow.length])
+        }
+        // index ≥ scenes + lights → cover column: no-op (up/down buttons only)
+        return
+      }
       const card = confirmedCategory.cards[index]
       if (card) handleCardAction(card, index)
     },
@@ -1244,6 +1276,10 @@ export function MainMenuView({
           <HomeDashboardView
             entities={selectedEntities}
             focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+            // ticket 9.6 W2: short-press wiring (tap + dial confirm)
+            onSceneTap={homeSceneTap}
+            onLightTap={homeLightTap}
+            onCoverAction={homeCoverAction}
           />
         ) : (
           <ContentCarousel
