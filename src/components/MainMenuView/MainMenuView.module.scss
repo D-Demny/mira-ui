@@ -139,6 +139,35 @@
   box-sizing: border-box;
 }
 
+// bug54/bug58 + issue #24: the home dashboard grid must never slide under the
+// glass — same inset idiom as .settingsUnderflow (in blur mode the content
+// pane spans the full screen, so the wrapper keeps the grid's left inset at
+// the sidebar width). display:contents in the other modes keeps the solid
+// DOM and layout untouched (the target Chromium 69 supports it).
+.homeWrap {
+  display: contents;
+}
+
+.homeUnderflow {
+  display: block;
+  height: 100%;
+  padding-left: $sidebar-width;
+  box-sizing: border-box;
+}
+
+// ticket8.1 + issue #24: auto-collapsed sidebar — track the icon-only glass
+// width instead of the full pane (same pairing as ContentCarousel's
+// .underflow/.underflowCollapsed). Applied EXCLUSIVELY by MainMenuView.tsx
+// (one of the two inset classes, never both), so no cascade order is involved.
+// $sidebar-collapsed-width is the SCSS source of truth (styles/_variables.scss;
+// keep in sync with COLLAPSED_SIDEBAR_WIDTH in carouselWindow.ts).
+.homeUnderflowCollapsed {
+  display: block;
+  height: 100%;
+  padding-left: $sidebar-collapsed-width;
+  box-sizing: border-box;
+}
+
 // swipe focus panes: dim the inactive pane so the focus position is visible
 .sidebarFocus {
   .contentPane {
