@@ -1331,21 +1331,36 @@ export function MainMenuView({
           </div>
         ) : displayedCategory.id === 'home' ? (
           // ticket 9.6 (Task C): the Home category renders the dashboard grid
-          // instead of the content carousel. W1 keep-it-simple: no underflow
-          // geometry, no blur props, no scroll port — those are the carousel's
-          // bug54/bug58 concerns; revisit in W2 if the dial needs them.
-          <HomeDashboardView
-            entities={selectedEntities}
-            focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
-            // ticket 9.6 W2: short-press wiring (tap + dial confirm)
-            onSceneTap={homeSceneTap}
-            onLightTap={homeLightTap}
-            onCoverAction={homeCoverAction}
-            // ticket 9.6 W2-3: touch HOLD — the SAME shared routing as the
-            // dial hold (homeHoldRoute), so both input paths stay in lockstep
-            onLightHold={(tile) => homeHoldRoute(tile, null)}
-            onCoverHold={(column) => homeHoldRoute(null, column)}
-          />
+          // instead of the content carousel. bug54/bug58 + issue #24: in
+          // underflow mode ('blur' only — see slidesUnderSidebar) the wrapper
+          // keeps the grid out from under the glass, mirroring the settings
+          // .settingsUnderflow inset (display:contents otherwise — no layout
+          // change). ticket 8.1: while the sidebar is auto-collapsed (see
+          // sidebarCollapsed above) the collapsed variant tracks the 72px
+          // icon-only width instead (same pairing as the carousel's
+          // .underflowCollapsed; applied exclusively, so no cascade involved).
+          <div
+            className={
+              slidesUnderSidebar
+                ? `${styles.homeWrap} ${
+                    sidebarCollapsed ? styles.homeUnderflowCollapsed : styles.homeUnderflow
+                  }`
+                : styles.homeWrap
+            }
+          >
+            <HomeDashboardView
+              entities={selectedEntities}
+              focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+              // ticket 9.6 W2: short-press wiring (tap + dial confirm)
+              onSceneTap={homeSceneTap}
+              onLightTap={homeLightTap}
+              onCoverAction={homeCoverAction}
+              // ticket 9.6 W2-3: touch HOLD — the SAME shared routing as the
+              // dial hold (homeHoldRoute), so both input paths stay in lockstep
+              onLightHold={(tile) => homeHoldRoute(tile, null)}
+              onCoverHold={(column) => homeHoldRoute(null, column)}
+            />
+          </div>
         ) : (
           <ContentCarousel
             cards={displayedCategory.cards}

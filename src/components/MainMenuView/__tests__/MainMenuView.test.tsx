@@ -2908,6 +2908,43 @@ describe('MainMenuView', () => {
       expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
       expect(list.parentElement?.className).not.toContain('settingsUnderflow')
     })
+
+    it('the home dashboard grid keeps the underflow inset in blur mode (issue #24)', async () => {
+      // ticket 9.6 + bug58 T2: 'Unschärfe' slides the content pane under the
+      // sidebar (.viewUnderflow) — the carousel and settings list compensate
+      // with their own left insets; the home dashboard grid used to get none
+      // (issue #24: the grid started at x=0, sliding under the glass). The
+      // wrapper now mirrors .settingsUnderflow. Fresh render = home category
+      // (the default) + focus in the sidebar pane → expanded 250px inset.
+      updateSettings({ sidebarBackground: 'blur' })
+      const { container } = render(<MainMenuView />)
+      await screen.findByText('Wohnzimmer und Esszimmer') // dashboard cover header
+      const view = container.firstElementChild as HTMLElement
+      const homeWrap = () => {
+        const contentPane = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+        return contentPane.firstElementChild as HTMLElement
+      }
+      expect(view.className).toContain('viewUnderflow')
+      // 'homeUnderflow' matches BOTH classes by substring — the
+      // 'homeUnderflowCollapsed' check is the discriminator (same idiom as
+      // the carousel tests below)
+      expect(homeWrap().className).toContain('homeUnderflow')
+      expect(homeWrap().className).not.toContain('homeUnderflowCollapsed')
+
+      // the non-blur modes keep the solid layout: the wrapper is inert
+      // (display:contents) and carries no underflow inset at all
+      act(() => {
+        updateSettings({ sidebarBackground: 'solid' })
+      })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
+      expect(homeWrap().className).not.toContain('homeUnderflow')
+
+      act(() => {
+        updateSettings({ sidebarBackground: 'translucent' })
+      })
+      expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
+      expect(homeWrap().className).not.toContain('homeUnderflow')
+    })
   })
 
   describe('ticket 8.1: auto-collapse ("Menü Einklappen")', () => {
@@ -3008,6 +3045,41 @@ describe('MainMenuView', () => {
       expect(asideEl(container).className).not.toContain('collapsed')
       expect(carousel().className).toContain('underflow')
       expect(carousel().className).not.toContain('underflowCollapsed')
+    })
+
+    it('shifts the home dashboard inset by the collapsed width in blur + collapsed mode (issue #24)', async () => {
+      // 'blur' background + auto-collapse on: the home grid's underflow inset
+      // must track the ACTUAL glass — full 250px while the dial focus sits in
+      // the sidebar pane, icon-only 72px once selecting a category moves it
+      // to the content pane (the .homeUnderflow/.homeUnderflowCollapsed
+      // pairing, applied exclusively like the carousel's)
+      updateSettings({ sidebarBackground: 'blur', autoCollapseSidebar: 'on' })
+      const { container } = render(<MainMenuView />)
+      await screen.findByText('Wohnzimmer und Esszimmer') // home dashboard (default category)
+      const homeWrap = () => {
+        const contentPane = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
+        return contentPane.firstElementChild as HTMLElement
+      }
+      // fresh render: focus in the sidebar pane → expanded glass, 250px inset
+      expect(asideEl(container).className).not.toContain('collapsed')
+      // 'homeUnderflow' matches BOTH classes by substring — the
+      // 'homeUnderflowCollapsed' check is the discriminator (same idiom as
+      // the carousel test above)
+      expect(homeWrap().className).toContain('homeUnderflow')
+      expect(homeWrap().className).not.toContain('homeUnderflowCollapsed')
+
+      // selecting the Home item moves the focus to the content pane (bug20) →
+      // the 72px icon-only glass takes over, the collapsed variant applies
+      fireEvent.click(screen.getByRole('button', { name: 'Home' }))
+      await screen.findByText('Wohnzimmer und Esszimmer')
+      expect(asideEl(container).className).toContain('collapsed')
+      expect(homeWrap().className).toContain('homeUnderflowCollapsed')
+
+      // back restores the expanded glass → the 250px inset returns
+      pressBack()
+      expect(asideEl(container).className).not.toContain('collapsed')
+      expect(homeWrap().className).toContain('homeUnderflow')
+      expect(homeWrap().className).not.toContain('homeUnderflowCollapsed')
     })
   })
 
