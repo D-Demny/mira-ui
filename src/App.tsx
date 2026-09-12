@@ -27,7 +27,10 @@ import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { Screensaver } from '@/components/Screensaver'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
 import { HaSettingsModal } from '@/components/SettingsSheet/HaSettingsModal'
-import { PiKeyboardOverlay, type PiKeyboardField } from '@/components/SettingsSheet/PiKeyboardOverlay'
+import {
+  PiKeyboardOverlay,
+  type PiKeyboardField,
+} from '@/components/SettingsSheet/PiKeyboardOverlay'
 import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { SettingsSheet } from '@/components/SettingsSheet'
 import { TransferPrompt } from '@/components/TransferPrompt'
@@ -189,8 +192,7 @@ function AppInner() {
       return null
     }
   })
-  const transferDismissed =
-    dismissedAt != null && Date.now() - dismissedAt < TRANSFER_DISMISS_MS
+  const transferDismissed = dismissedAt != null && Date.now() - dismissedAt < TRANSFER_DISMISS_MS
   const needsTransfer =
     defaultDeviceId != null &&
     defaultDeviceId !== '' &&
@@ -200,17 +202,14 @@ function AppInner() {
   const needsTransferRef = useRef(needsTransfer)
   needsTransferRef.current = needsTransfer
 
-  const wrapActionWithTransfer = useCallback(
-    (action: () => void) => {
-      if (!needsTransferRef.current) {
-        action()
-        return
-      }
-      setTransferPromptAction(() => action)
-      setTransferPromptActive(true)
-    },
-    [],
-  )
+  const wrapActionWithTransfer = useCallback((action: () => void) => {
+    if (!needsTransferRef.current) {
+      action()
+      return
+    }
+    setTransferPromptAction(() => action)
+    setTransferPromptActive(true)
+  }, [])
 
   const handleTransferConfirm = useCallback(() => {
     if (defaultDeviceId == null) return
@@ -220,7 +219,7 @@ function AppInner() {
       })
       .catch((err) => {
         console.warn('transfer failed', err)
-        notify('Couldn\'t transfer to ' + defaultDeviceId, { variant: 'error' })
+        notify("Couldn't transfer to " + defaultDeviceId, { variant: 'error' })
       })
       .finally(() => {
         setTransferPromptActive(false)
@@ -374,14 +373,19 @@ function AppInner() {
     karaoke: settings.karaokeLyrics,
   })
   // bug52: the split lyrics layout only renders when lyrics actually exist. A track
-  // without lyrics (404, empty result, fetch error) — or while the fetch is still in
-  // flight — falls back to the standard full-width layout, exactly like the layout
-  // "Show lyrics" OFF renders
+  // without lyrics (404, empty result, fetch error) falls back to the standard
+  // full-width layout, exactly like the layout "Show lyrics" OFF renders
   const hasLyrics =
-    lyricsState.error === null &&
-    lyricsState.lyrics !== null &&
-    lyricsState.lyrics.lines.length > 0
-  const renderLyricsLayout = showLyrics && hasLyrics && !lyricsState.loading
+    lyricsState.error === null && lyricsState.lyrics !== null && lyricsState.lyrics.lines.length > 0
+  // issue #26: while a track change's lyrics fetch is in flight (loading), keep the
+  // last confirmed layout decision instead of falling back to standard. The hook
+  // holds the previous track's confirmed lyrics in state through the fetch, so
+  // hasLyrics already reflects it — gating on !loading here was the flicker: the
+  // split view dropped to standard for the whole 0.5–1 s fetch window and flipped
+  // back when the data landed. The Lyrics pane itself shows a "Loading lyrics..."
+  // placeholder while loading (no stale lines), and only a confirmed resolve (real
+  // data, 404/empty, or Instrumental normalized to null per #25) changes the layout.
+  const renderLyricsLayout = showLyrics && hasLyrics
   const menuOpen = forced === 'menu' ? true : menuOpenReal
   const powerMenuOpen = forced === 'power-menu' ? true : powerMenuOpenReal
   const btMenuOpen = forced === 'bluetooth-menu' ? true : btMenuOpenReal
@@ -518,7 +522,7 @@ function AppInner() {
     if (defaultDeviceId && defaultDeviceId !== '') {
       void transferToDevice(defaultDeviceId).catch((err) => {
         console.warn('transfer failed', err)
-        notify('Couldn\'t switch to default device', { variant: 'error' })
+        notify("Couldn't switch to default device", { variant: 'error' })
       })
     }
   }, [defaultDeviceId, notify])
@@ -862,10 +866,7 @@ function AppInner() {
           onDismiss={handleTransferDismiss}
         />
       ) : null}
-      <PowerMenu
-        open={powerMenuOpen}
-        onClose={closePowerMenu}
-      />
+      <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
       <SettingsSheet
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -1063,7 +1064,12 @@ function AppInner() {
   if (forced === 'idle') {
     return (
       <div className={styles.app}>
-        <IdleScreen connected={connected} devices={connectDevices} onSelectDevice={onPickDevice} defaultDeviceId={settings.defaultDeviceId} />
+        <IdleScreen
+          connected={connected}
+          devices={connectDevices}
+          onSelectDevice={onPickDevice}
+          defaultDeviceId={settings.defaultDeviceId}
+        />
         {globalOverlays}
       </div>
     )
@@ -1367,7 +1373,10 @@ function AppInner() {
                   className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}
                 >
                   <AlbumArt src={playerStatus.track_image} size={artSize} />
-                  <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
+                  <TrackInfo
+                    trackName={playerStatus.track_name}
+                    artist={playerStatus.track_artist}
+                  />
                 </div>
                 <div className={styles.right}>
                   <Lyrics
@@ -1385,7 +1394,11 @@ function AppInner() {
               <div
                 className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
               >
-                <NoLyricsView status={playerStatus} active={!renderLyricsLayout} artSize={heroArtSize} />
+                <NoLyricsView
+                  status={playerStatus}
+                  active={!renderLyricsLayout}
+                  artSize={heroArtSize}
+                />
               </div>
             </div>
           </div>
