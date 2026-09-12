@@ -17,7 +17,8 @@ import styles from './HaKeyboardOverlay.module.scss'
 // of touching the store.
 //
 // The MECHANICS are 1:1 the PiKeyboardOverlay (ticket10-2): the same 4×10
-// key grid with the flat dial walk (wrap at both ends — the single dial
+// key grid (plus the issue #17 URL-symbol row appended as a short 5th row)
+// with the flat dial walk (wrap at both ends — the single dial
 // axis), the same focus entry pushed ON TOP of the modal's entry (Back
 // closes the keyboard first, the modal second — Bug10-2 back hierarchy),
 // the same dial highlight (pure CSS class on the focused key, no
@@ -32,16 +33,15 @@ const FIELD_LABELS: Record<HaKeyboardField, string> = {
 }
 
 type KeyDef =
-  | { kind: 'char'; char: string }
-  | { kind: 'backspace' }
-  | { kind: 'space' }
-  | { kind: 'case' }
+  { kind: 'char'; char: string } | { kind: 'backspace' } | { kind: 'space' } | { kind: 'case' }
 
 function charKey(c: string): KeyDef {
   return { kind: 'char', char: c }
 }
 
-// the 40 keys in reading order (= the dial order, 1:1 the Pi keyboard):
+// the 43 keys in reading order (= the dial order). The first 40 are 1:1 the
+// Pi keyboard — their indices must NOT shift (the dial navigation and the
+// tests depend on them):
 // digits + row Q–P + row A–L + ⌫ + row Z–M + . + Aa + ␣
 const KEYS: KeyDef[] = [
   ...'1234567890'.split('').map(charKey),
@@ -52,13 +52,25 @@ const KEYS: KeyDef[] = [
   charKey('.'),
   { kind: 'case' },
   { kind: 'space' },
+  // issue #17: the URL symbols ('http://ip:8123') — appended AFTER the
+  // existing keys on purpose (no index shifts, see above)
+  charKey(':'),
+  charKey('/'),
+  charKey('-'),
 ]
 
 const ROW_SIZE = 10
-const ROWS: KeyDef[][] = [0, 1, 2, 3].map((r) => KEYS.slice(r * ROW_SIZE, r * ROW_SIZE + ROW_SIZE))
+// row 4 is the short URL-symbol row from issue #17 (3 keys — .urlRow keeps
+// them at the full-row key width instead of stretching three keys across)
+const ROWS: KeyDef[][] = [0, 1, 2, 3, 4].map((r) =>
+  KEYS.slice(r * ROW_SIZE, r * ROW_SIZE + ROW_SIZE),
+)
 
+// issue #16: the backspace glyph U+232B ('⌫') is missing from the embedded
+// CR69 font set, so the key rendered as an empty cell — use the plain arrow
+// '←' (U+2190) instead and name the key explicitly for screen readers.
 const SPECIAL_LABELS: Record<'backspace' | 'space' | 'case', string> = {
-  backspace: '⌫',
+  backspace: '←',
   space: '␣',
   case: 'Aa',
 }
@@ -100,7 +112,11 @@ export function HaKeyboardOverlay({ field, value, onChange, onClose }: HaKeyboar
         return
       }
       const ch =
-        key.kind === 'char' ? (upper && isLetter(key.char) ? key.char.toUpperCase() : key.char) : ' '
+        key.kind === 'char'
+          ? upper && isLetter(key.char)
+            ? key.char.toUpperCase()
+            : key.char
+          : ' '
       onChange(value + ch)
     },
     [onChange, upper, value],
@@ -149,7 +165,12 @@ export function HaKeyboardOverlay({ field, value, onChange, onClose }: HaKeyboar
 
         <div className={styles.grid}>
           {ROWS.map((row, r) => (
-            <div className={styles.row} key={r}>
+            // issue #17: the short URL-symbol row gets its own layout class
+            // (centered, full-row key width); the 10-key rows are untouched
+            <div
+              className={row.length < ROW_SIZE ? `${styles.row} ${styles.urlRow}` : styles.row}
+              key={r}
+            >
               {row.map((key, c) => {
                 const index = r * ROW_SIZE + c
                 const focused = focusedIndex === index
@@ -160,6 +181,10 @@ export function HaKeyboardOverlay({ field, value, onChange, onClose }: HaKeyboar
                     className={`${styles.key} ${focused ? styles.focused : ''}`}
                     ref={focused ? setFocusRef : undefined}
                     tabIndex={focused ? 0 : -1}
+                    // issue #16: the '←' label is ambiguous for screen readers,
+                    // so name the backspace key explicitly (no aria-label on
+                    // the other keys — their glyph IS the accessible name)
+                    aria-label={key.kind === 'backspace' ? 'Löschen' : undefined}
                     onClick={() => {
                       tapItem(index)
                       activate(index)
