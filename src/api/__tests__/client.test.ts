@@ -1,7 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fetchObserverStatus, remoteStateToStatus } from '../client'
-import type { ObserverStatusActive, ObserverStatusInactive, RemoteStateWire } from '../types'
+import {
+  fetchLyrics,
+  fetchObserverStatus,
+  isInstrumentalPlaceholder,
+  normalizeLyrics,
+  remoteStateToStatus,
+} from '../client'
+import type {
+  LyricsResult,
+  ObserverStatusActive,
+  ObserverStatusInactive,
+  RemoteStateWire,
+} from '../types'
 import { server } from '../../__tests__/msw-server'
 
 const baseWire: RemoteStateWire = {
@@ -275,5 +286,109 @@ describe('fetchObserverStatus', () => {
     const promise = fetchObserverStatus(ac.signal)
     ac.abort()
     return expect(promise).rejects.toThrow()
+  })
+})
+
+// issue #25: a bare "Instrumental" placeholder (what some lyrics sources return
+// for instrumental tracks) must be classified as no-lyrics, exactly like a 404.
+describe('instrumental placeholder normalization', () => {
+  const realLyrics: LyricsResult = {
+    syncType: 'LINE_SYNCED',
+    lines: [{ startTimeMs: '0', words: 'La la la' }],
+  }
+
+  describe('isInstrumentalPlaceholder', () => {
+    it('matches the bare placeholder regardless of case and surrounding whitespace', () => {
+      expect(isInstrumentalPlaceholder([{ words: 'Instrumental' }])).toBe(true)
+      expect(isInstrumentalPlaceholder([{ words: '  instrumental  ' }])).toBe(true)
+      expect(isInstrumentalPlaceholder([{ words: 'INSTRUMENTAL' }])).toBe(true)
+    })
+
+    it('collapses internal whitespace (tabs/newlines between the word letters is not a match)', () => {
+      // surrounding / repeated whitespace around the single word collapses to a match
+      expect(isInstrumentalPlaceholder([{ words: '\n\tInstrumental\n' }])).toBe(true)
+      // real lyric content, even one containing the word, is never a match
+      expect(isInstrumentalPlaceholder([{ words: 'instrumental piece of art' }])).toBe(false)
+    })
+
+    it('does not match multiple lines or empty line text', () => {
+      expect(isInstrumentalPlaceholder([{ words: 'Instrumental' }, { words: 'more' }])).toBe(false)
+      expect(isInstrumentalPlaceholder([])).toBe(false)
+      expect(isInstrumentalPlaceholder([{ words: '' }])).toBe(false)
+    })
+  })
+
+  describe('normalizeLyrics', () => {
+    it('returns null for an instrumental-only result', () => {
+      const instrumental: LyricsResult = {
+        syncType: 'UNSYNCED',
+        lines: [{ startTimeMs: '0', words: 'Instrumental' }],
+      }
+      expect(normalizeLyrics(instrumental)).toBeNull()
+    })
+
+    it('returns null for case/whitespace variants of the placeholder', () => {
+      const padded: LyricsResult = {
+        syncType: 'UNSYNCED',
+        lines: [{ startTimeMs: '0', words: '  instrumental  ' }],
+      }
+      expect(normalizeLyrics(padded)).toBeNull()
+    })
+
+    it('passes real lyrics through unchanged (same reference)', () => {
+      expect(normalizeLyrics(realLyrics)).toBe(realLyrics)
+    })
+
+    it('passes null and zero-line results through unchanged', () => {
+      expect(normalizeLyrics(null)).toBeNull()
+      const empty: LyricsResult = { syncType: 'UNSYNCED', lines: [] }
+      expect(normalizeLyrics(empty)).toBe(empty)
+    })
+  })
+
+  describe('fetchLyrics', () => {
+    const meta = { track: 'T', artist: 'A' }
+
+    it('maps an instrumental placeholder response to null like a 404', async () => {
+      server.use(
+        http.get('*/lyrics/t1', () =>
+          HttpResponse.json({
+            syncType: 'UNSYNCED',
+            lines: [{ startTimeMs: '0', words: 'Instrumental' }],
+          }),
+        ),
+      )
+      await expect(fetchLyrics('t1', meta)).resolves.toBeNull()
+    })
+
+    it('maps a padded lowercase placeholder variant to null', async () => {
+      server.use(
+        http.get('*/lyrics/t2', () =>
+          HttpResponse.json({
+            syncType: 'UNSYNCED',
+            lines: [{ startTimeMs: '0', words: '  instrumental  ' }],
+          }),
+        ),
+      )
+      await expect(fetchLyrics('t2', meta)).resolves.toBeNull()
+    })
+
+    it('still returns real lyrics untouched', async () => {
+      server.use(http.get('*/lyrics/t3', () => HttpResponse.json(realLyrics)))
+      await expect(fetchLyrics('t3', meta)).resolves.toEqual(realLyrics)
+    })
+
+    it('still returns null on a 404 and keeps the zero-line passthrough', async () => {
+      server.use(http.get('*/lyrics/t4', () => new HttpResponse(null, { status: 404 })))
+      await expect(fetchLyrics('t4', meta)).resolves.toBeNull()
+
+      server.use(
+        http.get('*/lyrics/t5', () => HttpResponse.json({ syncType: 'UNSYNCED', lines: [] })),
+      )
+      await expect(fetchLyrics('t5', meta)).resolves.toEqual({
+        syncType: 'UNSYNCED',
+        lines: [],
+      })
+    })
   })
 })

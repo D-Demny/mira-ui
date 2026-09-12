@@ -178,6 +178,62 @@ describe('bug52: now-playing layout follows lyrics availability', () => {
     expect(hits).toBe(0)
   })
 
+  // issue #25: a track whose fetched lyrics are just the "Instrumental"
+  // placeholder must render exactly the no-lyrics layout — no split view,
+  // no "Instrumental" box — identical to the 404 / Show-Lyrics-OFF case.
+  const INSTRUMENTAL_FIXTURES: { words: string }[] = [
+    { words: 'Instrumental' },
+    { words: '  instrumental  ' }, // padded + lowercase variant
+  ]
+
+  for (const fixture of INSTRUMENTAL_FIXTURES) {
+    it(`falls back to the standard layout when the lyrics are only the placeholder (${JSON.stringify(
+      fixture.words,
+    )})`, async () => {
+      let hits = 0
+      server.use(
+        http.get('*/lyrics/mock-track-1', () => {
+          hits++
+          return HttpResponse.json({ syncType: 'UNSYNCED', lines: [fixture] })
+        }),
+      )
+
+      const { container } = renderApp()
+
+      await waitFor(() => expect(hits).toBeGreaterThan(0))
+      // identical observable layout to the 404 case: standard layer active,
+      // split view inactive, no lyrics box (neither lines nor a placeholder)
+      await waitFor(() => expect(standardLayerActive(container)).toBe(true))
+      expect(lyricsLayerActive(container)).toBe(false)
+      const std = standardLayer(container)
+      expect(std.textContent).toContain('Mock Track')
+      expect(std.textContent).toContain('Mock Artist')
+      expect(std.textContent).not.toContain('No lyrics available')
+      // the placeholder text itself must not be rendered anywhere
+      expect(container.textContent).not.toMatch(/instrumental/i)
+    })
+  }
+
+  it('keeps the split view for real lyrics (placeholder check does not over-match)', async () => {
+    server.use(
+      http.get('*/lyrics/mock-track-1', () =>
+        HttpResponse.json({
+          syncType: 'UNSYNCED',
+          lines: [
+            { startTimeMs: '0', words: 'Instrumental solo, then vocals' },
+            { startTimeMs: '5000', words: 'Second real line' },
+          ],
+        }),
+      ),
+    )
+
+    const { container } = renderApp()
+
+    expect(await screen.findByText('Instrumental solo, then vocals')).toBeInTheDocument()
+    expect(lyricsLayerActive(container)).toBe(true)
+    expect(standardLayerActive(container)).toBe(false)
+  })
+
   it('shows the standard layout while lyrics are loading, then switches to the split view on arrival', async () => {
     let hits = 0
     let release: (() => void) | null = null
