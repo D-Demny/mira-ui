@@ -70,6 +70,12 @@
   box-sizing: border-box;
 }
 
+// ticket 8.1 W2b: class hook for the auto-collapse state (added in TSX);
+// the collapsed width + transition land in W3 — must stay AFTER .sidebarPane
+.collapsed {
+  // W3: width + transition
+}
+
 .contentPane {
   position: relative;
   z-index: 1;

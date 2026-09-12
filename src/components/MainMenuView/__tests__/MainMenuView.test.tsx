@@ -2558,13 +2558,17 @@ describe('MainMenuView', () => {
         'rowFocused',
       )
       wheel(-10) // value stays clamped, the focus moves on to the appended
-      // 'Menü-Hintergrund' row (bug54: the row is APPENDED — index 5, the
-      // old end-of-list was Brightness)
+      // 'Menü-Hintergrund' row (bug54: APPENDED — index 5)
       expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
         'rowFocused',
       )
+      wheel(-10) // on to the appended 'Menü Einklappen' row (ticket 8.1 — index 6,
+      // the new last row)
+      expect(screen.getByText('Menü Einklappen').closest('[role="button"]')?.className).toContain(
+        'rowFocused',
+      )
       wheel(-10) // at the new end of the list: the focus clamps on the row
-      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+      expect(screen.getByText('Menü Einklappen').closest('[role="button"]')?.className).toContain(
         'rowFocused',
       )
     })
@@ -2586,9 +2590,9 @@ describe('MainMenuView', () => {
       )
       wheel(-10) // back to Brightness
       wheel(-10) // to the appended 'Menü-Hintergrund' row (bug54)
-      wheel(-10) // at the end of the list: the focus stays on the row
+      wheel(-10) // to the appended 'Menü Einklappen' row (ticket 8.1, new last row)
       expect(getSettings().brightness).toBe(5)
-      expect(screen.getByText('Menü-Hintergrund').closest('[role="button"]')?.className).toContain(
+      expect(screen.getByText('Menü Einklappen').closest('[role="button"]')?.className).toContain(
         'rowFocused',
       )
     })
@@ -2686,7 +2690,7 @@ describe('MainMenuView', () => {
       return row?.querySelector('[class*="value"]')?.textContent
     }
 
-    it('renders the "Menü-Hintergrund" row last in the sub-level with the default value', async () => {
+    it('renders the appended rows (ticket 8.1 "Menü Einklappen" is now last)', async () => {
       render(<MainMenuView />)
       toSidebarBackgroundRow()
       await screen.findByText('Settings')
@@ -2695,11 +2699,16 @@ describe('MainMenuView', () => {
       wheel(-10)
       wheel(-10)
       wheel(-10)
-      wheel(-10) // 'Menü-Hintergrund' (5, the new last row)
+      wheel(-10) // 'Menü-Hintergrund' (5 — the bug54 append keeps its index)
 
       const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
       expect(row).not.toBeNull()
       expect(row?.textContent).toContain('Schwarz')
+
+      wheel(-10) // 'Menü Einklappen' (6, the new last row — ticket 8.1)
+      const collapseRow = screen.getByText('Menü Einklappen').closest('[role="button"]')
+      expect(collapseRow?.className).toContain('rowFocused')
+      expect(collapseRow?.textContent).toContain('Off') // default value
     })
 
     it('confirming the row cycles all four options (store, row value, sidebar modifier)', async () => {
@@ -2896,6 +2905,79 @@ describe('MainMenuView', () => {
       })
       expect((container.firstElementChild as HTMLElement).className).not.toContain('viewUnderflow')
       expect(list.parentElement?.className).not.toContain('settingsUnderflow')
+    })
+  })
+
+  describe('ticket 8.1: auto-collapse ("Menü Einklappen")', () => {
+    // the pane <aside> (aria-label 'Menü-Navigation') and the SidebarNav
+    // <nav> carry the .collapsed class while the setting is on AND the dial
+    // focus sits in the content pane; selecting a sidebar item moves the
+    // focus there, back restores the sidebar pane
+    function asideEl(container: HTMLElement): HTMLElement {
+      return container.querySelector('[aria-label="Menü-Navigation"]') as HTMLElement
+    }
+
+    it('renders the row with the default Off value and confirms to toggle the setting', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      confirmDial() // sub-level, focus on 'Default Device' (0)
+      for (let i = 0; i < 6; i++) wheel(-10) // 'Menü Einklappen' (6, last row)
+
+      expect(getSettings().autoCollapseSidebar).toBe('off')
+      const row = screen.getByText('Menü Einklappen').closest('[role="button"]')
+      expect(row?.className).toContain('rowFocused')
+      expect(row?.textContent).toContain('Off')
+
+      confirmDial() // Off → On
+      expect(getSettings().autoCollapseSidebar).toBe('on')
+      expect(screen.getByText('Menü Einklappen').closest('[role="button"]')?.textContent).toContain(
+        'On',
+      )
+
+      confirmDial() // On → Off (plain toggle, no cycle)
+      expect(getSettings().autoCollapseSidebar).toBe('off')
+    })
+
+    it('collapses the pane and nav while focus is in the content pane (setting on)', async () => {
+      updateSettings({ autoCollapseSidebar: 'on' })
+      const { container } = render(<MainMenuView />)
+      // still in the sidebar pane → not collapsed yet
+      expect(asideEl(container).className).not.toContain('collapsed')
+
+      // selecting a category moves the dial focus to the content pane
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      expect(asideEl(container).className).toContain('collapsed')
+      const nav = container.querySelector('nav') as HTMLElement
+      expect(nav.className).toContain('collapsed')
+
+      // back restores the sidebar pane → expanded again
+      pressBack()
+      expect(asideEl(container).className).not.toContain('collapsed')
+      expect((container.querySelector('nav') as HTMLElement).className).not.toContain('collapsed')
+    })
+
+    it('keeps the sidebar expanded while focus is in the sidebar pane (setting on)', async () => {
+      updateSettings({ autoCollapseSidebar: 'on' })
+      const { container } = render(<MainMenuView />)
+      // a fresh render starts with the dial focus in the sidebar pane
+      expect(asideEl(container).className).not.toContain('collapsed')
+      const nav = container.querySelector('nav') as HTMLElement
+      expect(nav.className).not.toContain('collapsed')
+
+      // rotating the sidebar dial alone never collapses it either
+      wheel(-10)
+      expect(asideEl(container).className).not.toContain('collapsed')
+    })
+
+    it('keeps the sidebar expanded in the content pane while the setting is off', async () => {
+      const { container } = render(<MainMenuView />) // 'off' by default
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Road Trip')
+      expect(asideEl(container).className).not.toContain('collapsed')
+      const nav = container.querySelector('nav') as HTMLElement
+      expect(nav.className).not.toContain('collapsed')
     })
   })
 
