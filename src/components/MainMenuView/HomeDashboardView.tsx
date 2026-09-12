@@ -23,6 +23,7 @@
 // Fine dial scrolling behavior is W2/C — this task only applies the focus class.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import styles from './HomeDashboardView.module.scss'
 import type { MenuIconName } from './mockData'
 import { MenuIcon } from './MenuIcon'
@@ -44,10 +45,22 @@ export interface HomeDashboardViewProps {
   onSceneTap?: (slot: SceneSlotModel) => void
   onLightTap?: (tile: LightTileModel) => void
   onCoverAction?: (column: CoverColumnModel, direction: 'up' | 'down') => void
+  // ticket 9.6 W2-3a: touch hold (pointer held ≥ CARD_HOLD_MS, pattern ported
+  // from ContentCarousel). A light tile is holdable ONLY when dimmable
+  // (placeholders are dimmable by design); BOTH ^ and v buttons of a cover
+  // column trigger the column hold. A fired hold suppresses the short-press
+  // callback for that same press. Both optional — without them the component
+  // keeps plain W2-2 tap behavior.
+  onLightHold?: (tile: LightTileModel) => void
+  onCoverHold?: (column: CoverColumnModel) => void
 }
 
 // auto-dismiss window for the placeholder toast (~2 s)
 const PLACEHOLDER_TOAST_MS = 2000
+
+// ticket 9.6 W2-3a: pointer movement beyond this distance cancels the hold —
+// a drag/swipe is never a hold (same value as ContentCarousel's CARD_HOLD_SLOP_PX)
+const HOLD_SLOP_PX = 10
 
 // fixed icon per zone — the entity data carries no icon attribute, so each
 // zone uses one existing MenuIcon name (placeholders reuse the same icon).
@@ -63,6 +76,8 @@ export function HomeDashboardView({
   onSceneTap,
   onLightTap,
   onCoverAction,
+  onLightHold,
+  onCoverHold,
 }: HomeDashboardViewProps) {
   // the three zone view models — the builders fill placeholder slots for
   // unmapped entities (see homeDashboard.ts), so the zones below always render
@@ -108,6 +123,92 @@ export function HomeDashboardView({
     },
     [],
   )
+
+  // ticket 9.6 W2-3a: touch hold — the pointer-hold pattern ported from
+  // ContentCarousel (CARD_HOLD_MS from @/hooks/useHardwareButtons):
+  // pointerdown arms the timer, pointerup/cancel before the deadline leaves it
+  // a short press, movement beyond HOLD_SLOP_PX cancels it (a swipe is never a
+  // hold). A fired hold sets `held`, which suppresses the browser click that
+  // follows the long press for THAT SAME press (every fresh press resets the
+  // flag on its pointerdown). The tiles/buttons are inline .map() nodes
+  // without their own hooks, so the per-slot state lives in one ref map keyed
+  // by slot. Lights hold only when dimmable (placeholders included — they are
+  // dimmable by design); both ^/v cover buttons hold their column. When the
+  // matching callback prop is absent (or the tile is not dimmable) no pointer
+  // handlers attach and W2-2 short-press behavior stays untouched.
+  const holdStateRef = useRef<
+    Map<string, { timer: number | undefined; origin: { x: number; y: number } | null; held: boolean }>
+  >(new Map())
+
+  // an unmount with a timer still armed must not fire the hold later
+  useEffect(() => {
+    const states = holdStateRef.current
+    return () => {
+      for (const s of states.values()) {
+        if (s.timer !== undefined) window.clearTimeout(s.timer)
+      }
+    }
+  }, [])
+
+  const getHoldState = (key: string) => {
+    let s = holdStateRef.current.get(key)
+    if (!s) {
+      s = { timer: undefined, origin: null, held: false }
+      holdStateRef.current.set(key, s)
+    }
+    return s
+  }
+
+  const startHold = (key: string, e: React.PointerEvent, onHold: () => void) => {
+    const s = getHoldState(key)
+    // a fresh press clears any stale suppression flag and re-arms the timer
+    s.held = false
+    if (s.timer !== undefined) {
+      window.clearTimeout(s.timer)
+      s.timer = undefined
+    }
+    s.origin = { x: e.clientX, y: e.clientY }
+    s.timer = window.setTimeout(() => {
+      s.timer = undefined
+      s.held = true
+      onHold()
+    }, CARD_HOLD_MS)
+  }
+
+  const moveHold = (key: string, e: React.PointerEvent) => {
+    const s = holdStateRef.current.get(key)
+    if (!s || s.timer === undefined) return
+    const origin = s.origin
+    if (
+      origin &&
+      (Math.abs(e.clientX - origin.x) > HOLD_SLOP_PX ||
+        Math.abs(e.clientY - origin.y) > HOLD_SLOP_PX)
+    ) {
+      window.clearTimeout(s.timer)
+      s.timer = undefined
+      s.origin = null
+    }
+  }
+
+  const releaseHold = (key: string) => {
+    const s = holdStateRef.current.get(key)
+    if (!s) return
+    if (s.timer !== undefined) {
+      window.clearTimeout(s.timer)
+      s.timer = undefined
+    }
+    s.origin = null
+  }
+
+  // true → this click is the follow-up of a just-fired hold: suppress it
+  const isHeldClick = (key: string): boolean => {
+    const s = holdStateRef.current.get(key)
+    if (s?.held) {
+      s.held = false
+      return true
+    }
+    return false
+  }
 
   // short-press routing: placeholder nodes toast FIRST, then the callback
   // fires for every press (the parent skips null entityIds); real nodes just
@@ -164,7 +265,20 @@ export function HomeDashboardView({
             }`}
             data-entity-id={tile.entityId}
             data-dashboard-placeholder={tile.isPlaceholder ? 'true' : undefined}
-            onClick={() => handleLightTap(tile)}
+            // W2-3a: holdable ONLY when dimmable — placeholders are dimmable by
+            // design, so they hold too (the parent routes the null-entity model)
+            onPointerDown={
+              tile.dimmable
+                ? (e) => startHold(`light-${i}`, e, () => onLightHold?.(tile))
+                : undefined
+            }
+            onPointerMove={tile.dimmable ? (e) => moveHold(`light-${i}`, e) : undefined}
+            onPointerUp={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
+            onPointerCancel={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
+            onClick={() => {
+              if (isHeldClick(`light-${i}`)) return // the hold already handled it
+              handleLightTap(tile)
+            }}
           >
             <span className={styles.tileIcon}>
               <MenuIcon name={LIGHT_ICON} size={20} />
@@ -218,17 +332,48 @@ export function HomeDashboardView({
             >
               <span className={styles.coverLabel}>{col.label}</span>
               <span className={styles.coverBtns}>
+                {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
+                    hold is per cover, not per button; a fired hold suppresses
+                    the short-press of that same press on either button */}
                 <span
                   className={styles.coverBtn}
                   data-cover-action="up"
-                  onClick={() => handleCoverAction(col, 'up')}
+                  onPointerDown={(e) =>
+                    startHold(`cover-${i}`, e, () => {
+                      // W2-3: a placeholder column hold reuses the W2-2 toast
+                      // (the parent's onCoverHold is a no-op for these columns)
+                      if (col.isPlaceholder) showPlaceholderToast(col.label)
+                      onCoverHold?.(col)
+                    })
+                  }
+                  onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                  onPointerUp={() => releaseHold(`cover-${i}`)}
+                  onPointerCancel={() => releaseHold(`cover-${i}`)}
+                  onClick={() => {
+                    if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                    handleCoverAction(col, 'up')
+                  }}
                 >
                   ^
                 </span>
                 <span
                   className={styles.coverBtn}
                   data-cover-action="down"
-                  onClick={() => handleCoverAction(col, 'down')}
+                  onPointerDown={(e) =>
+                    startHold(`cover-${i}`, e, () => {
+                      // W2-3: a placeholder column hold reuses the W2-2 toast
+                      // (the parent's onCoverHold is a no-op for these columns)
+                      if (col.isPlaceholder) showPlaceholderToast(col.label)
+                      onCoverHold?.(col)
+                    })
+                  }
+                  onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                  onPointerUp={() => releaseHold(`cover-${i}`)}
+                  onPointerCancel={() => releaseHold(`cover-${i}`)}
+                  onClick={() => {
+                    if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                    handleCoverAction(col, 'down')
+                  }}
                 >
                   v
                 </span>

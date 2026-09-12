@@ -412,6 +412,42 @@ export function MainMenuView({
       ?.coverActuate(direction === 'up' ? 'open' : 'close')
   }
 
+  // ticket 9.6 W2-3: shared HOLD routing for Home dashboard slots — ONE
+  // helper used by BOTH input paths (the dial hold via onHoldContent below,
+  // the touch hold via the onLightHold/onCoverHold props of
+  // <HomeDashboardView> further down), so dial-hold and touch-hold behave
+  // identically. Light slots open HALightControlModal: placeholder tiles pass
+  // 'placeholder:<label>' (the modal shows its empty demo state for unknown
+  // ids — intended per ticket), real NON-dimmable lights do nothing (the
+  // touch path only arms a hold on dimmable tiles). Cover columns stop their
+  // motion; placeholder columns no-op here (the dashboard toasts them).
+  const homeHoldRoute = (tile: LightTileModel | null, column: CoverColumnModel | null) => {
+    if (tile !== null) {
+      if (tile.entityId === null) {
+        // placeholder tile → the modal's empty demo state for unknown ids
+        onOpenLightControl?.(`placeholder:${tile.label}`, tile.label)
+        return
+      }
+      if (!tile.dimmable) return
+      onOpenLightControl?.(tile.entityId, tile.label)
+      return
+    }
+    if (column === null || column.entityId === null) return
+    selectedEntities.find((e) => e.entityId === column.entityId)?.coverActuate('stop')
+  }
+
+  // slot-index → model resolution for the dial hold — same offsets as
+  // onConfirmContent: scenes[0..s) → lights → cover columns
+  const homeHoldSlot = (index: number) => {
+    if (index < homeDashboard.sceneRow.length) return // scene slots: hold is a no-op
+    const li = index - homeDashboard.sceneRow.length
+    if (li < homeDashboard.lightGrid.length) {
+      homeHoldRoute(homeDashboard.lightGrid[li], null)
+      return
+    }
+    homeHoldRoute(null, homeDashboard.coverSection.columns[li - homeDashboard.lightGrid.length] ?? null)
+  }
+
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
   // single-track playback (entries with a uri but no metadata → blank card)
   // plus an echo of the currently playing track (duplicate card). Sanitize
@@ -983,10 +1019,14 @@ export function MainMenuView({
     // bug53: dial HOLD on a card — same routing as the press path, plus the
     // dimmable-light → dim view shortcut (handleCardHold covers it)
     onHoldContent: (index) => {
-      // ticket 9.6 W2: dashboard interaction wiring (scene activate / light
-      // toggle / cover up-down, long-press → HALightControlModal) keys off the
-      // grid slots — no-op until then
-      if (confirmedCategory.id === 'home') return
+      // ticket 9.6 W2-3: dial HOLD on a Home dashboard grid slot routes
+      // through the SAME shared helper as the touch hold (homeHoldRoute):
+      // scene slots no-op, light slots open the control view, cover columns
+      // stop (slot offsets: scenes[0..s) → lights → cover columns)
+      if (confirmedCategory.id === 'home') {
+        homeHoldSlot(index)
+        return
+      }
       const card = confirmedCategory.cards[index]
       if (card) handleCardHold(card, index)
     },
@@ -1280,6 +1320,10 @@ export function MainMenuView({
             onSceneTap={homeSceneTap}
             onLightTap={homeLightTap}
             onCoverAction={homeCoverAction}
+            // ticket 9.6 W2-3: touch HOLD — the SAME shared routing as the
+            // dial hold (homeHoldRoute), so both input paths stay in lockstep
+            onLightHold={(tile) => homeHoldRoute(tile, null)}
+            onCoverHold={(column) => homeHoldRoute(null, column)}
           />
         ) : (
           <ContentCarousel
