@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { __resetLyricsCache, useLyrics } from '../useLyrics'
+import { __resetLyricsCache, primeLyricsCache, useLyrics } from '../useLyrics'
 import type { LyricsResult } from '../../api/types'
 import { server } from '../../__tests__/msw-server'
 
@@ -286,5 +286,181 @@ describe('useLyrics word-by-word upgrade', () => {
     await waitFor(() => expect(result.current.lyrics).toEqual(lineOnly))
     await new Promise((r) => setTimeout(r, 250))
     expect(result.current.lyrics).toEqual(lineOnly)
+  })
+})
+
+// issue #26: the layout owner (App) derives the split-view decision from this state.
+// A track change must keep the previous track's confirmed lyrics in state while the
+// new fetch is in flight (loading=true), so the layout stays sticky and only flips
+// on a confirmed resolve. These tests pin that state shape per switch direction.
+describe('useLyrics issue #26: state across track changes (sticky layout)', () => {
+  const aLyrics: LyricsResult = {
+    syncType: 'LINE_SYNCED',
+    lines: [{ startTimeMs: '0', words: 'A song line' }],
+  }
+  const bLyrics: LyricsResult = {
+    syncType: 'LINE_SYNCED',
+    lines: [{ startTimeMs: '0', words: 'B song line' }],
+  }
+
+  function renderTrackSwitch() {
+    return renderHook(
+      ({ trackId }: { trackId: string }) => useLyrics({ trackId, trackName: 'X', artist: 'Y' }),
+      { initialProps: { trackId: 'a-id' } },
+    )
+  }
+
+  it('with-lyrics -> with-lyrics: keeps the previous lyrics in state during the fetch window', async () => {
+    let releaseB: (() => void) | null = null
+    const bPending = new Promise<void>((resolve) => {
+      releaseB = resolve
+    })
+    server.use(
+      http.get('*/lyrics/a-id', () => HttpResponse.json(aLyrics)),
+      http.get('*/lyrics/b-id', async ({ request }) => {
+        if (new URL(request.url).searchParams.get('richsync')) return HttpResponse.json(bLyrics)
+        await bPending
+        return HttpResponse.json(bLyrics)
+      }),
+    )
+
+    const { result, rerender } = renderTrackSwitch()
+    await waitFor(() => expect(result.current.lyrics).toEqual(aLyrics))
+
+    act(() => {
+      rerender({ trackId: 'b-id' })
+    })
+
+    // fetch in flight for B: state still carries A (the last confirmed decision),
+    // flagged loading — this is what keeps the split view active, no standard flash
+    expect(result.current).toEqual({ lyrics: aLyrics, loading: true, error: null })
+
+    releaseB!()
+    await waitFor(() => expect(result.current.lyrics).toEqual(bLyrics))
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('with-lyrics -> no-lyrics: stale lyrics only clear on the confirmed empty result', async () => {
+    server.use(
+      http.get('*/lyrics/a-id', () => HttpResponse.json(aLyrics)),
+      http.get('*/lyrics/b-id', ({ request }) => {
+        if (new URL(request.url).searchParams.get('richsync'))
+          return new HttpResponse(null, { status: 404 })
+        return new HttpResponse(null, { status: 404 })
+      }),
+    )
+
+    const { result, rerender } = renderTrackSwitch()
+    await waitFor(() => expect(result.current.lyrics).toEqual(aLyrics))
+
+    act(() => {
+      rerender({ trackId: 'b-id' })
+    })
+
+    // while B is being fetched the previous decision (lyrics) is still in state
+    expect(result.current).toEqual({ lyrics: aLyrics, loading: true, error: null })
+
+    // confirmed empty: cleared, no error (404 = no lyrics, not a failure)
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.lyrics).toBeNull()
+    expect(result.current.error).toBeNull()
+  })
+
+  it('no-lyrics -> with-lyrics: stays null while fetching, fills in on arrival', async () => {
+    let releaseB: (() => void) | null = null
+    const bPending = new Promise<void>((resolve) => {
+      releaseB = resolve
+    })
+    server.use(
+      http.get('*/lyrics/a-id', () => new HttpResponse(null, { status: 404 })),
+      http.get('*/lyrics/b-id', async ({ request }) => {
+        if (new URL(request.url).searchParams.get('richsync')) return HttpResponse.json(bLyrics)
+        await bPending
+        return HttpResponse.json(bLyrics)
+      }),
+    )
+
+    const { result, rerender } = renderTrackSwitch()
+    // A confirmed: no lyrics
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.lyrics).toBeNull()
+
+    act(() => {
+      rerender({ trackId: 'b-id' })
+    })
+
+    // nothing was confirmed before, so the in-flight state is a fresh load
+    expect(result.current).toEqual({ lyrics: null, loading: true, error: null })
+
+    releaseB!()
+    await waitFor(() => expect(result.current.lyrics).toEqual(bLyrics))
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('richsync upgrade mid-play after a track switch still lands in state', async () => {
+    const cLineOnly: LyricsResult = {
+      syncType: 'LINE_SYNCED',
+      lines: [{ startTimeMs: '0', words: 'C line' }],
+    }
+    const cWordLevel: LyricsResult = {
+      syncType: 'LINE_SYNCED',
+      lines: [
+        {
+          startTimeMs: '0',
+          words: 'C line',
+          syllables: [
+            { startTimeMs: '0', word: 'C' },
+            { startTimeMs: '300', word: ' line' },
+          ],
+        },
+      ],
+    }
+    server.use(
+      http.get('*/lyrics/a-id', () => HttpResponse.json(aLyrics)),
+      http.get('*/lyrics/c-id', async ({ request }) => {
+        if (new URL(request.url).searchParams.get('richsync')) {
+          await new Promise((r) => setTimeout(r, 100))
+          return HttpResponse.json(cWordLevel)
+        }
+        return HttpResponse.json(cLineOnly)
+      }),
+    )
+
+    const { result, rerender } = renderTrackSwitch()
+    await waitFor(() => expect(result.current.lyrics).toEqual(aLyrics))
+
+    act(() => {
+      rerender({ trackId: 'c-id' })
+    })
+    // main fetch resolves to line-synced (layout confirmed active)
+    await waitFor(() => expect(result.current.lyrics).toEqual(cLineOnly))
+    expect(result.current.loading).toBe(false)
+
+    // mid-play word-by-word upgrade updates the confirmed state without clearing it
+    await waitFor(() => expect(result.current.lyrics).toEqual(cWordLevel))
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('switches to a cached track instantly with no fetch window', async () => {
+    // b-id is only hit by the background word-by-word upgrade (no syllables -> mark tried)
+    server.use(
+      http.get('*/lyrics/a-id', () => HttpResponse.json(aLyrics)),
+      http.get('*/lyrics/b-id', ({ request }) => {
+        if (!new URL(request.url).searchParams.get('richsync'))
+          throw new Error('unexpected main fetch for cached track')
+        return HttpResponse.json(bLyrics)
+      }),
+    )
+
+    const { result, rerender } = renderTrackSwitch()
+    await waitFor(() => expect(result.current.lyrics).toEqual(aLyrics))
+
+    // e.g. usePrefetch already warmed B — the switch must not open a loading window
+    primeLyricsCache('b-id', bLyrics)
+    act(() => {
+      rerender({ trackId: 'b-id' })
+    })
+
+    expect(result.current).toEqual({ lyrics: bLyrics, loading: false, error: null })
   })
 })
