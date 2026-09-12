@@ -158,7 +158,10 @@ describe('lyrics rendered DOM', () => {
     expect(screen.getByText('L2').className).not.toMatch(/lineActive/)
   })
 
-  it('renders an Instrumental placeholder when the only line says so', async () => {
+  // issue #25: a bare "Instrumental" placeholder is normalized to no-lyrics at
+  // fetch time, so the component renders the same fallback as a 404 — no
+  // separate "♪ Instrumental" box
+  it('renders the no-lyrics fallback when the only line is the Instrumental placeholder', async () => {
     server.use(
       http.get('*/lyrics/abc', () =>
         HttpResponse.json({
@@ -170,8 +173,23 @@ describe('lyrics rendered DOM', () => {
 
     render(<Lyrics status={TRACK_STATUS} />)
 
-    await waitFor(() => expect(screen.getByText(/instrumental/i)).toBeInTheDocument())
-    expect(screen.getByText(/♪/)).toBeInTheDocument()
+    expect(await screen.findByText(/no lyrics available/i)).toBeInTheDocument()
+    expect(screen.queryByText(/♪/)).not.toBeInTheDocument()
+  })
+
+  it('renders the no-lyrics fallback for a padded lowercase placeholder variant', async () => {
+    server.use(
+      http.get('*/lyrics/abc', () =>
+        HttpResponse.json({
+          syncType: 'UNSYNCED',
+          lines: [{ startTimeMs: '0', words: '  instrumental  ' }],
+        }),
+      ),
+    )
+
+    render(<Lyrics status={TRACK_STATUS} />)
+
+    expect(await screen.findByText(/no lyrics available/i)).toBeInTheDocument()
   })
 
   it('shows "No lyrics available" on a 404 (no lyrics for this track)', async () => {
