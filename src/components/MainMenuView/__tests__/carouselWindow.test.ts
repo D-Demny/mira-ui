@@ -201,8 +201,7 @@ describe('bug50: margin-based geometry invariants', () => {
     ] as const) {
       const offset = start > 0 ? leadingSpacerWidth(start) + CARD_GAP : 0
       for (const index of [start, Math.floor((start + end) / 2), end - 1]) {
-        const cardLeft =
-          CAROUSEL_EDGE_PADDING + offset + (index - start) * (CARD_WIDTH + CARD_GAP)
+        const cardLeft = CAROUSEL_EDGE_PADDING + offset + (index - start) * (CARD_WIDTH + CARD_GAP)
         expect(cardLeft, `card ${index} in window [${start}, ${end})`).toBe(
           CAROUSEL_EDGE_PADDING + index * STEP,
         )
@@ -274,7 +273,8 @@ describe('bug50: margin-based geometry invariants', () => {
     const viewportW = 550
     for (const index of [17, 100, 346, 459, 475]) {
       const scrollLeft = dialScrollLeft(501, index, viewportW)
-      const cardCenterScreen = 250 + CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2 - scrollLeft
+      const cardCenterScreen =
+        250 + CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2 - scrollLeft
       expect(cardCenterScreen, `index ${index}`).toBe(250 + viewportW / 2)
     }
   })
@@ -287,8 +287,7 @@ describe('dialScrollLeft (bug47 R2, F2)', () => {
   // the unwindowed total
   const maxScroll = (count: number, viewportW: number) =>
     Math.max(0, count * CARD_WIDTH + (count - 1) * CARD_GAP + CAROUSEL_EDGE_PADDING * 2 - viewportW)
-  const cardCenter = (index: number) =>
-    CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2
+  const cardCenter = (index: number) => CAROUSEL_EDGE_PADDING + index * STEP + CARD_WIDTH / 2
 
   it('centers an interior card exactly like scrollIntoView(inline: center)', () => {
     // the focused card's center lands on the viewport's center
@@ -361,7 +360,11 @@ describe('bug54: translucent geometry (CarouselGeometry)', () => {
   const maxScroll = (count: number) =>
     Math.max(
       0,
-      count * CARD_WIDTH + (count - 1) * CARD_GAP + geo.leftInset + CAROUSEL_EDGE_PADDING - VIEWPORT_W,
+      count * CARD_WIDTH +
+        (count - 1) * CARD_GAP +
+        geo.leftInset +
+        CAROUSEL_EDGE_PADDING -
+        VIEWPORT_W,
     )
 
   it('keeps the default (no-geometry) path bit-exact', () => {
@@ -378,9 +381,10 @@ describe('bug54: translucent geometry (CarouselGeometry)', () => {
     for (const viewportW of [550, 800, 1000]) {
       for (const count of [0, 1, 2, 50, 101, 501]) {
         for (let index = 0; index < count; index++) {
-          expect(dialScrollLeft(count, index, viewportW), `[${count}, ${index}, ${viewportW}]`).toBe(
-            legacy(count, index, viewportW),
-          )
+          expect(
+            dialScrollLeft(count, index, viewportW),
+            `[${count}, ${index}, ${viewportW}]`,
+          ).toBe(legacy(count, index, viewportW))
         }
       }
     }
@@ -456,7 +460,11 @@ describe('ticket8.1: collapsed sidebar geometry (COLLAPSED_SIDEBAR_WIDTH)', () =
   const maxScroll = (count: number) =>
     Math.max(
       0,
-      count * CARD_WIDTH + (count - 1) * CARD_GAP + geo.leftInset + CAROUSEL_EDGE_PADDING - VIEWPORT_W,
+      count * CARD_WIDTH +
+        (count - 1) * CARD_GAP +
+        geo.leftInset +
+        CAROUSEL_EDGE_PADDING -
+        VIEWPORT_W,
     )
 
   it('card 0 focused: scrollLeft stays 0 and the card rests at 88px (fully right of the collapsed edge)', () => {

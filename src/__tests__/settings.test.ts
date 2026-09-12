@@ -174,8 +174,22 @@ describe('settings store', () => {
     it('round-trips profiles + active id through localStorage', () => {
       updateSettings({
         piProfiles: [
-          { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: 'a', keyInstalled: true },
-          { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.2', user: 'root', password: 'b', keyInstalled: false },
+          {
+            id: 'pi-1',
+            label: 'Pi 1',
+            ip: '10.0.0.1',
+            user: 'root',
+            password: 'a',
+            keyInstalled: true,
+          },
+          {
+            id: 'pi-2',
+            label: 'Pi 2',
+            ip: '10.0.0.2',
+            user: 'root',
+            password: 'b',
+            keyInstalled: false,
+          },
         ],
         activePiId: 'pi-2',
       })
@@ -201,7 +215,14 @@ describe('settings store', () => {
       )
       __resetSettings()
       expect(getSettings().piProfiles).toEqual([
-        { id: 'a', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: 'p1', keyInstalled: false },
+        {
+          id: 'a',
+          label: 'Pi 1',
+          ip: '10.0.0.1',
+          user: 'root',
+          password: 'p1',
+          keyInstalled: false,
+        },
       ])
       // a stale active id falls back to the first profile
       expect(getSettings().activePiId).toBe('a')
@@ -217,7 +238,10 @@ describe('settings store', () => {
       )
       __resetSettings()
       expect(getSettings().activePiId).toBe('b')
-      localStorage.setItem('mira.settings.v1', JSON.stringify({ piProfiles: [], activePiId: 'gone' }))
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ piProfiles: [], activePiId: 'gone' }),
+      )
       __resetSettings()
       expect(getSettings().activePiId).toBeNull()
     })
@@ -226,7 +250,14 @@ describe('settings store', () => {
       expect(activePiProfile(getSettings())).toBeNull()
       updateActivePiProfileField('ip', '10.9.9.9')
       expect(getSettings().piProfiles).toEqual([
-        { id: 'pi-1', label: 'Pi 1', ip: '10.9.9.9', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '10.9.9.9',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ])
       expect(getSettings().activePiId).toBe('pi-1')
       updateActivePiProfileField('user', 'dietpi')

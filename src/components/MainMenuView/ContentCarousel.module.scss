@@ -88,7 +88,9 @@ $card-blur-radius: 12px;
   flex-shrink: 0;
   opacity: 0.65;
   transform: scale(0.92);
-  transition: transform 0.25s ease-out, opacity 0.25s ease-out;
+  transition:
+    transform 0.25s ease-out,
+    opacity 0.25s ease-out;
 }
 
 // dial focus inside the carousel

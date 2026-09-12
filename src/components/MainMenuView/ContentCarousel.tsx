@@ -299,13 +299,10 @@ export function ContentCarousel({
   // closure factory to call during render. Ref access happens ONLY when React
   // invokes the callback at commit time (attach/detach), never during render
   // (react-hooks/refs); the null call on unmount deregisters the element.
-  const registerCardElBase = useCallback(
-    (index: number, el: HTMLElement | null) => {
-      if (el) cardElsRef.current.set(index, el)
-      else cardElsRef.current.delete(index)
-    },
-    [],
-  )
+  const registerCardElBase = useCallback((index: number, el: HTMLElement | null) => {
+    if (el) cardElsRef.current.set(index, el)
+    else cardElsRef.current.delete(index)
+  }, [])
 
   // bug39: a category change fully purges the carousel's per-view state. The
   // measured scroll offset is the bug18 guard's baseline and belongs to the
@@ -581,7 +578,8 @@ export function ContentCarousel({
       // frame. Only an unconditional add per frame heals that within one
       // frame; Removals run diff-based (only what left the set).
       for (const i of next) cardElsRef.current.get(i)?.classList.add(styles.blurred)
-      for (const i of prev) if (!next.has(i)) cardElsRef.current.get(i)?.classList.remove(styles.blurred)
+      for (const i of prev)
+        if (!next.has(i)) cardElsRef.current.get(i)?.classList.remove(styles.blurred)
       liveSetRef.current = next
       rafId = requestAnimationFrame(frame)
     }

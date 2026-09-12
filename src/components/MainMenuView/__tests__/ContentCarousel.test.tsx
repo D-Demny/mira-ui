@@ -1341,7 +1341,9 @@ describe('bug54: underflow geometry (translucent menu background)', () => {
 
     // the collapsed flag WITHOUT an underflow (solid layout) never applies
     // either class — the variant is gated on underflowPx > 0
-    rerender(<ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} underflowCollapsed />)
+    rerender(
+      <ContentCarousel cards={MANY} categoryId="playlists" focusedIndex={0} underflowCollapsed />,
+    )
     expect(carouselEl(container).className).not.toContain('underflow')
   })
 

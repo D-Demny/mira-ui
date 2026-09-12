@@ -208,7 +208,11 @@ export function sidebarOverlap(
 // candidate window, same T4 center rule as sidebarOverlap(): at a settled
 // offset (physical == target) both sets are identical, which is what makes
 // the handoff back to React's render-derived set invisible.
-export function sidebarOverlapAt(scrollLeftPx: number, count: number, underflowPx: number): Set<number> {
+export function sidebarOverlapAt(
+  scrollLeftPx: number,
+  count: number,
+  underflowPx: number,
+): Set<number> {
   if (underflowPx <= 0) return new Set<number>()
   const pitch = CARD_WIDTH + CARD_GAP
   const leftInset = CAROUSEL_EDGE_PADDING + underflowPx
