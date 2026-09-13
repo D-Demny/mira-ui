@@ -2898,7 +2898,11 @@ describe('MainMenuView', () => {
       await screen.findByText('Settings')
       confirmDial() // sub-level, focus on 'Default Device' (0)
       const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
+      // 'settingsUnderflow' matches BOTH classes by substring — pin the
+      // expanded variant explicitly (issue #32: auto-collapse is off here, so
+      // the 250px inset is expected, not the 72px collapsed one)
       expect(list.parentElement?.className).toContain('settingsUnderflow')
+      expect(list.parentElement?.className).not.toContain('settingsUnderflowCollapsed')
 
       // toggling to a non-blur mode disables the underflow again (solid
       // layout: no pane margin, no carousel padding, display:contents list)
@@ -3080,6 +3084,41 @@ describe('MainMenuView', () => {
       expect(asideEl(container).className).not.toContain('collapsed')
       expect(homeWrap().className).toContain('homeUnderflow')
       expect(homeWrap().className).not.toContain('homeUnderflowCollapsed')
+    })
+
+    it('shifts the settings list inset by the collapsed width in blur + collapsed mode (issue #32)', async () => {
+      // 'blur' background + auto-collapse on: the settings list's underflow
+      // inset must track the ACTUAL glass — full 250px while the dial focus
+      // sits in the sidebar pane, icon-only 72px once selecting a category
+      // moves it to the content pane (the .settingsUnderflow/
+      // .settingsUnderflowCollapsed pairing, applied exclusively like the
+      // home dashboard's; issue #32: the list used to keep the 250px inset)
+      updateSettings({ sidebarBackground: 'blur', autoCollapseSidebar: 'on' })
+      const { container } = render(<MainMenuView />)
+      await screen.findByText('Wohnzimmer und Esszimmer') // home dashboard (default category)
+      const listWrap = () => {
+        const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
+        return list.parentElement as HTMLElement
+      }
+      // fresh render: focus in the sidebar pane → expanded glass, 250px inset
+      expect(asideEl(container).className).not.toContain('collapsed')
+
+      // selecting Einstellungen moves the focus to the content pane (bug20) →
+      // the 72px icon-only glass takes over, the collapsed variant applies
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+      await screen.findByText('Settings')
+      expect(asideEl(container).className).toContain('collapsed')
+      // 'settingsUnderflow' matches BOTH classes by substring — the
+      // 'settingsUnderflowCollapsed' check is the discriminator (same idiom
+      // as the home dashboard test above)
+      expect(listWrap().className).toContain('settingsUnderflow')
+      expect(listWrap().className).toContain('settingsUnderflowCollapsed')
+
+      // back restores the expanded glass → the 250px inset returns
+      pressBack()
+      expect(asideEl(container).className).not.toContain('collapsed')
+      expect(listWrap().className).toContain('settingsUnderflow')
+      expect(listWrap().className).not.toContain('settingsUnderflowCollapsed')
     })
   })
 
