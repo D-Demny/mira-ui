@@ -168,6 +168,18 @@
   box-sizing: border-box;
 }
 
+// ticket8.1 + issue #32: auto-collapsed sidebar — the settings list tracks the
+// icon-only glass width instead of the full pane (same pairing as
+// .homeUnderflow/.homeUnderflowCollapsed). Applied EXCLUSIVELY by
+// MainMenuView.tsx (one of the two inset classes, never both), so no cascade
+// order is involved.
+.settingsUnderflowCollapsed {
+  display: block;
+  height: 100%;
+  padding-left: $sidebar-collapsed-width;
+  box-sizing: border-box;
+}
+
 // swipe focus panes: dim the inactive pane so the focus position is visible
 .sidebarFocus {
   .contentPane {
