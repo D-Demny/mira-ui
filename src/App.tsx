@@ -373,19 +373,12 @@ function AppInner() {
     karaoke: settings.karaokeLyrics,
   })
   // bug52: the split lyrics layout only renders when lyrics actually exist. A track
-  // without lyrics (404, empty result, fetch error) falls back to the standard
-  // full-width layout, exactly like the layout "Show lyrics" OFF renders
+  // without lyrics (404, empty result, fetch error) — or while the fetch is still in
+  // flight — falls back to the standard full-width layout, exactly like the layout
+  // "Show lyrics" OFF renders
   const hasLyrics =
     lyricsState.error === null && lyricsState.lyrics !== null && lyricsState.lyrics.lines.length > 0
-  // issue #26: while a track change's lyrics fetch is in flight (loading), keep the
-  // last confirmed layout decision instead of falling back to standard. The hook
-  // holds the previous track's confirmed lyrics in state through the fetch, so
-  // hasLyrics already reflects it — gating on !loading here was the flicker: the
-  // split view dropped to standard for the whole 0.5–1 s fetch window and flipped
-  // back when the data landed. The Lyrics pane itself shows a "Loading lyrics..."
-  // placeholder while loading (no stale lines), and only a confirmed resolve (real
-  // data, 404/empty, or Instrumental normalized to null per #25) changes the layout.
-  const renderLyricsLayout = showLyrics && hasLyrics
+  const renderLyricsLayout = showLyrics && hasLyrics && !lyricsState.loading
   const menuOpen = forced === 'menu' ? true : menuOpenReal
   const powerMenuOpen = forced === 'power-menu' ? true : powerMenuOpenReal
   const btMenuOpen = forced === 'bluetooth-menu' ? true : btMenuOpenReal
