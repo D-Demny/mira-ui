@@ -1316,7 +1316,9 @@ export function MainMenuView({
           <div
             className={
               slidesUnderSidebar
-                ? `${styles.settingsWrap} ${styles.settingsUnderflow}`
+                ? `${styles.settingsWrap} ${
+                    sidebarCollapsed ? styles.settingsUnderflowCollapsed : styles.settingsUnderflow
+                  }`
                 : styles.settingsWrap
             }
           >
