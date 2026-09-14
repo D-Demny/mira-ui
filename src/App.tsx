@@ -1400,7 +1400,7 @@ function AppInner() {
             <ProgressBar status={playerStatus} onSeek={handleSeek} />
             <Controls
               isPaused={controls.isPaused}
-              shuffle={controls.shuffle}
+              shuffleMode={controls.shuffleMode}
               repeat={controls.repeat}
               disallowPrev={playerStatus.disallow_prev}
               disallowNext={playerStatus.disallow_next}
