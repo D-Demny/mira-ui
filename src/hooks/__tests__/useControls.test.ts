@@ -90,6 +90,28 @@ describe('useControls endpoint dispatch', () => {
     expect(bodies).toEqual([{ shuffle_context: true }, { shuffle_context: false }])
   })
 
+  it('omits smart_shuffle from the body unless explicitly provided', async () => {
+    const bodies: unknown[] = []
+    server.use(
+      http.post('*/player/shuffle_context', async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({})
+      }),
+    )
+
+    const { result } = renderHook(() => useControls())
+
+    await result.current.setShuffle(true)
+    await result.current.setShuffle(true, true)
+    await result.current.setShuffle(false)
+
+    expect(bodies).toEqual([
+      { shuffle_context: true },
+      { shuffle_context: true, smart_shuffle: true },
+      { shuffle_context: false },
+    ])
+  })
+
   it('sends setRepeat to both repeat endpoints with mode-derived flags', async () => {
     const contextBodies: unknown[] = []
     const trackBodies: unknown[] = []

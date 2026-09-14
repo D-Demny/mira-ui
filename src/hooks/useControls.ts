@@ -39,7 +39,13 @@ export function useControls() {
     [],
   )
   const setShuffle = useCallback(
-    (on: boolean) => call('POST', '/player/shuffle_context', { shuffle_context: on }),
+    (on: boolean, smart?: boolean) =>
+      // presence semantics: the smart_shuffle key is only sent when provided,
+      // so plain toggles stay legacy-shape for old daemons
+      call('POST', '/player/shuffle_context', {
+        shuffle_context: on,
+        ...(smart === undefined ? {} : { smart_shuffle: smart }),
+      }),
     [],
   )
   const setRepeat = useCallback((mode: RepeatState) => {

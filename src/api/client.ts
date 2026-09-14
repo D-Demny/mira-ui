@@ -58,6 +58,8 @@ export function remoteStateToStatus(rs: RemoteStateWire): ObserverStatusActive {
     volume_disabled: rs.VolumeDisabled,
     volume_steps: rs.VolumeSteps,
     shuffle: rs.ShuffleContext,
+    // tolerant map: absent field (old daemons) degrades to false, never crashes
+    smart_shuffle: rs.SmartShuffle === true,
     repeat_context: rs.RepeatContext,
     repeat_track: rs.RepeatTrack,
     disallow_prev: rs.DisallowSkipPrev,
