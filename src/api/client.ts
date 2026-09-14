@@ -125,17 +125,17 @@ export async function transferToDevice(deviceId: string): Promise<void> {
 // "Instrumental" placeholder line instead of no result. That is not usable lyric
 // content, so it is classified as no-lyrics (null) exactly like a 404 — every
 // layout decision then renders the standard full-width view. The check is the
-// single shared derivation for this classification (trim, collapse whitespace,
-// case-insensitive); it is applied at the one point where fetched lyrics enter
-// the app (fetchLyrics below) and stays available for reuse (e.g. #26).
+// single shared derivation for this classification: case-insensitive, and each
+// non-empty line must reduce to the bare word once all non-alphanumeric
+// decoration is stripped. It is applied at the one point where fetched lyrics
+// enter the app (fetchLyrics below) and stays available for reuse (e.g. #26).
+// issue #31: the daemon's lrclib source answers 200 OK with a decorated
+// "♪ Instrumental ♪" line, which this normalization now absorbs as well.
 export function isInstrumentalPlaceholder(lines: { words: string }[]): boolean {
-  const text = lines
-    .map((l) => l.words)
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase()
-  return text === 'instrumental'
+  const stripped = lines
+    .map((l) => l.words.toLowerCase().replace(/[^a-z0-9]+/g, ''))
+    .filter((w) => w !== '')
+  return stripped.length > 0 && stripped.every((w) => w === 'instrumental')
 }
 
 // null passes through; a result consisting solely of the instrumental placeholder

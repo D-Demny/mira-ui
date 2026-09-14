@@ -335,7 +335,7 @@ function LyricsImpl({ status, onSeek, active = true, lyricsState }: Props) {
 
   // issue #25: a bare "Instrumental" placeholder is already normalized to null at
   // fetch time (api/client.ts), so it takes the no-lyrics path above — the split
-  // view never renders for such tracks
+  // view never renders for such tracks (incl. decorated variants, issue #31)
 
   return (
     <div className={styles.lyrics} style={bgStyle} ref={containerRef}>
