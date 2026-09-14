@@ -14,9 +14,10 @@ import { haBaseStatus, useHaStatus } from '../useHaStatus'
 // runs automatically, so the msw-server defaults (old-daemon 404 for the ha
 // endpoints) apply unless a test opts in.
 
-// the default MSW catalog fixture carries 9 lights + 6 controllable
-// non-lights (the sensor is filtered out)
-const CATALOG_SIZE = 15
+// issue #37 (intentional semantics change): the catalog now includes EVERY
+// domain from GET /states — the default MSW fixture carries 9 lights +
+// 7 non-lights (incl. the sensor), so entityCount is the full HA entity total
+const CATALOG_SIZE = 16
 
 const FULL_HA = {
   url: 'http://10.10.1.104:8123',
@@ -34,7 +35,13 @@ describe('haBaseStatus (pure, no fetch)', () => {
   })
 
   it('requires BOTH url and token to be configured', () => {
-    const base = { url: 'http://x', username: '', password: '', token: '', tokenSource: 'default' as const }
+    const base = {
+      url: 'http://x',
+      username: '',
+      password: '',
+      token: '',
+      tokenSource: 'default' as const,
+    }
     expect(haBaseStatus(base)).toBe('default') // url without token
     expect(haBaseStatus({ ...base, url: '', token: 't' })).toBe('default') // token without url
     expect(haBaseStatus({ ...base, token: 't' })).toBe('configured')

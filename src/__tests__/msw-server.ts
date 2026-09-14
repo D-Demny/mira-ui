@@ -2,10 +2,11 @@ import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
 import { HOME_LIGHTS } from '@/hooks/useHomeLight'
 
-// ticket 9.3: default catalog fixture — the 9 curated lights (friendly_names
-// MUST stay in sync with the HOME_LIGHTS labels — the MainMenuView tests
-// expect e.g. '3er Stehlampe Gold'), one entity per other controllable
-// domain, plus a sensor that the catalog filter must drop.
+// ticket 9.3 / issue #37: default catalog fixture — the 9 curated lights
+// (friendly_names MUST stay in sync with the HOME_LIGHTS labels — the
+// MainMenuView tests expect e.g. '3er Stehlampe Gold'), one entity per other
+// domain, plus a sensor. issue #37: toHomeEntityCatalog no longer filters, so
+// every entry below now survives into the dynamic catalog.
 // bug55: shaped like the REAL HA GET /api/states response — a JSON ARRAY of
 // {entity_id, state, attributes} entries (NOT an entity_id-keyed map)
 function homeEntityCatalogFixture(): Array<{
@@ -55,7 +56,8 @@ function homeEntityCatalogFixture(): Array<{
     state: 'off',
     attributes: { friendly_name: 'Nachtmodus' },
   })
-  // must be filtered out by the catalog (not a controllable domain)
+  // issue #37: no longer filtered out — non-controllable domains enter the
+  // dynamic catalog too (they just cannot be toggled)
   body.push({
     entity_id: 'sensor.temperatur_wohnzimmer',
     state: '21.5',

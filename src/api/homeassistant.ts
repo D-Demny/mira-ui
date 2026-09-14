@@ -174,9 +174,10 @@ const SUPPORT_BRIGHTNESS = 1
 // The brightness attribute is 0–255, or null while the light is off.
 // (ticket 9.3: moved from src/hooks/useHomeLight.ts — it is pure
 // HaEntityState knowledge and belongs with the API layer)
-export function lightCapabilities(
-  entity: HaEntityState,
-): { dimmable: boolean; brightnessPct: number | null } {
+export function lightCapabilities(entity: HaEntityState): {
+  dimmable: boolean
+  brightnessPct: number | null
+} {
   const attrs = entity.attributes ?? {}
   const rawModes = attrs.supported_color_modes
   const modes = Array.isArray(rawModes)
@@ -191,16 +192,16 @@ export function lightCapabilities(
     (supportedFeatures & SUPPORT_BRIGHTNESS) !== 0
   const rawBrightness = attrs.brightness
   const brightnessPct =
-    typeof rawBrightness === 'number' &&
-    Number.isFinite(rawBrightness) &&
-    rawBrightness > 0
+    typeof rawBrightness === 'number' && Number.isFinite(rawBrightness) && rawBrightness > 0
       ? Math.round((rawBrightness / 255) * 100)
       : null
   return { dimmable, brightnessPct }
 }
 
-// ticket 9.3: the domains the Home carousel can control — the order doubles
-// as the catalog sort order (priority)
+// ticket 9.3 / issue #37: the KNOWN (controllable) domains — now only a
+// PRIORITY list for catalog sorting (every domain from GET /states enters the
+// catalog, unknown ones sort after these in alphabetical order). Also the set
+// with an explicit activation service (see ENTITY_SERVICES).
 export const HOME_ENTITY_DOMAINS = [
   'light',
   'switch',
@@ -210,6 +211,32 @@ export const HOME_ENTITY_DOMAINS = [
   'input_boolean',
   'media_player',
 ] as const
+
+// issue #37: German display labels for the known domains (the picker's
+// level-1 category cards render domainLabel(); unknown domains fall back to
+// the humanized title-cased name)
+const KNOWN_DOMAIN_LABELS: Record<string, string> = {
+  light: 'Lichter',
+  switch: 'Schalter',
+  fan: 'Lüfter',
+  scene: 'Szenen',
+  cover: 'Rollläden',
+  input_boolean: 'Boolesche Werte',
+  media_player: 'Mediaplayer',
+}
+
+// issue #37: human-readable category name for a domain — the German label for
+// known domains, otherwise a title-cased humanization of the domain string
+// (split on '_', words capitalized, digits kept): input_select → "Input Select"
+export function domainLabel(domain: string): string {
+  const known = KNOWN_DOMAIN_LABELS[domain]
+  if (known) return known
+  return domain
+    .split('_')
+    .filter((word) => word.length > 0)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
 
 export interface HaEntityCatalogEntry {
   entityId: string
@@ -253,9 +280,11 @@ export function humanizeEntityLabel(entityId: string): string {
     .join(' ')
 }
 
-// ticket 9.3: flatten the raw GET /states object into the carousel catalog —
-// only the controllable domains survive (domain = prefix before the first
-// '.'), labels prefer friendly_name, sorted by domain priority then label
+// ticket 9.3 / issue #37: flatten the raw GET /states object into the catalog —
+// EVERY domain survives (dynamic categories, no whitelist), domain = prefix
+// before the first '.', labels prefer friendly_name. Sort: known domains in
+// HOME_ENTITY_DOMAINS priority order first, unknown domains after (alphabetical
+// by domain), within each domain by label.
 export function toHomeEntityCatalog(raw: Record<string, HaEntityState>): HaEntityCatalogEntry[] {
   const entries: HaEntityCatalogEntry[] = []
   for (const entityId of Object.keys(raw)) {
@@ -264,7 +293,6 @@ export function toHomeEntityCatalog(raw: Record<string, HaEntityState>): HaEntit
     const dot = entityId.indexOf('.')
     if (dot === -1) continue
     const domain = entityId.slice(0, dot)
-    if ((HOME_ENTITY_DOMAINS as readonly string[]).indexOf(domain) === -1) continue
     const state = entity.state
     if (typeof state !== 'string') continue
     const rawLabel = (entity.attributes ?? {}).friendly_name
@@ -272,10 +300,13 @@ export function toHomeEntityCatalog(raw: Record<string, HaEntityState>): HaEntit
       typeof rawLabel === 'string' && rawLabel.length > 0 ? rawLabel : humanizeEntityLabel(entityId)
     entries.push({ entityId, domain, label, state, active: entityActive(domain, state) })
   }
+  const knownDomains = HOME_ENTITY_DOMAINS as readonly string[]
   entries.sort((a, b) => {
-    const da = (HOME_ENTITY_DOMAINS as readonly string[]).indexOf(a.domain)
-    const db = (HOME_ENTITY_DOMAINS as readonly string[]).indexOf(b.domain)
-    if (da !== db) return da - db
+    const da = knownDomains.indexOf(a.domain)
+    const db = knownDomains.indexOf(b.domain)
+    if ((da === -1) !== (db === -1)) return da === -1 ? 1 : -1 // unknowns last
+    if (da !== -1 && da !== db) return da - db // both known: priority order
+    if (a.domain !== b.domain) return a.domain.localeCompare(b.domain) // both unknown: alphabetical
     return a.label.localeCompare(b.label, 'de', { sensitivity: 'base' })
   })
   return entries
@@ -354,12 +385,15 @@ export function callHaService(
   })
 }
 
-// ticket 9.3: activate one catalog entry via its domain's service
+// ticket 9.3 / issue #37: activate one catalog entry via its domain's service.
+// The catalog is now dynamic, so any domain can reach here — domains without
+// an explicit service (sensors, persons, …) fall back to the generic 'toggle';
+// HA rejects what it cannot toggle and the caller's existing error path shows
+// the message instead of this throwing a TypeError.
 export function activateHaEntity(
   entry: { entityId: string; domain: string },
   signal?: AbortSignal,
 ): Promise<HaEntityState[]> {
-  const service = ENTITY_SERVICES[entry.domain]
-  if (!service) throw new TypeError(`no activation service for domain: ${entry.domain}`)
+  const service = ENTITY_SERVICES[entry.domain] ?? 'toggle'
   return callHaService(entry.domain, service, { entity_id: entry.entityId }, signal)
 }

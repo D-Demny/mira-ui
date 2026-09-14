@@ -8,6 +8,7 @@ import {
   __setHaTimeoutForTests,
   activateHaEntity,
   callHaService,
+  domainLabel,
   entityActive,
   fetchHaEntityList,
   fetchHaEntityState,
@@ -46,9 +47,8 @@ describe('homeassistant api', () => {
 
   it('throws on a non-ok response', async () => {
     server.use(
-      http.get(
-        '*/ha-api/states/light.missing',
-        () => HttpResponse.json({ message: 'not found' }, { status: 404 }),
+      http.get('*/ha-api/states/light.missing', () =>
+        HttpResponse.json({ message: 'not found' }, { status: 404 }),
       ),
     )
     await expect(fetchHaEntityState('light.missing')).rejects.toThrow(/404/)
@@ -84,9 +84,8 @@ describe('homeassistant api', () => {
 
   it('throws when the toggle service fails', async () => {
     server.use(
-      http.post(
-        '*/ha-api/services/light/toggle',
-        () => HttpResponse.json({ message: 'unauthorized' }, { status: 401 }),
+      http.post('*/ha-api/services/light/toggle', () =>
+        HttpResponse.json({ message: 'unauthorized' }, { status: 401 }),
       ),
     )
     await expect(toggleHaEntity('light.3er_stehlampe_gold_esszimmer')).rejects.toThrow(/404|401/)
@@ -107,9 +106,7 @@ describe('homeassistant api', () => {
         }),
         http.post('*/ha-api/services/light/turn_on', async ({ request }) => {
           on.push(await request.json())
-          return HttpResponse.json([
-            { entity_id: 'light.livingroom', state: 'on', attributes: {} },
-          ])
+          return HttpResponse.json([{ entity_id: 'light.livingroom', state: 'on', attributes: {} }])
         }),
       )
       const offResult = await setHaLightBrightness('light.livingroom', 0)
@@ -118,10 +115,7 @@ describe('homeassistant api', () => {
       expect(offResult[0]?.state).toBe('off')
 
       await setHaLightBrightness('light.livingroom', -3)
-      expect(off).toEqual([
-        { entity_id: 'light.livingroom' },
-        { entity_id: 'light.livingroom' },
-      ])
+      expect(off).toEqual([{ entity_id: 'light.livingroom' }, { entity_id: 'light.livingroom' }])
       expect(on).toEqual([])
     })
 
@@ -131,9 +125,7 @@ describe('homeassistant api', () => {
       server.use(
         http.post('*/ha-api/services/light/turn_on', async ({ request }) => {
           on.push(await request.json())
-          return HttpResponse.json([
-            { entity_id: 'light.livingroom', state: 'on', attributes: {} },
-          ])
+          return HttpResponse.json([{ entity_id: 'light.livingroom', state: 'on', attributes: {} }])
         }),
         http.post('*/ha-api/services/light/turn_off', async ({ request }) => {
           off.push(await request.json())
@@ -163,14 +155,15 @@ describe('homeassistant api', () => {
       expect(list['light.3er_stehlampe_gold_esszimmer']?.state).toBe('off')
       expect(list['switch.wasserpumpe']?.state).toBe('off')
       expect(list['scene.abendstimmung']?.state).toBe('none')
-      // the raw list is unfiltered — the sensor only drops in toHomeEntityCatalog
+      // the raw list is unfiltered — issue #37: toHomeEntityCatalog now
+      // admits every domain, so the sensor survives into the catalog too
       expect(list['sensor.temperatur_wohnzimmer']?.state).toBe('21.5')
     })
 
     // bug55: HA's REAL contract is a JSON array — a well-formed array must be
     // accepted and normalized into the entity_id-keyed map (the old test
     // asserted the opposite: that an array body must throw)
-    it('accepts HA\'s JSON array contract and normalizes it to the entity_id map', async () => {
+    it("accepts HA's JSON array contract and normalizes it to the entity_id map", async () => {
       server.use(
         http.get('*/ha-api/states', () =>
           HttpResponse.json([
@@ -215,11 +208,13 @@ describe('homeassistant api', () => {
 
     it('maps a non-JSON (HTML error page) body to a clean error', async () => {
       server.use(
-        http.get('*/ha-api/states', () =>
-          new HttpResponse('<html>502 Bad Gateway</html>', {
-            status: 200,
-            headers: { 'content-type': 'text/html' },
-          }),
+        http.get(
+          '*/ha-api/states',
+          () =>
+            new HttpResponse('<html>502 Bad Gateway</html>', {
+              status: 200,
+              headers: { 'content-type': 'text/html' },
+            }),
         ),
       )
       await expect(fetchHaEntityList()).rejects.toThrow(/Expected JSON but got text\/html/)
@@ -227,7 +222,9 @@ describe('homeassistant api', () => {
 
     it('throws on a non-ok response', async () => {
       server.use(
-        http.get('*/ha-api/states', () => HttpResponse.json({ message: 'unauthorized' }, { status: 401 })),
+        http.get('*/ha-api/states', () =>
+          HttpResponse.json({ message: 'unauthorized' }, { status: 401 }),
+        ),
       )
       await expect(fetchHaEntityList()).rejects.toThrow(/401/)
     })
@@ -239,9 +236,7 @@ describe('homeassistant api', () => {
     // the abort fires at that deadline, not at the 5 s single-state budget
     it('times out after the catalog budget, not the single-state budget', async () => {
       vi.useFakeTimers()
-      server.use(
-        http.get('*/ha-api/states', () => new Promise<HttpResponse<undefined>>(() => {})),
-      )
+      server.use(http.get('*/ha-api/states', () => new Promise<HttpResponse<undefined>>(() => {})))
       const pending = fetchHaEntityList().catch((e: unknown) => e)
       await vi.advanceTimersByTimeAsync(CATALOG_TIMEOUT_MS)
       const err = await pending
@@ -274,8 +269,9 @@ describe('homeassistant api', () => {
       vi.useFakeTimers()
       __setHaTimeoutForTests(100)
       server.use(
-        http.get('*/ha-api/states/light.slow-seam', () =>
-          new Promise<HttpResponse<undefined>>(() => {}),
+        http.get(
+          '*/ha-api/states/light.slow-seam',
+          () => new Promise<HttpResponse<undefined>>(() => {}),
         ),
       )
       const pending = fetchHaEntityState('light.slow-seam').catch((e: unknown) => e)
@@ -287,7 +283,7 @@ describe('homeassistant api', () => {
   })
 
   describe('toHomeEntityCatalog (ticket 9.3)', () => {
-    it('filters to the controllable domains and sorts by domain then label', () => {
+    it('includes every domain: known ones in priority order, unknown ones after (alphabetical), label sort within a domain', () => {
       const raw: Record<string, HaEntityState> = {
         'sensor.temperatur': { entity_id: 'sensor.temperatur', state: '21.5' },
         'switch.b_zweite': {
@@ -301,6 +297,14 @@ describe('homeassistant api', () => {
         'cover.tor': { entity_id: 'cover.tor', state: 'open' },
         'input_boolean.flag': { entity_id: 'input_boolean.flag', state: 'off' },
         'media_player.tv': { entity_id: 'media_player.tv', state: 'playing' },
+        // issue #37: dynamic catalog — previously filtered out, now present
+        'person.max': { entity_id: 'person.max', state: 'home' },
+        'climate.schlafzimmer': {
+          entity_id: 'climate.schlafzimmer',
+          state: 'heat_cool',
+          attributes: { friendly_name: 'Schlafzimmer' },
+        },
+        'sensor.b_feuchte': { entity_id: 'sensor.b_feuchte', state: '48.0' },
       }
       const entries = toHomeEntityCatalog(raw)
       expect(entries.map((e) => e.entityId)).toEqual([
@@ -311,6 +315,10 @@ describe('homeassistant api', () => {
         'cover.tor',
         'input_boolean.flag',
         'media_player.tv',
+        'climate.schlafzimmer', // unknown domain: after ALL known ones,
+        'person.max', // alphabetical by domain string (climate < person < sensor)
+        'sensor.b_feuchte', // within a domain still by label
+        'sensor.temperatur',
       ])
       expect(entries.map((e) => e.active)).toEqual([
         true, // light on
@@ -320,12 +328,17 @@ describe('homeassistant api', () => {
         true, // cover open
         false, // input_boolean off
         true, // media_player playing
+        null, // climate: no active concept
+        null, // person: no active concept
+        null, // sensor: no active concept
+        null, // sensor: no active concept
       ])
       // labels: humanized (no friendly_name) vs friendly_name
       expect(entries[0].label).toBe('3er Lampe')
       expect(entries[1].label).toBe('A Erste')
       expect(entries[2].label).toBe('Zweite')
       expect(entries[3].label).toBe('Abend')
+      expect(entries[7].label).toBe('Schlafzimmer')
     })
 
     it('prefers friendly_name and humanizes when it is missing or empty', () => {
@@ -355,7 +368,7 @@ describe('homeassistant api', () => {
 
     it('skips entries without a domain prefix or state', () => {
       const raw: Record<string, HaEntityState> = {
-        'no_dot': { entity_id: 'no_dot', state: 'on' },
+        no_dot: { entity_id: 'no_dot', state: 'on' },
         'light.broken': { entity_id: 'light.broken' } as unknown as HaEntityState,
       }
       expect(toHomeEntityCatalog(raw)).toEqual([])
@@ -396,6 +409,32 @@ describe('homeassistant api', () => {
     })
   })
 
+  describe('domainLabel (issue #37)', () => {
+    it('returns the German label for every known domain', () => {
+      // the German domain labels rendered on the picker's level-1 category
+      // cards (task 3 removed the duplicated SECTION_LABELS from the modal —
+      // these are now the single source)
+      const sectionLabels: Record<string, string> = {
+        light: 'Lichter',
+        switch: 'Schalter',
+        fan: 'Lüfter',
+        scene: 'Szenen',
+        cover: 'Rollläden',
+        input_boolean: 'Boolesche Werte',
+        media_player: 'Mediaplayer',
+      }
+      for (const domain of Object.keys(sectionLabels)) {
+        expect(domainLabel(domain)).toBe(sectionLabels[domain])
+      }
+    })
+
+    it('title-cases unknown domains, keeping digits', () => {
+      expect(domainLabel('input_select')).toBe('Input Select')
+      expect(domainLabel('sensor')).toBe('Sensor')
+      expect(domainLabel('fan_2')).toBe('Fan 2')
+    })
+  })
+
   describe('callHaService / activateHaEntity (ticket 9.3)', () => {
     it('calls the generic service endpoint and parses the echoed response', async () => {
       const res = await callHaService('switch', 'toggle', { entity_id: 'switch.wasserpumpe' })
@@ -420,8 +459,16 @@ describe('homeassistant api', () => {
       expect(light[0]?.state).toBe('on')
     })
 
-    it('throws a TypeError for unknown domains', () => {
-      expect(() => activateHaEntity({ entityId: 'sensor.x', domain: 'sensor' })).toThrow(TypeError)
+    it('falls back to the generic toggle service for unknown domains (issue #37)', async () => {
+      // no TypeError anymore — the dynamic catalog admits any domain; a real
+      // HA without a toggleable sensor would answer non-ok and surface via the
+      // existing error path instead of throwing client-side
+      const sensor = await activateHaEntity({
+        entityId: 'sensor.temperatur_wohnzimmer',
+        domain: 'sensor',
+      })
+      expect(sensor[0]?.entity_id).toBe('sensor.temperatur_wohnzimmer')
+      expect(sensor[0]?.state).toBe('on') // MSW generic services catch-all (toggle path)
     })
 
     it('exports the domain list and service map as specced', () => {
@@ -452,10 +499,18 @@ describe('homeassistant api', () => {
 
     it('counts the legacy SUPPORT_BRIGHTNESS feature bit as a union', () => {
       expect(
-        lightCapabilities({ entity_id: 'light.x', state: 'on', attributes: { supported_features: 1 } }),
+        lightCapabilities({
+          entity_id: 'light.x',
+          state: 'on',
+          attributes: { supported_features: 1 },
+        }),
       ).toEqual({ dimmable: true, brightnessPct: null })
       expect(
-        lightCapabilities({ entity_id: 'light.x', state: 'on', attributes: { supported_features: 0 } }),
+        lightCapabilities({
+          entity_id: 'light.x',
+          state: 'on',
+          attributes: { supported_features: 0 },
+        }),
       ).toEqual({ dimmable: false, brightnessPct: null })
     })
 

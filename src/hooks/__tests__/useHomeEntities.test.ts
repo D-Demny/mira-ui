@@ -23,8 +23,8 @@ function seedSelection(ids: string[]) {
 }
 
 // the default MSW catalog fixture carries 9 lights + 6 controllable non-lights
-// (the sensor is filtered out)
-const CATALOG_SIZE = 15
+// + 1 sensor (issue #37: toHomeEntityCatalog no longer filters domains)
+const CATALOG_SIZE = 16
 
 describe('useHomeEntities', () => {
   beforeEach(() => {
@@ -183,9 +183,10 @@ describe('useHomeEntities', () => {
       await waitFor(() => expect(result.current.entries.length).toBe(CATALOG_SIZE))
       expect(result.current.loading).toBe(false)
       expect(result.current.error).toBeNull()
-      // sensor is filtered out, all controllable domains are present
+      // issue #37: every domain survives the catalog (sensors included — they
+      // just cannot be toggled), all controllable domains are present
       const ids = result.current.entries.map((e) => e.entityId)
-      expect(ids).not.toContain('sensor.temperatur_wohnzimmer')
+      expect(ids).toContain('sensor.temperatur_wohnzimmer')
       expect(ids).toContain(SWITCH)
       expect(ids).toContain(SCENE)
       expect(ids).toContain(MEDIA)
