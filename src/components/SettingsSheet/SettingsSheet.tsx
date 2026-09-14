@@ -91,7 +91,7 @@ function SettingsSheetImpl({
               <span className={styles.label}>Default Device</span>
               <span className={styles.value}>
                 {defaultDeviceId
-                  ? devices.find((d) => d.id === defaultDeviceId)?.name ?? 'Unknown'
+                  ? (devices.find((d) => d.id === defaultDeviceId)?.name ?? 'Unknown')
                   : 'None'}
               </span>
             </div>
@@ -148,7 +148,7 @@ function SettingsSheetImpl({
             onChange={(v) => updateSettings({ volumeStepPct: v })}
             format={(v) => `${v}%`}
             disabled={phoneVolume}
-            defaultValue={2}
+            defaultValue={4}
           />
         </SettingRow>
 

@@ -27,10 +27,10 @@ describe('settings store', () => {
   it('uses sane defaults when nothing is stored', () => {
     expect(getSettings().showLyrics).toBe(true)
     expect(getSettings().lyricOffsetMs).toBe(0)
-    expect(getSettings().volumeStepPct).toBe(2)
+    expect(getSettings().volumeStepPct).toBe(4)
     expect(getSettings().autoBrightness).toBe(true)
     expect(getSettings().brightness).toBe(5)
-    expect(getSettings().uiScalePct).toBe(100)
+    expect(getSettings().uiScalePct).toBe(110)
   })
 
   it('round-trips updates through localStorage', () => {
@@ -73,13 +73,13 @@ describe('settings store', () => {
     ['out of range high', 999, 115],
     ['out of range low', 10, 85],
     ['a numeric string', '110', 110],
-    ['null', null, 100],
-    ['undefined', undefined, 100],
-    ['NaN (serialises to null)', Number.NaN, 100],
-    ['Infinity (serialises to null)', Number.POSITIVE_INFINITY, 100],
-    ['an empty string', '', 100],
-    ['a non-numeric string', 'big', 100],
-    ['an object', {}, 100],
+    ['null', null, 110],
+    ['undefined', undefined, 110],
+    ['NaN (serialises to null)', Number.NaN, 110],
+    ['Infinity (serialises to null)', Number.POSITIVE_INFINITY, 110],
+    ['an empty string', '', 110],
+    ['a non-numeric string', 'big', 110],
+    ['an object', {}, 110],
   ])('coerces %s to a usable ui scale', (_label, stored, expected) => {
     localStorage.setItem('mira.settings.v1', JSON.stringify({ uiScalePct: stored }))
     __resetSettings()
@@ -323,31 +323,32 @@ describe('settings store', () => {
   })
 
   describe('sidebarBackground (bug54/bug58)', () => {
-    it('defaults to solid on a fresh install', () => {
-      expect(getSettings().sidebarBackground).toBe('solid')
+    it('defaults to blur on a fresh install', () => {
+      expect(getSettings().sidebarBackground).toBe('blur')
     })
 
-    it('coerces a missing field in an old blob to solid (idempotent migration)', () => {
+    it('coerces a missing field in an old blob to the default (idempotent migration)', () => {
       localStorage.setItem(
         'mira.settings.v1',
         JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
       )
       __resetSettings()
-      expect(getSettings().sidebarBackground).toBe('solid')
+      expect(getSettings().sidebarBackground).toBe('blur')
     })
 
     it.each([
+      ['the exact "solid" string', 'solid', 'solid'],
       ['the exact "translucent" string', 'translucent', 'translucent'],
       ['the exact "clear" string (v2)', 'clear', 'clear'],
       ['the exact "blur" string (bug58)', 'blur', 'blur'],
-      ['"transparent"', 'transparent', 'solid'],
-      ['"SOLID"', 'SOLID', 'solid'],
-      ['"Unschärfe" (a German label, not an enum value)', 'Unschärfe', 'solid'],
-      ['"BLUR"', 'BLUR', 'solid'],
-      ['the number 1', 1, 'solid'],
-      ['true', true, 'solid'],
-      ['null', null, 'solid'],
-      ['an object', {}, 'solid'],
+      ['"transparent"', 'transparent', 'blur'],
+      ['"SOLID"', 'SOLID', 'blur'],
+      ['"Unschärfe" (a German label, not an enum value)', 'Unschärfe', 'blur'],
+      ['"BLUR"', 'BLUR', 'blur'],
+      ['the number 1', 1, 'blur'],
+      ['true', true, 'blur'],
+      ['null', null, 'blur'],
+      ['an object', {}, 'blur'],
     ])('strict coercion: stored %s → %s', (_label, stored, expected) => {
       localStorage.setItem('mira.settings.v1', JSON.stringify({ sidebarBackground: stored }))
       __resetSettings()
@@ -387,32 +388,33 @@ describe('settings store', () => {
     })
 
     // backward compat: blobs predating bug58 never held 'blur' — a missing
-    // field stays 'solid' (no migration needed; the strict coercion above is
-    // the null-op migration), so the pre-bug58 tests keep running unchanged
+    // field falls back to the default (no migration needed; the strict
+    // coercion above is the null-op migration), so the pre-bug58 tests keep
+    // running unchanged
   })
 
   describe('autoCollapseSidebar (ticket 8.1)', () => {
-    it('defaults to off on a fresh install', () => {
-      expect(getSettings().autoCollapseSidebar).toBe('off')
+    it('defaults to on on a fresh install', () => {
+      expect(getSettings().autoCollapseSidebar).toBe('on')
     })
 
-    it('coerces a missing field in an old blob to off (idempotent, null-op migration)', () => {
+    it('coerces a missing field in an old blob to the default (idempotent, null-op migration)', () => {
       localStorage.setItem(
         'mira.settings.v1',
         JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
       )
       __resetSettings()
-      expect(getSettings().autoCollapseSidebar).toBe('off')
+      expect(getSettings().autoCollapseSidebar).toBe('on')
     })
 
     it.each([
       ['the exact "on" string', 'on', 'on'],
       ['the exact "off" string', 'off', 'off'],
-      ['"auto"', 'auto', 'off'],
-      ['"ON"', 'ON', 'off'],
-      ['true', true, 'off'],
-      ['null', null, 'off'],
-      ['an object', {}, 'off'],
+      ['"auto"', 'auto', 'on'],
+      ['"ON"', 'ON', 'on'],
+      ['true', true, 'on'],
+      ['null', null, 'on'],
+      ['an object', {}, 'on'],
     ])('strict coercion: stored %s → %s', (_label, stored, expected) => {
       localStorage.setItem('mira.settings.v1', JSON.stringify({ autoCollapseSidebar: stored }))
       __resetSettings()

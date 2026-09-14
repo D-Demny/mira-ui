@@ -193,7 +193,7 @@ function buildAdjustSettingsRows(
         step: 1,
         format: (v) => `${v}%`,
         disabled: phoneVolume,
-        defaultValue: 2,
+        defaultValue: 4,
       },
     },
     {

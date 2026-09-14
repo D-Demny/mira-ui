@@ -59,11 +59,11 @@ export interface Settings {
   // capability poll (the only ambient Pi activity). Creating a new profile
   // clears it again (explicit re-opt-in — see useMiraServer.retarget).
   hybridDisabled: boolean
-  // bug54/bug58: the main-menu sidebar background — 'solid' (opaque black,
-  // default), 'translucent' (semi-transparent glass, labelled
+  // bug54/bug58: the main-menu sidebar background — 'solid' (opaque black),
+  // 'translucent' (semi-transparent glass, labelled
   // "Halbdurchsichtig"), 'clear' (100% transparent — no visible panel
   // background at all, only the menu entries, labelled "Durchsichtig") or
-  // 'blur' (bug58, labelled "Unschärfe" — the FOURTH option: the cards pass
+  // 'blur' (bug58, default, labelled "Unschärfe" — the FOURTH option: the cards pass
   // under the translucent menu strongly blurred; the per-card blur follows —
   // until then they show through the glass panel unblurred).
   // The three non-blur modes keep the solid carousel geometry: the cards are
@@ -74,8 +74,8 @@ export interface Settings {
   // 'translucent' ever existed) need no migration.
   sidebarBackground: 'solid' | 'translucent' | 'clear' | 'blur'
   // ticket 8.1: auto-collapse the main-menu sidebar when focus moves away
-  // from the sidebar pane (see MainMenuView). Off by default; blobs
-  // predating the field coerce to 'off' — additive field, no schema version
+  // from the sidebar pane (see MainMenuView). On by default; blobs
+  // predating the field coerce to 'on' — additive field, no schema version
   // bump (old builds ignore unknown keys, same as hybridDisabled).
   autoCollapseSidebar: 'off' | 'on'
   // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
@@ -89,7 +89,7 @@ export const BRIGHTNESS_MAX = 10
 export const UI_SCALE_MIN = 85
 export const UI_SCALE_MAX = 115
 export const UI_SCALE_STEP = 5
-export const UI_SCALE_DEFAULT = 100
+export const UI_SCALE_DEFAULT = 110
 
 // ticket10-5A: the daemon settings blob changed shape (flat piServer entry →
 // piProfiles list + activePiId). The version is part of the blob the daemon
@@ -124,18 +124,18 @@ const DEFAULTS: Settings = {
   showLyrics: true,
   karaokeLyrics: true,
   lyricOffsetMs: 0,
-  volumeStepPct: 2,
+  volumeStepPct: 4,
   autoBrightness: true,
   brightness: 5,
-  voiceMic: true,
+  voiceMic: false,
   uiScalePct: UI_SCALE_DEFAULT,
   presets: {},
   defaultDeviceId: null,
   piProfiles: [],
   activePiId: null,
   hybridDisabled: false,
-  sidebarBackground: 'solid',
-  autoCollapseSidebar: 'off',
+  sidebarBackground: 'blur',
+  autoCollapseSidebar: 'on',
   // ticket 9.4: empty = not configured → the daemon's build-time config.yml
   // defaults apply (the modal pre-fills the default URL from the
   // POST /api/ha/test response, task 7)
@@ -311,21 +311,28 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     // bug54/bug58: strict like keyInstalled — only the exact known strings
     // pass ('solid' | 'translucent' | 'clear' | 'blur'). Anything else
     // (hand-edited blobs with foreign values, blobs predating the field)
-    // coerces to 'solid'. Old blobs only ever held 'solid' or
-    // 'translucent', so the coercion is the (null-op) migration.
+    // coerces to the default. Old blobs only ever held 'solid' or
+    // 'translucent', so valid stored values round-trip unchanged.
     sidebarBackground:
-      partial?.sidebarBackground === 'translucent'
-        ? 'translucent'
-        : partial?.sidebarBackground === 'clear'
-          ? 'clear'
-          : partial?.sidebarBackground === 'blur'
-            ? 'blur'
-            : 'solid',
+      partial?.sidebarBackground === 'solid'
+        ? 'solid'
+        : partial?.sidebarBackground === 'translucent'
+          ? 'translucent'
+          : partial?.sidebarBackground === 'clear'
+            ? 'clear'
+            : partial?.sidebarBackground === 'blur'
+              ? 'blur'
+              : DEFAULTS.sidebarBackground,
     // ticket 8.1: strict like hybridDisabled — only the exact strings
-    // 'on' / 'off' pass (hand-edited blobs with foreign values, blobs
-    // predating the field) coerce to 'off'. Additive field, so no schema
-    // version bump; the coercion is the null-op migration.
-    autoCollapseSidebar: partial?.autoCollapseSidebar === 'on' ? 'on' : 'off',
+    // 'on' / 'off' pass; anything else (hand-edited blobs with foreign
+    // values, blobs predating the field) coerces to the default. Additive
+    // field, so no schema version bump; the coercion is the null-op migration.
+    autoCollapseSidebar:
+      partial?.autoCollapseSidebar === 'on'
+        ? 'on'
+        : partial?.autoCollapseSidebar === 'off'
+          ? 'off'
+          : DEFAULTS.autoCollapseSidebar,
     // ticket 9.4: strict coercion, see coerceHa — a blob without the `ha`
     // key (every blob predating v3) coerces to the empty defaults, which is
     // the whole v2→v3 migration (idempotent, no separate step)
