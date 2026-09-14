@@ -349,7 +349,7 @@ describe('mergeObserverStatus (issue #36)', () => {
       position: 0,
     })
 
-    const merged = mergeObserverStatus(prev, incoming)
+    const merged = mergeObserverStatus(prev, incoming) as ObserverStatusActive
 
     // no "Unknown track" flash: display comes from the queue entry
     expect(merged.track_name).toBe('Next Song')
@@ -375,7 +375,7 @@ describe('mergeObserverStatus (issue #36)', () => {
       track_image: '',
     })
 
-    const merged = mergeObserverStatus(prev, incoming)
+    const merged = mergeObserverStatus(prev, incoming) as ObserverStatusActive
 
     expect(merged.track_name).toBe('Old Song')
     expect(merged.track_artist).toBe('Test Artist')
@@ -398,7 +398,7 @@ describe('mergeObserverStatus (issue #36)', () => {
       prev_tracks: [nextTrack],
     })
 
-    const merged = mergeObserverStatus(prev, incoming)
+    const merged = mergeObserverStatus(prev, incoming) as ObserverStatusActive
 
     expect(merged).toMatchObject({
       track_name: 'Next Song',
@@ -420,7 +420,7 @@ describe('mergeObserverStatus (issue #36)', () => {
       next_tracks: [nextTrack],
     })
 
-    const merged = mergeObserverStatus(prev, incoming)
+    const merged = mergeObserverStatus(prev, incoming) as ObserverStatusActive
 
     expect(merged.track_name).toBe('Old Song')
     expect(merged.position).toBe(42_000)
