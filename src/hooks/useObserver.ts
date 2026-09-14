@@ -1,6 +1,7 @@
 import { useEffect, useReducer } from 'react'
 import { fetchObserverStatus, remoteStateToStatus } from '@/api/client'
 import { subscribeConnection, subscribeEvents } from '@/api/eventBus'
+import { mergeObserverStatus } from './mergeObserverStatus'
 import type { ApiEvent, ObserverStatus, RemoteStateWire, SetupProgress } from '@/api/types'
 
 interface ObserverState {
@@ -40,7 +41,9 @@ function reducer(state: ObserverState, action: Action): ObserverState {
     case 'loading':
       return { ...state, loading: true }
     case 'status': {
-      const incoming = action.status
+      // Both the poll and WS event paths dispatch through this case: merge sparse
+      // snapshots (track-change events whose metadata lags) over the previous status.
+      const incoming = mergeObserverStatus(state.status, action.status)
       const prev = state.status?.setting_up
       const status: ObserverStatus =
         incoming.setting_up === undefined && prev !== undefined
