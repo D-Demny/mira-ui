@@ -316,6 +316,17 @@ describe('instrumental placeholder normalization', () => {
       expect(isInstrumentalPlaceholder([])).toBe(false)
       expect(isInstrumentalPlaceholder([{ words: '' }])).toBe(false)
     })
+
+    it('matches decorated placeholder lines (issue #31: lrclib answers with a decorated line)', () => {
+      // the exact line the daemon's lrclib source returns for some instrumentals
+      expect(isInstrumentalPlaceholder([{ words: '♪ Instrumental ♪' }])).toBe(true)
+      // decoration plus repetition across lines collapses to the bare word
+      expect(
+        isInstrumentalPlaceholder([{ words: '(Instrumental)' }, { words: 'Instrumental' }]),
+      ).toBe(true)
+      // real lyric content that merely contains the word stays a non-match
+      expect(isInstrumentalPlaceholder([{ words: 'this is an instrumental piece' }])).toBe(false)
+    })
   })
 
   describe('normalizeLyrics', () => {
@@ -333,6 +344,14 @@ describe('instrumental placeholder normalization', () => {
         lines: [{ startTimeMs: '0', words: '  instrumental  ' }],
       }
       expect(normalizeLyrics(padded)).toBeNull()
+    })
+
+    it('returns null for the decorated lrclib placeholder line (issue #31)', () => {
+      const decorated: LyricsResult = {
+        syncType: 'UNSYNCED',
+        lines: [{ startTimeMs: '0', words: '♪ Instrumental ♪' }],
+      }
+      expect(normalizeLyrics(decorated)).toBeNull()
     })
 
     it('passes real lyrics through unchanged (same reference)', () => {
