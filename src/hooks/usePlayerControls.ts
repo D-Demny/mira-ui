@@ -225,10 +225,27 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     }
   }, [next, reportCommandError, status?.track_id, wrapActionWithTransfer])
 
+  // session-local guard for the failure trap (issue #39): when a smart request fails,
+  // the next press jumps straight from 'on' to 'off' instead of retrying 'smart'.
+  // Cleared when the user lands on 'off' (cycle restart) or a smart request succeeds.
+  const skipSmartRef = useRef(false)
+
   const onCycleShuffle = useCallback(() => {
-    // cycle off -> on -> smart -> off (mirrors onCycleRepeat)
+    // cycle off -> on -> smart -> off (mirrors onCycleRepeat); after a failed
+    // smart request, the next press from 'on' goes straight to 'off' so every
+    // state stays reachable
     const nextMode: ShuffleMode =
-      shuffleMode === 'off' ? 'on' : shuffleMode === 'on' ? 'smart' : 'off'
+      shuffleMode === 'off'
+        ? 'on'
+        : shuffleMode === 'on'
+          ? skipSmartRef.current
+            ? 'off'
+            : 'smart'
+          : 'off'
+    if (nextMode === 'off') {
+      // landed on off: cycle restarts, the broken-smart guard no longer applies
+      skipSmartRef.current = false
+    }
     const isSmartRequest = nextMode === 'smart'
     // sticky-smart fallback: the daemon/Spotify wire may not echo the smart flag back
     // (wire format spike pending), so remember a requested smart state locally until
@@ -236,13 +253,18 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     setStickySmart(isSmartRequest)
     setOptimisticShuffle({ value: nextMode !== 'off', at: Date.now() })
     const issue = () => {
-      void Promise.resolve(
-        isSmartRequest ? setShuffle(true, true) : setShuffle(nextMode !== 'off'),
-      ).catch((err) => {
-        setOptimisticShuffle(null)
-        setStickySmart(false)
-        reportCommandError('Shuffle failed', err)
-      })
+      void Promise.resolve(isSmartRequest ? setShuffle(true, true) : setShuffle(nextMode !== 'off'))
+        .then(() => {
+          // smart request resolved OK: the smart state is reachable again
+          if (isSmartRequest) skipSmartRef.current = false
+        })
+        .catch((err) => {
+          setOptimisticShuffle(null)
+          setStickySmart(false)
+          // failed smart request: skip the step on the next press so 'off' stays reachable
+          if (isSmartRequest) skipSmartRef.current = true
+          reportCommandError('Shuffle failed', err)
+        })
     }
     if (wrapActionWithTransfer) {
       wrapActionWithTransfer(issue)
