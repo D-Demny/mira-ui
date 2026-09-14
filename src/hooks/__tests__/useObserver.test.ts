@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import type { ApiEvent, ObserverStatusActive } from '../../api/types'
+import type { ApiEvent, ObserverStatusActive, QueueTrack } from '../../api/types'
+import { mergeObserverStatus } from '../mergeObserverStatus'
 import { server } from '../../__tests__/msw-server'
 import { activeStatus, baseWire } from '../../__tests__/fixtures/observer'
 
@@ -309,5 +310,119 @@ describe('useObserver', () => {
       await vi.advanceTimersByTimeAsync(1)
     })
     expect(requests).toBe(2)
+  })
+})
+
+describe('mergeObserverStatus (issue #36)', () => {
+  const nextTrack: QueueTrack = {
+    uri: 'spotify:track:def',
+    track_id: 'def',
+    name: 'Next Song',
+    artist: 'Next Artist',
+    album: 'Next Album',
+    image_url: 'https://x/next',
+  }
+
+  function active(over: Partial<ObserverStatusActive> = {}): ObserverStatusActive {
+    return { ...activeStatus, ...over }
+  }
+
+  it('returns the incoming snapshot unchanged when there is no previous status', () => {
+    const incoming = active({ track_name: 'Only Track' })
+    expect(mergeObserverStatus(null, incoming)).toBe(incoming)
+  })
+
+  it('backfills a sparse track-change event from the previous next_tracks queue', () => {
+    const prev = active({
+      track_uri: 'spotify:track:abc',
+      track_name: 'Old Song',
+      track_artist: 'Old Artist',
+      track_image: 'https://x/old',
+      next_tracks: [nextTrack],
+    })
+    const incoming = active({
+      track_uri: 'spotify:track:def',
+      track_name: '',
+      track_artist: '',
+      track_album: '',
+      track_image: '',
+      position: 0,
+    })
+
+    const merged = mergeObserverStatus(prev, incoming)
+
+    // no "Unknown track" flash: display comes from the queue entry
+    expect(merged.track_name).toBe('Next Song')
+    expect(merged.track_artist).toBe('Next Artist')
+    expect(merged.track_album).toBe('Next Album')
+    expect(merged.track_image).toBe('https://x/next')
+    // all other fields come from the incoming snapshot as-is
+    expect(merged.track_uri).toBe('spotify:track:def')
+    expect(merged.position).toBe(0)
+  })
+
+  it('keeps the previous display fields when a new uri has no queue match and empty metadata', () => {
+    const prev = active({
+      track_uri: 'spotify:track:abc',
+      track_name: 'Old Song',
+      track_image: 'https://x/old',
+      next_tracks: [nextTrack],
+    })
+    const incoming = active({
+      track_uri: 'spotify:track:zzz',
+      track_name: '',
+      track_artist: '',
+      track_image: '',
+    })
+
+    const merged = mergeObserverStatus(prev, incoming)
+
+    expect(merged.track_name).toBe('Old Song')
+    expect(merged.track_artist).toBe('Test Artist')
+    expect(merged.track_image).toBe('https://x/old')
+    expect(merged.track_uri).toBe('spotify:track:zzz')
+  })
+
+  it('lets a full poll override merged values and keeps non-empty incoming queues', () => {
+    const prev = active({
+      track_uri: 'spotify:track:abc',
+      next_tracks: [nextTrack],
+    })
+    const incoming = active({
+      track_uri: 'spotify:track:def',
+      track_name: 'Next Song',
+      track_artist: 'Next Artist',
+      track_image: 'https://x/next',
+      position: 12_000,
+      next_tracks: [],
+      prev_tracks: [nextTrack],
+    })
+
+    const merged = mergeObserverStatus(prev, incoming)
+
+    expect(merged).toMatchObject({
+      track_name: 'Next Song',
+      track_artist: 'Next Artist',
+      track_image: 'https://x/next',
+      position: 12_000,
+    })
+    // incoming next_tracks is empty -> keep the previously displayed queue
+    expect(merged.next_tracks).toEqual([nextTrack])
+    expect(merged.prev_tracks).toEqual([nextTrack])
+  })
+
+  it('keeps the previous name for a same-uri update with empty metadata', () => {
+    const prev = active({ track_uri: 'spotify:track:abc', track_name: 'Old Song' })
+    const incoming = active({
+      track_uri: 'spotify:track:abc',
+      track_name: '',
+      position: 42_000,
+      next_tracks: [nextTrack],
+    })
+
+    const merged = mergeObserverStatus(prev, incoming)
+
+    expect(merged.track_name).toBe('Old Song')
+    expect(merged.position).toBe(42_000)
   })
 })
