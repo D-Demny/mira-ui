@@ -10,15 +10,17 @@ import {
   SeekBack15Icon,
   SeekForward15Icon,
   ShuffleIcon,
+  SmartShuffleIcon,
 } from './icons'
 import { SaveButton } from './SaveButton'
 import styles from './Controls.module.scss'
 
 import type { RepeatMode } from '@/components/Menu'
+import type { ShuffleMode } from '@/hooks/usePlayerControls'
 
 interface Props {
   isPaused: boolean
-  shuffle: boolean
+  shuffleMode: ShuffleMode
   repeat: RepeatMode
   disallowPrev?: boolean
   disallowNext?: boolean
@@ -31,7 +33,7 @@ interface Props {
   onPlayPause?: () => void
   onNext?: () => void
   onMore?: () => void
-  onToggleShuffle?: () => void
+  onCycleShuffle?: () => void
   onCycleRepeat?: () => void
   onRewind15?: () => void
   onForward15?: () => void
@@ -39,7 +41,7 @@ interface Props {
 
 function ControlsImpl({
   isPaused,
-  shuffle,
+  shuffleMode,
   repeat,
   disallowPrev = false,
   disallowNext = false,
@@ -51,12 +53,14 @@ function ControlsImpl({
   onPlayPause,
   onNext,
   onMore,
-  onToggleShuffle,
+  onCycleShuffle,
   onCycleRepeat,
   onRewind15,
   onForward15,
 }: Props) {
   const repeatActive = repeat !== 'off'
+  const shuffleActive = shuffleMode !== 'off'
+  const shuffleLabel = shuffleMode === 'smart' ? 'Smart shuffle on' : `Shuffle ${shuffleMode}`
 
   return (
     <div className={styles.row}>
@@ -77,12 +81,12 @@ function ControlsImpl({
         ) : (
           <button
             type="button"
-            className={`${styles.btn} ${styles.btnXs} ${shuffle ? styles.toggleOn : ''}`}
-            aria-label="Shuffle"
-            aria-pressed={shuffle}
-            onClick={onToggleShuffle}
+            className={`${styles.btn} ${styles.btnXs} ${shuffleActive ? styles.toggleOn : ''}`}
+            aria-label={shuffleLabel}
+            aria-pressed={shuffleActive}
+            onClick={onCycleShuffle}
           >
-            <ShuffleIcon size={32} />
+            {shuffleMode === 'smart' ? <SmartShuffleIcon size={32} /> : <ShuffleIcon size={32} />}
           </button>
         )}
 

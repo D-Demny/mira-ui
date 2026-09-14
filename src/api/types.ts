@@ -63,6 +63,8 @@ export interface ObserverStatusActive {
   volume_disabled?: boolean
   volume_steps?: number
   shuffle: boolean
+  // best-guess carrier for Spotify smart shuffle (daemon probe pending); absent on old daemons
+  smart_shuffle?: boolean
   repeat_context: boolean
   repeat_track: boolean
   disallow_prev?: boolean
@@ -215,6 +217,7 @@ export interface RemoteStateWire {
   VolumeDisabled?: boolean
   VolumeSteps?: number
   ShuffleContext: boolean
+  SmartShuffle?: boolean
   RepeatContext: boolean
   RepeatTrack: boolean
   DisallowSkipPrev?: boolean
