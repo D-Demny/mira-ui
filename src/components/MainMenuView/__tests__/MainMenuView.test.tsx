@@ -1421,7 +1421,8 @@ describe('MainMenuView', () => {
 
   // ticket 9.3: the home category renders the user-selected entities (default
   // selection = the HOME_LIGHTS); ticket 9.5: no manage card — the picker is
-  // reached via Einstellungen → Home; ticket 9.6 W1: the dashboard grid
+  // reached via Einstellungen → Home Assistant → Entity picker (issue #37);
+  // ticket 9.6 W1: the dashboard grid
   // replaces the content carousel (tiles for real entities, placeholder slots
   // for unmapped zones, NO interaction wiring yet)
   describe('bug34: every selected entity renders as a home card', () => {
@@ -1451,7 +1452,8 @@ describe('MainMenuView', () => {
       )
       expect(screen.getByText('Wohnzimmer und Esszimmer')).toBeInTheDocument()
       expect(screen.getByText('Rollo Steuerung EG')).toBeInTheDocument()
-      // ticket 9.5: no manage card — the picker is reached via Einstellungen → Home
+      // ticket 9.5: no manage card — the picker is reached via
+      // Einstellungen → Home Assistant → Entity picker (issue #37)
       expect(screen.queryByText('Entitäten wählen')).not.toBeInTheDocument()
     })
 
@@ -1545,8 +1547,9 @@ describe('MainMenuView', () => {
     })
 
     // ticket 9.5: the picker opener moved from the home carousel to the
-    // 'Home' row of the Einstellungen list (row 8, after 'Home Assistant')
-    it('the Home settings row opens the entity picker', async () => {
+    // 'Entity picker' row of the Einstellungen list (row 8, under the
+    // 'Home Assistant' section — issue #37)
+    it('the Entity picker settings row opens the entity picker', async () => {
       const onOpenEntityPicker = vi.fn()
       render(<MainMenuView onOpenEntityPicker={onOpenEntityPicker} />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
@@ -1561,8 +1564,8 @@ describe('MainMenuView', () => {
       wheel(-10) // 4 Devices
       wheel(-10) // 5 Bluetooth Pairing
       wheel(-10) // 6 Raspberry Pi
-      wheel(-10) // 7 Home Assistant
-      wheel(-10) // 8 Home
+      wheel(-10) // 7 Verbindung
+      wheel(-10) // 8 Entity picker
       confirmDial()
 
       expect(onOpenEntityPicker).toHaveBeenCalledTimes(1)
@@ -2204,26 +2207,33 @@ describe('MainMenuView', () => {
         'Bluetooth Pairing',
         // epic10 task 4
         'Raspberry Pi',
-        // ticket 9.4
+        // issue #37: section header above the two grouped rows
         'Home Assistant',
+        // ticket 9.4 (issue #37: row renamed)
+        'Verbindung',
+        // ticket 9.5 (issue #37: row renamed)
+        'Entity picker',
       ]) {
         expect(await screen.findByText(label)).toBeInTheDocument()
       }
     })
 
-    it('the Home Assistant row sits directly after the Raspberry Pi row (Default value)', async () => {
+    it('the Home Assistant section sits directly after the Raspberry Pi row (Default value)', async () => {
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       const piRow = (await screen.findByText('Raspberry Pi')).closest('.row')
       expect(piRow).toBeTruthy()
-      // the row right after 'Raspberry Pi' is the new 'Home Assistant' row
-      const haRow = piRow!.nextElementSibling
-      expect(haRow?.textContent).toContain('Home Assistant')
+      // issue #37: right after 'Raspberry Pi' comes the 'Home Assistant'
+      // section header, and the renamed connection row below it
+      const sectionHeader = piRow!.nextElementSibling
+      expect(sectionHeader?.textContent).toBe('Home Assistant')
+      const haRow = sectionHeader?.nextElementSibling
+      expect(haRow?.textContent).toContain('Verbindung')
       // empty settings store → the daemon's build-time defaults apply
       expect(haRow?.textContent).toContain('Default')
     })
 
-    it('the Home Assistant row value flips to Konfiguriert when url+token are stored', async () => {
+    it('the Verbindung row value flips to Konfiguriert when url+token are stored', async () => {
       updateSettings({
         ha: {
           url: 'http://10.10.1.104:8123',
@@ -2235,7 +2245,9 @@ describe('MainMenuView', () => {
       })
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
-      const row = (await screen.findByText('Home Assistant')).closest('.row')
+      // issue #37: the row was renamed to 'Verbindung' ('Home Assistant' is
+      // now only the section header above it)
+      const row = (await screen.findByText('Verbindung')).closest('.row')
       expect(row?.textContent).toContain('Konfiguriert')
     })
 
@@ -2368,7 +2380,7 @@ describe('MainMenuView', () => {
       expect(onOpenPiServer).toHaveBeenCalledTimes(1)
     })
 
-    it('Home Assistant opens the HA settings modal', async () => {
+    it('the Verbindung row opens the HA settings modal', async () => {
       const onOpenHaSettings = vi.fn()
       const onOpenPiServer = vi.fn()
       render(<MainMenuView onOpenHaSettings={onOpenHaSettings} onOpenPiServer={onOpenPiServer} />)
@@ -2381,7 +2393,7 @@ describe('MainMenuView', () => {
       wheel(-10) // 4 Devices
       wheel(-10) // 5 Bluetooth Pairing
       wheel(-10) // 6 Raspberry Pi
-      wheel(-10) // 7 Home Assistant
+      wheel(-10) // 7 Verbindung
       confirmDial()
       expect(onOpenHaSettings).toHaveBeenCalledTimes(1)
       // the neighbouring row keeps its own target

@@ -47,6 +47,20 @@
   background: rgba(30, 215, 96, 0.14);
 }
 
+// issue #37: visual group label above the first row of a new section — a
+// plain div, NOT a dial row (no tabIndex/role). Spacing via padding only
+// (Chromium 69: no flex `gap` in the new CSS here), aligned with the rows'
+// horizontal padding; idiom shared with the entity picker's .sectionHeader
+.sectionHeader {
+  flex-shrink: 0;
+  padding: $s-2 $s-4 0;
+  font-size: $fs-sm;
+  font-weight: $fw-semibold;
+  color: $text-secondary;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .chevron {
   flex: 0 0 auto;
   width: 24px;

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react'
+import { Fragment, memo, useEffect, useRef } from 'react'
 import { NotchedSlider } from '@/components/SettingsSheet/NotchedSlider'
 import styles from './SettingsList.module.scss'
 
@@ -29,6 +29,10 @@ export interface SettingsRow {
   // brightness row: a switch chip + dial-confirm toggles auto brightness
   autoToggle?: boolean
   autoOn?: boolean
+  // issue #37: optional visual group label; the list renders a header above
+  // the first row whose section differs from the previous row's (headers are
+  // plain divs, NOT dial rows — focus indices stay aligned with this array)
+  section?: string
 }
 
 interface Props {
@@ -83,76 +87,83 @@ function SettingsListImpl({
     <div className={styles.list} aria-label="Einstellungen">
       {rows.map((row, index) => {
         const focused = focusedIndex === index
+        // issue #37: render a section header the first time a new section
+        // appears; it is a plain div (no tabIndex/role) so it does not shift
+        // the dial focus indices, which address `rows` directly
+        const prevSection = index > 0 ? rows[index - 1].section : undefined
+        const showSectionHeader = row.section !== undefined && row.section !== prevSection
         return (
-          <div
-            key={row.id}
-            ref={(el) => {
-              if (el) rowRefs.current.set(row.id, el)
-              else rowRefs.current.delete(row.id)
-            }}
-            role={focused ? 'button' : undefined}
-            tabIndex={focused ? 0 : undefined}
-            aria-label={row.title}
-            className={`${styles.row} ${focused ? styles.rowFocused : ''} ${
-              adjustingRowId === row.id ? styles.rowAdjusting : ''
-            }`}
-            onClick={focused ? () => onRowTap(index) : undefined}
-            onKeyDown={
-              focused
-                ? (e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      onRowTap(index)
+          <Fragment key={row.id}>
+            {showSectionHeader ? <div className={styles.sectionHeader}>{row.section}</div> : null}
+            <div
+              ref={(el) => {
+                if (el) rowRefs.current.set(row.id, el)
+                else rowRefs.current.delete(row.id)
+              }}
+              role={focused ? 'button' : undefined}
+              tabIndex={focused ? 0 : undefined}
+              aria-label={row.title}
+              className={`${styles.row} ${focused ? styles.rowFocused : ''} ${
+                adjustingRowId === row.id ? styles.rowAdjusting : ''
+              }`}
+              onClick={focused ? () => onRowTap(index) : undefined}
+              onKeyDown={
+                focused
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onRowTap(index)
+                      }
                     }
-                  }
-                : undefined
-            }
-          >
-            {row.autoToggle ? (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={row.autoOn ?? false}
-                aria-label="Auto brightness"
-                className={`${styles.autoChip} ${row.autoOn ? styles.autoChipOn : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleAuto()
-                }}
-              >
-                <SunIcon />
-              </button>
-            ) : (
-              <span className={styles.chevron} aria-hidden>
-                {row.kind === 'open-settings' || row.kind === 'open-link' ? '›' : ''}
-              </span>
-            )}
-            <div className={styles.rowMain}>
-              <div className={styles.rowHead}>
-                <span className={styles.title}>{row.title}</span>
-                <span className={styles.value}>{row.value}</span>
-              </div>
-              {row.slider ? (
-                // bug35: slider interactions (drag / step buttons) must not
-                // bubble to the row tap — on the brightness row the row tap
-                // toggles auto brightness, which a touch-release click would
-                // flip right after a manual drag
-                <div onClick={(e) => e.stopPropagation()}>
-                  <NotchedSlider
-                    ariaLabel={row.slider.ariaLabel}
-                    value={row.slider.value}
-                    min={row.slider.min}
-                    max={row.slider.max}
-                    step={row.slider.step}
-                    format={row.slider.format}
-                    disabled={row.slider.disabled}
-                    defaultValue={row.slider.defaultValue}
-                    onChange={(v) => onSliderChange(row.id, v)}
-                  />
+                  : undefined
+              }
+            >
+              {row.autoToggle ? (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={row.autoOn ?? false}
+                  aria-label="Auto brightness"
+                  className={`${styles.autoChip} ${row.autoOn ? styles.autoChipOn : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleAuto()
+                  }}
+                >
+                  <SunIcon />
+                </button>
+              ) : (
+                <span className={styles.chevron} aria-hidden>
+                  {row.kind === 'open-settings' || row.kind === 'open-link' ? '›' : ''}
+                </span>
+              )}
+              <div className={styles.rowMain}>
+                <div className={styles.rowHead}>
+                  <span className={styles.title}>{row.title}</span>
+                  <span className={styles.value}>{row.value}</span>
                 </div>
-              ) : null}
+                {row.slider ? (
+                  // bug35: slider interactions (drag / step buttons) must not
+                  // bubble to the row tap — on the brightness row the row tap
+                  // toggles auto brightness, which a touch-release click would
+                  // flip right after a manual drag
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <NotchedSlider
+                      ariaLabel={row.slider.ariaLabel}
+                      value={row.slider.value}
+                      min={row.slider.min}
+                      max={row.slider.max}
+                      step={row.slider.step}
+                      format={row.slider.format}
+                      disabled={row.slider.disabled}
+                      defaultValue={row.slider.defaultValue}
+                      onChange={(v) => onSliderChange(row.id, v)}
+                    />
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
+          </Fragment>
         )
       })}
     </div>
