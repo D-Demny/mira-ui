@@ -376,6 +376,100 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
     expect(result.current.shuffleMode).toBe('on')
   })
 
+  it('skips the smart step after a failed smart request so off stays reachable', async () => {
+    const mocks = makeMocks()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const onCommandError = vi.fn()
+    const status: ObserverStatusActive = {
+      ...activeStatus,
+      shuffle: true,
+      received_at: T0 - 1_000,
+    }
+    mocks.setShuffle.mockRejectedValueOnce(new Error('daemon error'))
+
+    try {
+      const { result } = renderHook(() => usePlayerControls({ status, ...mocks, onCommandError }))
+      expect(result.current.shuffleMode).toBe('on')
+
+      // press from 'on' requests smart; the request fails and rolls back to 'on'
+      await act(async () => {
+        result.current.onCycleShuffle()
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('on')
+      expect(onCommandError).toHaveBeenCalledWith('Shuffle failed')
+      expect(mocks.setShuffle).toHaveBeenNthCalledWith(1, true, true)
+
+      // next press goes straight to 'off' instead of retrying smart
+      await act(async () => {
+        result.current.onCycleShuffle()
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('off')
+      expect(mocks.setShuffle).toHaveBeenNthCalledWith(2, false)
+
+      // after reaching off the cycle restarts: a fresh on-press then lands in smart again
+      await act(async () => {
+        result.current.onCycleShuffle()
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('on')
+      await act(async () => {
+        result.current.onCycleShuffle()
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('smart')
+      expect(mocks.setShuffle).toHaveBeenNthCalledWith(4, true, true)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('clears skipSmart once a later smart request succeeds', async () => {
+    const mocks = makeMocks()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const status: ObserverStatusActive = {
+      ...activeStatus,
+      shuffle: true,
+      received_at: T0 - 1_000,
+    }
+    // first smart request fails (sets skipSmart), later requests resolve OK
+    mocks.setShuffle.mockRejectedValueOnce(new Error('boom'))
+
+    try {
+      const { result } = renderHook(() => usePlayerControls({ status, ...mocks }))
+      expect(result.current.shuffleMode).toBe('on')
+
+      await act(async () => {
+        result.current.onCycleShuffle() // on -> smart (fails)
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('on')
+
+      await act(async () => {
+        result.current.onCycleShuffle() // on -> off (cycle restart)
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('off')
+
+      await act(async () => {
+        result.current.onCycleShuffle() // off -> on
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('on')
+
+      // the next smart request now resolves OK and lands in smart again
+      await act(async () => {
+        result.current.onCycleShuffle()
+        await Promise.resolve()
+      })
+      expect(result.current.shuffleMode).toBe('smart')
+      expect(mocks.setShuffle).toHaveBeenNthCalledWith(4, true, true)
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
   it('holds optimistic repeat through a stale status, then follows the confirmed value', () => {
     const mocks = makeMocks()
     const initial: ObserverStatusActive = {
