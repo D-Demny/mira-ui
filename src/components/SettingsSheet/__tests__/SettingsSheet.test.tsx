@@ -37,7 +37,7 @@ describe('SettingsSheet display size', () => {
   it('shows the stored scale', () => {
     render(<SettingsSheet open onClose={vi.fn()} />)
     const slider = screen.getByRole('slider', { name: 'Display size' })
-    expect(slider).toHaveAttribute('aria-valuenow', '100')
+    expect(slider).toHaveAttribute('aria-valuenow', '110')
     expect(slider).toHaveAttribute('aria-valuemin', '85')
     expect(slider).toHaveAttribute('aria-valuemax', '115')
   })
@@ -45,7 +45,7 @@ describe('SettingsSheet display size', () => {
   it('applies immediately when stepped', () => {
     render(<SettingsSheet open onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Display size up' }))
-    expect(getSettings().uiScalePct).toBe(105)
+    expect(getSettings().uiScalePct).toBe(115) // 110 + 5 clamps at the max
   })
 
   // the whole point of commit-on-release: applying mid-drag moves this panel under the
@@ -57,11 +57,11 @@ describe('SettingsSheet display size', () => {
 
     fireEvent.pointerDown(slider, { clientX: 400, pointerId: 1 })
     expect(slider).toHaveAttribute('aria-valuenow', '115')
-    expect(getSettings().uiScalePct).toBe(100)
+    expect(getSettings().uiScalePct).toBe(110) // fresh default, not committed yet
 
     fireEvent.pointerMove(slider, { clientX: 250, pointerId: 1 })
     expect(slider).toHaveAttribute('aria-valuenow', '100')
-    expect(getSettings().uiScalePct).toBe(100)
+    expect(getSettings().uiScalePct).toBe(110) // still the fresh default — no commit yet
 
     fireEvent.pointerUp(slider, { clientX: 250, pointerId: 1 })
     expect(getSettings().uiScalePct).toBe(100)
@@ -83,8 +83,8 @@ describe('SettingsSheet display size', () => {
     expect(slider).toHaveAttribute('aria-valuenow', '115')
     fireEvent.pointerCancel(slider, { clientX: 400, pointerId: 1 })
 
-    expect(getSettings().uiScalePct).toBe(100)
-    expect(slider).toHaveAttribute('aria-valuenow', '100')
+    expect(getSettings().uiScalePct).toBe(110) // fresh default — the drag never committed
+    expect(slider).toHaveAttribute('aria-valuenow', '110') // preview reverts to the store value
   })
 
   it('drops the gesture when the sheet is dismissed mid-drag', () => {
@@ -99,7 +99,7 @@ describe('SettingsSheet display size', () => {
     rerender(<SettingsSheet open={false} onClose={vi.fn()} />)
     fireEvent.pointerUp(slider, { clientX: 400, pointerId: 1 })
 
-    expect(getSettings().uiScalePct).toBe(100)
+    expect(getSettings().uiScalePct).toBe(110) // gesture dropped — fresh default stands
   })
 
   it('does not stay armed when capture is lost without a pointerup', () => {
@@ -114,6 +114,9 @@ describe('SettingsSheet display size', () => {
     fireEvent.lostPointerCapture(slider, { pointerId: 1 })
     fireEvent.pointerMove(slider, { clientX: 130, pointerId: 2 })
 
+    // the flag is disarmed, so the bare move must not drag — the displayed value
+    // stays at the last previewed (positional) 100 and never resyncs to the
+    // store's fresh default (110); a commit or cancel would be required for that
     expect(slider).toHaveAttribute('aria-valuenow', '100')
   })
 
@@ -126,7 +129,7 @@ describe('SettingsSheet display size', () => {
 
     expect(screen.getByRole('slider', { name: 'Display size' })).toHaveAttribute(
       'aria-valuenow',
-      '100',
+      '110', // fresh default — the volume drag must not touch it
     )
   })
 

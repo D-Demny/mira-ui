@@ -2294,13 +2294,13 @@ describe('MainMenuView', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       await screen.findByText('Settings')
       confirmDial() // sub-level, focus on 'Default Device' (0)
-      wheel(-10) // to 'Display Size' (1), value 100
+      wheel(-10) // to 'Display Size' (1), value 110
       confirmDial() // enter adjust mode
 
-      wheel(-10) // consumed by the slider: 100 → 105, the focus stays
-      expect(getSettings().uiScalePct).toBe(105)
-      wheel(10) // 105 → 100
-      expect(getSettings().uiScalePct).toBe(100)
+      wheel(-10) // consumed by the slider: 110 → 115, the focus stays
+      expect(getSettings().uiScalePct).toBe(115)
+      wheel(10) // 115 → 110
+      expect(getSettings().uiScalePct).toBe(110)
     })
 
     it('turning past the slider boundary leaves adjust mode and moves the focus', async () => {
@@ -2667,8 +2667,8 @@ describe('MainMenuView', () => {
       confirmDial() // enter adjust mode
       expect(row()?.className).toContain('rowAdjusting')
 
-      wheel(-10) // consumed by the slider: 2 → 3, the focus stays
-      expect(getSettings().volumeStepPct).toBe(3)
+      wheel(-10) // consumed by the slider: 4 → 5, the focus stays
+      expect(getSettings().volumeStepPct).toBe(5)
       expect(row()?.className).toContain('rowFocused')
 
       confirmDial() // leave adjust mode again
@@ -2703,20 +2703,23 @@ describe('MainMenuView', () => {
 
       const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
       expect(row).not.toBeNull()
-      expect(row?.textContent).toContain('Schwarz')
+      expect(row?.textContent).toContain('Unschärfe') // 'blur' is the default now
 
       wheel(-10) // 'Menü Einklappen' (6, the new last row — ticket 8.1)
       const collapseRow = screen.getByText('Menü Einklappen').closest('[role="button"]')
       expect(collapseRow?.className).toContain('rowFocused')
-      expect(collapseRow?.textContent).toContain('Off') // default value
+      expect(collapseRow?.textContent).toContain('On') // 'on' is the default now
     })
 
     it('confirming the row cycles all four options (store, row value, sidebar modifier)', async () => {
       const { container } = render(<MainMenuView />)
       const view = container.firstElementChild as HTMLElement
       const nav = container.querySelector('nav') as HTMLElement
-      expect(view.className).not.toContain('viewUnderflow')
-      expect(nav.className).not.toContain('glass')
+      // fresh default is 'blur' now: the underflow layout and the glass panel
+      // look are active before the first confirm (focus sits in the sidebar
+      // pane, so auto-collapse does not add a variant)
+      expect(view.className).toContain('viewUnderflow')
+      expect(nav.className).toContain('glass')
       expect(nav.className).not.toContain('clear')
 
       toSidebarBackgroundRow()
@@ -2725,18 +2728,26 @@ describe('MainMenuView', () => {
       for (let i = 0; i < 5; i++) wheel(-10) // to 'Menü-Hintergrund' (5)
       confirmDial()
 
-      // 1: Schwarz → Halbdurchsichtig
-      expect(getSettings().sidebarBackground).toBe('translucent')
+      // 1: Unschärfe → Schwarz
+      expect(getSettings().sidebarBackground).toBe('solid')
       const row = screen.getByText('Menü-Hintergrund').closest('[role="button"]')
-      expect(rowValue(row)).toBe('Halbdurchsichtig')
+      expect(rowValue(row)).toBe('Schwarz')
+      expect(view.className).not.toContain('viewUnderflow')
+      expect(nav.className).not.toContain('glass')
+      expect(nav.className).not.toContain('clear')
+
+      // 2: Schwarz → Halbdurchsichtig
+      confirmDial()
+      expect(getSettings().sidebarBackground).toBe('translucent')
       // 08.09 user change (incl. v2): only the panel's look changes (the
       // glass class) — the layout stays solid (no underflow), so no view
       // modifier is added
+      expect(rowValue(row)).toBe('Halbdurchsichtig')
       expect(view.className).not.toContain('viewUnderflow')
       expect(nav.className).toContain('glass')
       expect(nav.className).not.toContain('clear')
 
-      // 2: Halbdurchsichtig → Durchsichtig (100% transparent, v2)
+      // 3: Halbdurchsichtig → Durchsichtig (100% transparent, v2)
       confirmDial()
       expect(getSettings().sidebarBackground).toBe('clear')
       expect(rowValue(row)).toBe('Durchsichtig')
@@ -2744,7 +2755,7 @@ describe('MainMenuView', () => {
       expect(nav.className).toContain('clear')
       expect(nav.className).not.toContain('glass')
 
-      // 3: Durchsichtig → Unschärfe (bug58)
+      // 4: Durchsichtig → Unschärfe (bug58, back to the fresh default — full cycle closed)
       confirmDial()
       expect(getSettings().sidebarBackground).toBe('blur')
       expect(rowValue(row)).toBe('Unschärfe')
@@ -2755,14 +2766,6 @@ describe('MainMenuView', () => {
       // test below; the per-card blur follows in T3)
       expect(view.className).toContain('viewUnderflow')
       expect(nav.className).toContain('glass')
-      expect(nav.className).not.toContain('clear')
-
-      // 4: Unschärfe → Schwarz (full cycle closed)
-      confirmDial()
-      expect(getSettings().sidebarBackground).toBe('solid')
-      expect(rowValue(row)).toBe('Schwarz')
-      expect(view.className).not.toContain('viewUnderflow')
-      expect(nav.className).not.toContain('glass')
       expect(nav.className).not.toContain('clear')
     })
 
@@ -2881,7 +2884,7 @@ describe('MainMenuView', () => {
       // while auto-collapsed — pinned in the 'blur + collapsed' test below)
       // and the settings list keeps its left inset (.settingsUnderflow). The
       // per-card blur itself follows in T3.
-      updateSettings({ sidebarBackground: 'blur' })
+      updateSettings({ sidebarBackground: 'blur', autoCollapseSidebar: 'off' })
       const { container } = render(<MainMenuView />)
       // ticket 9.6: home renders the dashboard grid (no content carousel) —
       // pin the geometry contract on a real ContentCarousel category
@@ -2899,8 +2902,9 @@ describe('MainMenuView', () => {
       confirmDial() // sub-level, focus on 'Default Device' (0)
       const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
       // 'settingsUnderflow' matches BOTH classes by substring — pin the
-      // expanded variant explicitly (issue #32: auto-collapse is off here, so
-      // the 250px inset is expected, not the 72px collapsed one)
+      // expanded variant explicitly (issue #32: auto-collapse is seeded off
+      // here — it's the default now — so the 250px inset is expected, not the
+      // 72px collapsed one)
       expect(list.parentElement?.className).toContain('settingsUnderflow')
       expect(list.parentElement?.className).not.toContain('settingsUnderflowCollapsed')
 
@@ -2960,26 +2964,26 @@ describe('MainMenuView', () => {
       return container.querySelector('[aria-label="Menü-Navigation"]') as HTMLElement
     }
 
-    it('renders the row with the default Off value and confirms to toggle the setting', async () => {
+    it('renders the row with the default On value and confirms to toggle the setting', async () => {
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
       await screen.findByText('Settings')
       confirmDial() // sub-level, focus on 'Default Device' (0)
       for (let i = 0; i < 6; i++) wheel(-10) // 'Menü Einklappen' (6, last row)
 
-      expect(getSettings().autoCollapseSidebar).toBe('off')
+      expect(getSettings().autoCollapseSidebar).toBe('on')
       const row = screen.getByText('Menü Einklappen').closest('[role="button"]')
       expect(row?.className).toContain('rowFocused')
-      expect(row?.textContent).toContain('Off')
+      expect(row?.textContent).toContain('On')
 
-      confirmDial() // Off → On
-      expect(getSettings().autoCollapseSidebar).toBe('on')
+      confirmDial() // On → Off
+      expect(getSettings().autoCollapseSidebar).toBe('off')
       expect(screen.getByText('Menü Einklappen').closest('[role="button"]')?.textContent).toContain(
-        'On',
+        'Off',
       )
 
-      confirmDial() // On → Off (plain toggle, no cycle)
-      expect(getSettings().autoCollapseSidebar).toBe('off')
+      confirmDial() // Off → On (plain toggle, no cycle)
+      expect(getSettings().autoCollapseSidebar).toBe('on')
     })
 
     it('collapses the pane and nav while focus is in the content pane (setting on)', async () => {
@@ -3015,7 +3019,8 @@ describe('MainMenuView', () => {
     })
 
     it('keeps the sidebar expanded in the content pane while the setting is off', async () => {
-      const { container } = render(<MainMenuView />) // 'off' by default
+      updateSettings({ autoCollapseSidebar: 'off' }) // explicit — 'on' is the default now
+      const { container } = render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
       await screen.findByText('Road Trip')
       expect(asideEl(container).className).not.toContain('collapsed')
@@ -3245,6 +3250,10 @@ describe('MainMenuView', () => {
     })
 
     it('an observer re-projection without a track change does NOT reset the scroll', async () => {
+      // pin the solid layout: the fresh defaults (blur + auto-collapse on) would
+      // shift the dial centering by the collapsed sidebar's half width and the
+      // pure dialScrollLeft formula below would no longer describe the geometry
+      updateSettings({ sidebarBackground: 'solid' })
       const { container, rerender } = render(<MainMenuView nowPlaying={hundredQueueNowPlaying} />)
 
       enterNowPlaying()
