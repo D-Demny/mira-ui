@@ -11,7 +11,9 @@ function makeMocks() {
     next: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     prev: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     seek: vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined),
-    setShuffle: vi.fn<(on: boolean) => Promise<void>>().mockResolvedValue(undefined),
+    setShuffle: vi
+      .fn<(on: boolean, smart?: boolean) => Promise<void>>()
+      .mockResolvedValue(undefined),
     setRepeat: vi
       .fn<(mode: 'off' | 'context' | 'track') => Promise<void>>()
       .mockResolvedValue(undefined),
@@ -231,7 +233,7 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
     )
 
     act(() => {
-      result.current.onToggleShuffle()
+      result.current.onCycleShuffle()
     })
     expect(result.current.shuffle).toBe(true)
 
@@ -257,7 +259,7 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
     )
 
     act(() => {
-      result.current.onToggleShuffle()
+      result.current.onCycleShuffle()
     })
     expect(result.current.shuffle).toBe(true)
 
@@ -266,6 +268,112 @@ describe('usePlayerControls repeat / shuffle cycling', () => {
       vi.advanceTimersByTime(3_000)
     })
     expect(result.current.shuffle).toBe(false)
+  })
+
+  it('cycles shuffle off > on > smart > off with per-step request bodies', () => {
+    const mocks = makeMocks()
+    const status: ObserverStatusActive = {
+      ...activeStatus,
+      shuffle: false,
+      received_at: T0 - 1_000,
+    }
+    const { result } = renderHook(() => usePlayerControls({ status, ...mocks }))
+
+    expect(result.current.shuffleMode).toBe('off')
+
+    // off -> on: legacy body shape (no smart argument)
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    expect(result.current.shuffleMode).toBe('on')
+    expect(mocks.setShuffle).toHaveBeenNthCalledWith(1, true)
+
+    // on -> smart: request carries the smart flag
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    expect(result.current.shuffleMode).toBe('smart')
+    expect(mocks.setShuffle).toHaveBeenNthCalledWith(2, true, true)
+
+    // smart -> off: plain false, no smart argument
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    expect(result.current.shuffleMode).toBe('off')
+    expect(mocks.setShuffle).toHaveBeenNthCalledWith(3, false)
+  })
+
+  it('keeps smart mode while the server only echoes plain shuffle (sticky)', () => {
+    const mocks = makeMocks()
+    const initial: ObserverStatusActive = {
+      ...activeStatus,
+      shuffle: true,
+      received_at: T0 - 1_000,
+    }
+    const { result, rerender } = renderHook(
+      ({ status }: { status: ObserverStatusActive }) => usePlayerControls({ status, ...mocks }),
+      { initialProps: { status: initial } },
+    )
+
+    expect(result.current.shuffleMode).toBe('on')
+
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    expect(result.current.shuffleMode).toBe('smart')
+    expect(mocks.setShuffle).toHaveBeenCalledWith(true, true)
+
+    // server confirms shuffle but NOT the smart flag (old daemon / Spotify ignores it)
+    rerender({ status: { ...initial, shuffle: true, received_at: T0 + 100 } })
+    expect(result.current.shuffleMode).toBe('smart')
+
+    // cycling away clears the sticky state with a plain false
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    expect(result.current.shuffleMode).toBe('off')
+    expect(mocks.setShuffle).toHaveBeenNthCalledWith(2, false)
+  })
+
+  it('drops the sticky smart flag once the server confirms smart_shuffle', () => {
+    const mocks = makeMocks()
+    const initial: ObserverStatusActive = {
+      ...activeStatus,
+      shuffle: true,
+      received_at: T0 - 1_000,
+    }
+    const { result, rerender } = renderHook(
+      ({ status }: { status: ObserverStatusActive }) => usePlayerControls({ status, ...mocks }),
+      { initialProps: { status: initial } },
+    )
+
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    expect(result.current.shuffleMode).toBe('smart')
+
+    // server confirms the smart flag -> stickiness consumed
+    rerender({
+      status: { ...initial, shuffle: true, smart_shuffle: true, received_at: T0 + 100 },
+    })
+    expect(result.current.shuffleMode).toBe('smart')
+
+    // cycle off (confirmed), then a plain on-echo must land in 'on', not 'smart'
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    rerender({
+      status: { ...initial, shuffle: false, smart_shuffle: false, received_at: T0 + 200 },
+    })
+    expect(result.current.shuffleMode).toBe('off')
+
+    act(() => {
+      result.current.onCycleShuffle()
+    })
+    // call 1 = smart request (true, true), call 2 = cycle to off (false), call 3 = plain on
+    expect(mocks.setShuffle).toHaveBeenNthCalledWith(3, true)
+    rerender({ status: { ...initial, shuffle: true, received_at: T0 + 300 } })
+    expect(result.current.shuffleMode).toBe('on')
   })
 
   it('holds optimistic repeat through a stale status, then follows the confirmed value', () => {

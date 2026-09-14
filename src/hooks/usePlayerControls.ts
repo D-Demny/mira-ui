@@ -23,22 +23,25 @@ export interface UsePlayerControlsParams {
   next: () => Promise<void> | void
   prev: () => Promise<void> | void
   seek: (positionMs: number) => Promise<void> | void
-  setShuffle: (on: boolean) => Promise<void> | void
+  setShuffle: (on: boolean, smart?: boolean) => Promise<void> | void
   setRepeat: (mode: RepeatMode) => Promise<void> | void
   onCommandError?: (message: string) => void
   wrapActionWithTransfer?: (action: () => void) => void
 }
 
+export type ShuffleMode = 'off' | 'on' | 'smart'
+
 export interface UsePlayerControlsResult {
   isPaused: boolean
   shuffle: boolean
+  shuffleMode: ShuffleMode
   repeat: RepeatMode
   transitioning: boolean
   onPlayPause: () => void
   onPrev: () => void
   onPrevTrack: () => void // straight to prev track (swipe gestures)
   onNext: () => void
-  onToggleShuffle: () => void
+  onCycleShuffle: () => void
   onCycleRepeat: () => void
 }
 
@@ -60,6 +63,8 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
   const [optimisticShuffle, setOptimisticShuffle] = useState<OptimisticValue<boolean> | null>(null)
   const [optimisticRepeat, setOptimisticRepeat] = useState<OptimisticValue<RepeatMode> | null>(null)
   const [trackTransition, setTrackTransition] = useState<TrackTransition | null>(null)
+  // session-local memory: a smart request that the server cannot echo back yet
+  const [stickySmart, setStickySmart] = useState(false)
 
   const lastPrevAtRef = useRef(0)
 
@@ -81,6 +86,13 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     return () => window.clearTimeout(t)
   }, [optimisticRepeat])
 
+  // once the server confirms smart_shuffle, the sticky fallback is redundant
+  const statusConfirmsSmart = status?.smart_shuffle === true
+  useEffect(() => {
+    if (!stickySmart || !statusConfirmsSmart) return
+    setStickySmart(false)
+  }, [stickySmart, statusConfirmsSmart])
+
   useEffect(() => {
     if (!trackTransition) return
     const t = window.setTimeout(() => setTrackTransition(null), TRANSITION_TIMEOUT_MS + 50)
@@ -98,6 +110,14 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     optimisticShuffle != null && shuffleFromStatus !== optimisticShuffle.value
   const shuffle =
     optimisticShuffleActive && optimisticShuffle ? optimisticShuffle.value : shuffleFromStatus
+
+  // 3-state model: off when shuffle is off; smart when the server reports it or we
+  // requested it (sticky fallback, see below); plain on otherwise
+  const shuffleMode: ShuffleMode = !shuffle
+    ? 'off'
+    : statusConfirmsSmart || stickySmart
+      ? 'smart'
+      : 'on'
 
   const repeatFromStatus: RepeatMode = status?.repeat_track
     ? 'track'
@@ -205,23 +225,31 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
     }
   }, [next, reportCommandError, status?.track_id, wrapActionWithTransfer])
 
-  const onToggleShuffle = useCallback(() => {
-    const nextShuffle = !shuffle
-    setOptimisticShuffle({ value: nextShuffle, at: Date.now() })
-    if (wrapActionWithTransfer) {
-      wrapActionWithTransfer(() => {
-        void Promise.resolve(setShuffle(nextShuffle)).catch((err) => {
-          setOptimisticShuffle(null)
-          reportCommandError('Shuffle failed', err)
-        })
-      })
-    } else {
-      void Promise.resolve(setShuffle(nextShuffle)).catch((err) => {
+  const onCycleShuffle = useCallback(() => {
+    // cycle off -> on -> smart -> off (mirrors onCycleRepeat)
+    const nextMode: ShuffleMode =
+      shuffleMode === 'off' ? 'on' : shuffleMode === 'on' ? 'smart' : 'off'
+    const isSmartRequest = nextMode === 'smart'
+    // sticky-smart fallback: the daemon/Spotify wire may not echo the smart flag back
+    // (wire format spike pending), so remember a requested smart state locally until
+    // the server confirms it or the user cycles away
+    setStickySmart(isSmartRequest)
+    setOptimisticShuffle({ value: nextMode !== 'off', at: Date.now() })
+    const issue = () => {
+      void Promise.resolve(
+        isSmartRequest ? setShuffle(true, true) : setShuffle(nextMode !== 'off'),
+      ).catch((err) => {
         setOptimisticShuffle(null)
+        setStickySmart(false)
         reportCommandError('Shuffle failed', err)
       })
     }
-  }, [reportCommandError, setShuffle, shuffle, wrapActionWithTransfer])
+    if (wrapActionWithTransfer) {
+      wrapActionWithTransfer(issue)
+    } else {
+      issue()
+    }
+  }, [reportCommandError, setShuffle, shuffleMode, wrapActionWithTransfer])
 
   const onCycleRepeat = useCallback(() => {
     const nextMode: RepeatMode =
@@ -245,13 +273,14 @@ export function usePlayerControls(params: UsePlayerControlsParams): UsePlayerCon
   return {
     isPaused,
     shuffle,
+    shuffleMode,
     repeat,
     transitioning,
     onPlayPause,
     onPrev,
     onPrevTrack,
     onNext,
-    onToggleShuffle,
+    onCycleShuffle,
     onCycleRepeat,
   }
 }

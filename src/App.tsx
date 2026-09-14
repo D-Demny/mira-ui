@@ -1411,7 +1411,7 @@ function AppInner() {
               onPrev={controls.onPrev}
               onNext={controls.onNext}
               onPlayPause={controls.onPlayPause}
-              onToggleShuffle={controls.onToggleShuffle}
+              onCycleShuffle={controls.onCycleShuffle}
               onCycleRepeat={controls.onCycleRepeat}
               onRewind15={() => seekRelative(-15000)}
               onForward15={() => seekRelative(15000)}

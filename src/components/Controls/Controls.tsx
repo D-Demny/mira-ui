@@ -31,7 +31,7 @@ interface Props {
   onPlayPause?: () => void
   onNext?: () => void
   onMore?: () => void
-  onToggleShuffle?: () => void
+  onCycleShuffle?: () => void
   onCycleRepeat?: () => void
   onRewind15?: () => void
   onForward15?: () => void
@@ -51,7 +51,7 @@ function ControlsImpl({
   onPlayPause,
   onNext,
   onMore,
-  onToggleShuffle,
+  onCycleShuffle,
   onCycleRepeat,
   onRewind15,
   onForward15,
@@ -80,7 +80,7 @@ function ControlsImpl({
             className={`${styles.btn} ${styles.btnXs} ${shuffle ? styles.toggleOn : ''}`}
             aria-label="Shuffle"
             aria-pressed={shuffle}
-            onClick={onToggleShuffle}
+            onClick={onCycleShuffle}
           >
             <ShuffleIcon size={32} />
           </button>

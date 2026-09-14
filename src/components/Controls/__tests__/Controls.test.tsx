@@ -14,7 +14,7 @@ function defaultProps() {
     onPlayPause: vi.fn(),
     onNext: vi.fn(),
     onMore: vi.fn(),
-    onToggleShuffle: vi.fn(),
+    onCycleShuffle: vi.fn(),
     onCycleRepeat: vi.fn(),
   }
 }
@@ -41,7 +41,7 @@ describe('Controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Repeat off' }))
     fireEvent.click(screen.getByRole('button', { name: 'More' }))
 
-    expect(props.onToggleShuffle).toHaveBeenCalledTimes(1)
+    expect(props.onCycleShuffle).toHaveBeenCalledTimes(1)
     expect(props.onPrev).toHaveBeenCalledTimes(1)
     expect(props.onPlayPause).toHaveBeenCalledTimes(1)
     expect(props.onNext).toHaveBeenCalledTimes(1)

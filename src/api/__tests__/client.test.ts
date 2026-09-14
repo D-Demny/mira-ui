@@ -151,6 +151,7 @@ describe('remoteStateToStatus', () => {
     const wire: RemoteStateWire = {
       ...baseWire,
       ShuffleContext: true,
+      SmartShuffle: true,
       RepeatContext: false,
       RepeatTrack: true,
       DisallowSkipPrev: true,
@@ -195,6 +196,7 @@ describe('remoteStateToStatus', () => {
     expect(status.is_playing).toBe(wire.IsPlaying)
     expect(status.is_paused).toBe(wire.IsPaused)
     expect(status.shuffle).toBe(true)
+    expect(status.smart_shuffle).toBe(true)
     expect(status.repeat_context).toBe(false)
     expect(status.repeat_track).toBe(true)
     expect(status.disallow_prev).toBe(true)
@@ -208,6 +210,13 @@ describe('remoteStateToStatus', () => {
   it('coalesces missing RawMetadata to null', () => {
     const status = remoteStateToStatus({ ...baseWire, RawMetadata: undefined })
     expect(status.raw_metadata).toBeNull()
+  })
+
+  it('coalesces a missing SmartShuffle wire field to false (old daemons)', () => {
+    // old daemons never send the key; the mapping must degrade, not crash
+    const status = remoteStateToStatus({ ...baseWire, ShuffleContext: true })
+    expect(status.shuffle).toBe(true)
+    expect(status.smart_shuffle).toBe(false)
   })
 })
 
