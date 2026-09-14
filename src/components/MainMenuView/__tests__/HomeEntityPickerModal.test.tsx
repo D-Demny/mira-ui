@@ -414,23 +414,21 @@ describe('HomeEntityPickerModal (ticket 9.3 + issue #37)', () => {
   })
 
   it('a retry reloads the catalog and re-renders the level-1 category cards', async () => {
-    let calls = 0
     server.use(
-      http.get('*/ha-api/states', () => {
-        calls += 1
-        return HttpResponse.json({ error: 'down' }, { status: 502 })
-      }),
+      http.get('*/ha-api/states', () => HttpResponse.json({ error: 'down' }, { status: 502 })),
     )
     renderPicker()
 
     await screen.findByText('home assistant 502')
     expect(cards()).toHaveLength(0)
 
-    // the endpoint heals → retry fetches fresh…
+    // the endpoint heals → retry fetches fresh… (seedClimateCatalog swaps the
+    // MSW handler, so the error-state → catalog transition below proves the
+    // retry issued a NEW request — a cached rejected promise would persist)
     seedClimateCatalog()
     fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
 
-    // …and level 1 re-renders its category cards — including the new domain
+    // …and level 1 re-renders its category cards — including the new domain.
     await screen.findByText('Lichter')
     expect(cards()).toHaveLength(9)
     expect(cardTitles()).toContain('Climate')

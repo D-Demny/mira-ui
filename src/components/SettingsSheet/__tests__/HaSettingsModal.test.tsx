@@ -21,8 +21,8 @@ import { ListFocusContext } from '@/navigation/listFocusContext'
 // opts in.
 
 // the default MSW catalog fixture carries 9 lights + 6 controllable
-// non-lights (the sensor is filtered out)
-const CATALOG_SIZE = 15
+// non-lights + 1 sensor (issue #37: the catalog no longer filters domains)
+const CATALOG_SIZE = 16
 
 const FULL_HA = {
   url: 'http://10.10.1.104:8123',
