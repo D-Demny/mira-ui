@@ -212,9 +212,9 @@ export const HOME_ENTITY_DOMAINS = [
   'media_player',
 ] as const
 
-// issue #37: German display labels for the known domains — must stay in sync
-// with SECTION_LABELS in HomeEntityPickerModal.tsx until task 3 switches that
-// component over to this helper
+// issue #37: German display labels for the known domains (the picker's
+// level-1 category cards render domainLabel(); unknown domains fall back to
+// the humanized title-cased name)
 const KNOWN_DOMAIN_LABELS: Record<string, string> = {
   light: 'Lichter',
   switch: 'Schalter',

@@ -411,8 +411,9 @@ describe('homeassistant api', () => {
 
   describe('domainLabel (issue #37)', () => {
     it('returns the German label for every known domain', () => {
-      // MUST stay equal to SECTION_LABELS in HomeEntityPickerModal.tsx until
-      // task 3 switches that component over to domainLabel
+      // the German domain labels rendered on the picker's level-1 category
+      // cards (task 3 removed the duplicated SECTION_LABELS from the modal —
+      // these are now the single source)
       const sectionLabels: Record<string, string> = {
         light: 'Lichter',
         switch: 'Schalter',

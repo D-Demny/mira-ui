@@ -1,39 +1,51 @@
-import { HOME_ENTITY_DOMAINS, humanizeEntityLabel } from '@/api/homeassistant'
+import { useEffect, useRef, useState } from 'react'
+import { domainLabel, humanizeEntityLabel } from '@/api/homeassistant'
 import type { HaEntityCatalogEntry } from '@/api/homeassistant'
 import { useHomeEntityCatalog, useHomeEntitySelection } from '@/hooks/useHomeEntities'
 import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import { ENTITY_ICON_PATHS, entityDomainHue } from './homeEntityArt'
 import styles from './HomeEntityPickerModal.module.scss'
 
-// ticket 9.3 (Teil 2) + ticket 9.5: the entity picker — the user manages which
-// HA entities the Home carousel shows AND their order (the selection order IS
-// the carousel order). Overlay in the HALightControlModal style: backdrop
-// (click closes) + card (click stops propagation) + header + one
-// useOverlayListFocus instance.
+// ticket 9.3 (Teil 2) + ticket 9.5 + issue #37: the entity picker — the user
+// manages which HA entities the Home carousel shows AND their order (the
+// selection order IS the carousel order). Overlay in the HALightControlModal
+// style: backdrop (click closes) + card (click stops propagation) + header +
+// one useOverlayListFocus instance.
 //
-// Focus chain (flat index list, itemCount = focusable items only, info lines
-// do NOT count): [entity rows, grouped by domain in catalog order] + [retry
-// row while the catalog is in error] + [the 'Reihenfolge' section's enabled
-// move buttons, per selected entity: up (if not first), down (if not last)] +
-// the two footer buttons 'Zurücksetzen' / 'Fertig' (always the last two
-// items). Boundary-clamped moves are no-ops, so their buttons never enter the
-// chain.
+// issue #37: 2-level sub-menu (mirrors MainMenuView's settingsLevel). Level 1
+// 'categories' = one card per domain, derived DYNAMICALLY from the catalog
+// (every domain in GET /states gets a card — new domains appear without a code
+// change; catalog order is known-first via task 2's sort). Confirming a card
+// descends to level 2 'domain' = the entity rows of that one domain. The
+// Back key at level 2 returns to level 1 restoring focus on the originating
+// card.
+//
+// Focus chain (flat index list per level, itemCount = focusable items only,
+// info lines do NOT count):
+//   level 1: [domain cards] + [retry row while the catalog is in error] +
+//     [the 'Reihenfolge' section's enabled move buttons, per selected entity:
+//     up (if not first), down (if not last)] + footer 'Zurücksetzen'/'Fertig'
+//   level 2: [entity rows of the open domain] + [retry row] + footer (the
+//     reorder section is only rendered at level 1)
+// Boundary-clamped moves are no-ops, so their buttons never enter the chain.
 
 type FocusItem =
+  | { kind: 'card'; cardIndex: number }
   | { kind: 'entity'; rowIndex: number }
   | { kind: 'retry' }
   | { kind: 'move'; entityId: string; dir: 'up' | 'down' }
   | { kind: 'reset' }
   | { kind: 'done' }
 
-const SECTION_LABELS: Record<string, string> = {
-  light: 'Lichter',
-  switch: 'Schalter',
-  fan: 'Lüfter',
-  scene: 'Szenen',
-  cover: 'Rollläden',
-  input_boolean: 'Boolesche Werte',
-  media_player: 'Mediaplayer',
+// issue #37: the picker's two sub-menu levels (the component mounts fresh per
+// open — App renders it conditionally — so the level always starts at
+// 'categories')
+type PickerLevel = { kind: 'categories' } | { kind: 'domain'; domain: string }
+
+interface Category {
+  domain: string
+  label: string
+  entries: HaEntityCatalogEntry[]
 }
 
 // row state text: on/off badge, or the domain default for stateless domains
@@ -97,21 +109,54 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
   const catalog = useHomeEntityCatalog()
   const selection = useHomeEntitySelection()
 
-  // groups in HOME_ENTITY_DOMAINS order (only non-empty groups render), rows
-  // keep the catalog order inside a group; rowIndexById maps a row to its
-  // position in the flat focus chain
-  const rows: HaEntityCatalogEntry[] = []
-  const groups: { domain: string; label: string; entries: HaEntityCatalogEntry[] }[] = []
-  const rowIndexById = new Map<string, number>()
-  for (const domain of HOME_ENTITY_DOMAINS) {
-    const entries = catalog.entries.filter((entry) => entry.domain === domain)
-    if (entries.length === 0) continue
-    for (const entry of entries) {
-      rowIndexById.set(entry.entityId, rows.length)
-      rows.push(entry)
+  // issue #37: sub-menu level — fresh mount per open (App renders the modal
+  // conditionally), so 'categories' is always the initial level. The refs
+  // below restore focus after a level switch: pendingFocusRef holds the index
+  // to focus once the new level's item count is committed (tapItem must run
+  // AFTER the re-render — useOverlayListFocus only reads initialIndex on
+  // mount), originCardIndexRef remembers which card we descended from so
+  // dial-back can return focus to it.
+  const [level, setLevel] = useState<PickerLevel>({ kind: 'categories' })
+  const pendingFocusRef = useRef<number | null>(null)
+  const originCardIndexRef = useRef(0)
+
+  // issue #37: categories are DERIVED from the catalog — every domain present
+  // in GET /states gets a level-1 card (task 2 removed the whitelist). The
+  // catalog order is known-first (HOME_ENTITY_DOMAINS priority, unknowns
+  // alphabetical), so iterating entries in order yields the card order; a new
+  // domain in the catalog appears as a card without any code change.
+  const categories: Category[] = []
+  const categoryByDomain = new Map<string, Category>()
+  for (const entry of catalog.entries) {
+    let category = categoryByDomain.get(entry.domain)
+    if (!category) {
+      category = { domain: entry.domain, label: domainLabel(entry.domain), entries: [] }
+      categoryByDomain.set(entry.domain, category)
+      categories.push(category)
     }
-    groups.push({ domain, label: SECTION_LABELS[domain] ?? domain, entries })
+    category.entries.push(entry)
   }
+
+  // how many selected entities belong to each domain (the card badge)
+  const selectedCountByDomain = new Map<string, number>()
+  for (const entityId of selection.selectedIds) {
+    const domain = domainPrefixOf(entityId)
+    selectedCountByDomain.set(domain, (selectedCountByDomain.get(domain) ?? 0) + 1)
+  }
+
+  // level 2: the entity rows of the single open domain (level 1 renders cards
+  // instead of rows); rowIndexById maps a row to its position in the flat
+  // focus chain. groups = the entity-row sections to render (level 2: exactly
+  // one, level 1: none)
+  const activeCategory =
+    level.kind === 'domain' ? (categoryByDomain.get(level.domain) ?? null) : null
+  const rows: HaEntityCatalogEntry[] = []
+  const rowIndexById = new Map<string, number>()
+  for (const entry of activeCategory?.entries ?? []) {
+    rowIndexById.set(entry.entityId, rows.length)
+    rows.push(entry)
+  }
+  const groups: Category[] = activeCategory ? [activeCategory] : []
 
   // ticket 9.5: the reorder section's data — the CURRENT selection in order
   // (independent of the catalog state: even with a broken catalog the stored
@@ -139,22 +184,28 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
   const showEmpty = !catalog.loading && catalog.entries.length === 0 && catalog.error === null
   const listVisible = !showLoading && !showError && !showEmpty
 
-  // focus chain (visual order): entity rows, retry, move buttons (only the
-  // enabled ones — a clamped boundary move is a no-op), footer buttons
+  // focus chain per level (visual order): level 1 = domain cards + retry +
+  // 'Reihenfolge' move buttons (only the enabled ones — a clamped boundary
+  // move is a no-op) + footer; level 2 = the open domain's entity rows +
+  // retry + footer (the reorder section is not rendered at level 2, so its
+  // buttons are absent there)
   const focusItems: FocusItem[] = []
-  if (listVisible) {
+  if (listVisible && level.kind === 'categories') {
+    for (let i = 0; i < categories.length; i += 1) focusItems.push({ kind: 'card', cardIndex: i })
+  } else if (listVisible && level.kind === 'domain') {
     for (let i = 0; i < rows.length; i += 1) focusItems.push({ kind: 'entity', rowIndex: i })
   }
   const retryIndex = showError ? focusItems.length : -1
   if (showError) focusItems.push({ kind: 'retry' })
-  // move buttons per selected entity, reading order: [up, down] per row
   const moveFocusIndex = new Map<string, number>()
-  for (const row of orderRows) {
-    for (const dir of ['up', 'down'] as const) {
-      if (dir === 'up' && !row.canMoveUp) continue
-      if (dir === 'down' && !row.canMoveDown) continue
-      moveFocusIndex.set(row.entityId + ':' + dir, focusItems.length)
-      focusItems.push({ kind: 'move', entityId: row.entityId, dir })
+  if (level.kind === 'categories') {
+    for (const row of orderRows) {
+      for (const dir of ['up', 'down'] as const) {
+        if (dir === 'up' && !row.canMoveUp) continue
+        if (dir === 'down' && !row.canMoveDown) continue
+        moveFocusIndex.set(row.entityId + ':' + dir, focusItems.length)
+        focusItems.push({ kind: 'move', entityId: row.entityId, dir })
+      }
     }
   }
   const resetIndex = focusItems.length
@@ -163,15 +214,27 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
   focusItems.push({ kind: 'done' })
   const itemCount = focusItems.length
 
-  // open on the first selected entity (0 when the list is not visible)
-  let initialIndex = 0
-  if (listVisible) {
-    for (const entry of rows) {
-      if (selection.isSelected(entry.entityId)) {
-        initialIndex = rowIndexById.get(entry.entityId) ?? 0
-        break
-      }
-    }
+  // the component mounts fresh per open, so there is exactly one initial
+  // focus (0 = first card / first row); level switches restore focus via
+  // pendingFocusRef below instead of a per-level initialIndex
+  const initialIndex = 0
+
+  // issue #37: level navigation — descending stores the originating card so
+  // dial-back can restore focus on it; a retry always returns to level 1 (the
+  // cards) with focus on the first card. Both park the desired focus in
+  // pendingFocusRef, applied by the effect below AFTER the re-render (so
+  // tapItem clamps against the NEW level's item count).
+  const descendTo = (category: Category, cardIndex: number) => {
+    originCardIndexRef.current = cardIndex
+    pendingFocusRef.current = 0
+    setLevel({ kind: 'domain', domain: category.domain })
+  }
+
+  const doRetry = () => {
+    catalog.refetch()
+    originCardIndexRef.current = 0
+    pendingFocusRef.current = 0
+    if (level.kind !== 'categories') setLevel({ kind: 'categories' })
   }
 
   const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
@@ -181,13 +244,18 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
       const item = focusItems[index]
       if (!item) return
       switch (item.kind) {
+        case 'card': {
+          const category = categories[item.cardIndex]
+          if (category) descendTo(category, item.cardIndex)
+          return
+        }
         case 'entity': {
           const entry = rows[item.rowIndex]
           if (entry) selection.toggle(entry.entityId)
           return
         }
         case 'retry':
-          catalog.refetch()
+          doRetry()
           return
         case 'move':
           selection.move(item.entityId, item.dir)
@@ -200,8 +268,28 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
           onClose()
       }
     },
-    onBack: () => onClose(),
+    onBack: () => {
+      // issue #37: Back at level 2 returns to the cards, restoring focus on
+      // the card we descended from; at level 1 it closes (as before)
+      if (level.kind === 'domain') {
+        pendingFocusRef.current = originCardIndexRef.current
+        setLevel({ kind: 'categories' })
+      } else {
+        onClose()
+      }
+    },
   })
+
+  // issue #37: apply a focus index parked for the PREVIOUS level switch —
+  // runs after the re-render so useOverlayListFocus' itemCountRef already
+  // reflects the new level (the hook's ref update is a layout effect, which
+  // always commits before this passive effect)
+  useEffect(() => {
+    if (pendingFocusRef.current === null) return
+    const index = pendingFocusRef.current
+    pendingFocusRef.current = null
+    tapItem(index)
+  }, [level, tapItem])
 
   const keydownConfirm = (run: () => void) => (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -223,14 +311,14 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
             <span className={styles.title}>Entitäten wählen</span>
             <span className={styles.count}>{selection.selectedIds.length} ausgewählt</span>
           </div>
-          <button
-            type="button"
-            className={styles.closeBtn}
-            onClick={onClose}
-            aria-label="Close"
-          >
+          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
             </svg>
           </button>
         </div>
@@ -250,11 +338,11 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
                 tabIndex={focusedIndex === retryIndex ? 0 : -1}
                 onClick={() => {
                   tapItem(retryIndex)
-                  catalog.refetch()
+                  doRetry()
                 }}
                 onKeyDown={keydownConfirm(() => {
                   tapItem(retryIndex)
-                  catalog.refetch()
+                  doRetry()
                 })}
               >
                 <span className={styles.rowText}>
@@ -264,13 +352,61 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
             </>
           ) : null}
           {showEmpty ? (
-            <div className={styles.info}>Keine steuerbaren Entitäten gefunden</div>
+            // issue #37: the catalog now contains EVERY domain (no
+            // 'controllable' filter), so the empty state is plain too
+            <div className={styles.info}>Keine Entitäten gefunden</div>
           ) : null}
           {listVisible && showErrorNote ? (
             // bug53: non-blocking error note — the (stale) catalog stays
             // selectable, the note carries the concrete reason
-            <div className={styles.errorNote}>
-              Home Assistant nicht erreichbar: {catalog.error}
+            <div className={styles.errorNote}>Home Assistant nicht erreichbar: {catalog.error}</div>
+          ) : null}
+          {/* issue #37: level 1 — one card per domain, derived from the
+              catalog (a new domain in GET /states gets a card without any
+              code change; catalog order = known-first) */}
+          {listVisible && level.kind === 'categories' ? (
+            <div className={styles.categoryCards}>
+              {categories.map((category, i) => {
+                const focused = focusedIndex === i
+                const hue = entityDomainHue(category.domain)
+                const selectedCount = selectedCountByDomain.get(category.domain) ?? 0
+                return (
+                  <div
+                    key={category.domain}
+                    className={`${styles.categoryCard} ${focused ? styles.focused : ''}`}
+                    ref={focused ? setFocusRef : undefined}
+                    role="button"
+                    tabIndex={focused ? 0 : -1}
+                    onClick={() => {
+                      tapItem(i)
+                      descendTo(category, i)
+                    }}
+                    onKeyDown={keydownConfirm(() => {
+                      tapItem(i)
+                      descendTo(category, i)
+                    })}
+                  >
+                    <span
+                      className={styles.iconTile}
+                      style={{
+                        background: `hsl(${hue}, 40%, 18%)`,
+                        color: `hsl(${hue}, 55%, 62%)`,
+                      }}
+                    >
+                      <EntityGlyph domain={category.domain} />
+                    </span>
+                    <span className={styles.rowText}>
+                      <span className={styles.categoryTitle}>{category.label}</span>
+                      <span className={styles.rowMeta}>
+                        {category.entries.length === 1
+                          ? '1 Entität'
+                          : `${category.entries.length} Entitäten`}
+                        {selectedCount > 0 ? ` · ${selectedCount} ausgewählt` : ''}
+                      </span>
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           ) : null}
           {listVisible
@@ -337,10 +473,12 @@ export function HomeEntityPickerModal({ onClose }: HomeEntityPickerModalProps) {
                 </div>
               ))
             : null}
-          {/* ticket 9.5: the selection order IS the Home carousel order — an
-              explicit reorder section (single-selection lists have nothing to
-              sort, so it only renders with two or more selected entities) */}
-          {orderRows.length > 1 ? (
+          {/* ticket 9.5 + issue #37: the selection order IS the Home carousel
+              order — an explicit reorder section (single-selection lists have
+              nothing to sort, so it only renders with two or more selected
+              entities). Level 1 ONLY: at level 2 the rows of the open domain
+              take the list area */}
+          {level.kind === 'categories' && orderRows.length > 1 ? (
             <div className={styles.section}>
               <div className={styles.sectionHeader}>Reihenfolge</div>
               {orderRows.map((row, i) => {

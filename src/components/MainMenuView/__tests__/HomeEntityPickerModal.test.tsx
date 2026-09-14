@@ -8,9 +8,18 @@ import { HOME_LIGHTS } from '@/hooks/useHomeLight'
 import { CATALOG_TIMEOUT_MS } from '@/api/homeassistant'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
-// ticket 9.3 (Teil 2): the entity picker modal — grouped catalog rows from
-// the MSW /states fixture, per-row selection (aria-pressed + localStorage),
-// counter header, reset/done footer, error state with retry row
+// ticket 9.3 (Teil 2) + issue #37: the entity picker modal — a 2-level
+// sub-menu. Level 1 = one category card per catalog domain, derived
+// DYNAMICALLY from GET /states (known domains first in HOME_ENTITY_DOMAINS
+// priority order, unknown domains after in alphabetical order — a new domain
+// gets a card without any code change). Level 2 = the entity rows of the
+// selected domain (aria-pressed + localStorage persistence via the selection
+// store). Dial-confirm on a card descends; dial-back restores focus on the
+// originating card. The footer (Zurücksetzen/Fertig), the close button and
+// the backdrop work at both levels; the 'Reihenfolge' reorder section renders
+// only at level 1. Error states keep the concrete reason and the retry row
+// (full screen when there is no data, non-blocking note when a refetch fails
+// on top of stale data).
 
 function renderPicker(onClose = vi.fn()) {
   return { onClose, ...render(<HomeEntityPickerModal onClose={onClose} />) }
@@ -21,7 +30,109 @@ function readSelection(): string[] {
   return raw ? (JSON.parse(raw) as string[]) : []
 }
 
-describe('HomeEntityPickerModal (ticket 9.3)', () => {
+// issue #37: dial simulation (established pattern, see MainMenuView.test.tsx)
+function wheel(deltaX: number) {
+  act(() => {
+    ListFocusContext.entry.onWheel({
+      deltaX,
+      preventDefault: vi.fn(),
+    } as unknown as WheelEvent)
+  })
+}
+
+function confirmDial() {
+  act(() => {
+    ListFocusContext.entry.onConfirm?.()
+  })
+}
+
+function pressBack() {
+  act(() => {
+    ListFocusContext.entry.onBack?.()
+  })
+}
+
+// issue #37: the level-1 category cards (non-scoped CSS module classes)
+function cards(): HTMLElement[] {
+  return Array.from(document.querySelectorAll('.categoryCard'))
+}
+
+function cardTitles(): string[] {
+  return cards().map((card) => card.querySelector('.categoryTitle')?.textContent ?? '')
+}
+
+// Mirrors the MSW default /states fixture (src/__tests__/msw-server.ts) plus
+// one 'climate' entity — 'climate' is NOT in HOME_ENTITY_DOMAINS, so seeding
+// it proves the category cards are derived dynamically from the catalog
+// (issue #37 task 2 removed the whitelist filter)
+function catalogWithClimate(): Array<{
+  entity_id: string
+  state: string
+  attributes: Record<string, unknown>
+}> {
+  const body: Array<{
+    entity_id: string
+    state: string
+    attributes: Record<string, unknown>
+  }> = []
+  for (const light of HOME_LIGHTS) {
+    body.push({
+      entity_id: light.entityId,
+      state: 'off',
+      attributes: { friendly_name: light.label, supported_color_modes: ['color_temp', 'xy'] },
+    })
+  }
+  body.push({
+    entity_id: 'switch.wasserpumpe',
+    state: 'off',
+    attributes: { friendly_name: 'Wasserpumpe' },
+  })
+  body.push({
+    entity_id: 'scene.abendstimmung',
+    state: 'none',
+    attributes: { friendly_name: 'Abendstimmung' },
+  })
+  body.push({
+    entity_id: 'fan.wohnzimmer',
+    state: 'off',
+    attributes: { friendly_name: 'Lüfter Wohnzimmer' },
+  })
+  body.push({
+    entity_id: 'media_player.wohnzimmer',
+    state: 'idle',
+    attributes: { friendly_name: 'TV Wohnzimmer' },
+  })
+  body.push({
+    entity_id: 'cover.garage',
+    state: 'closed',
+    attributes: { friendly_name: 'Garagentor' },
+  })
+  body.push({
+    entity_id: 'input_boolean.nachtmodus',
+    state: 'off',
+    attributes: { friendly_name: 'Nachtmodus' },
+  })
+  // was filtered out of the catalog before issue #37 — now a regular domain
+  body.push({
+    entity_id: 'sensor.temperatur_wohnzimmer',
+    state: '21.5',
+    attributes: { friendly_name: 'Temperatur Wohnzimmer' },
+  })
+  // NEW domain, not in the old whitelist — no code change needed for it to
+  // appear as a level-1 card
+  body.push({
+    entity_id: 'climate.wohnzimmer',
+    state: 'heat',
+    attributes: { friendly_name: 'Klimaanlage Wohnzimmer' },
+  })
+  return body
+}
+
+function seedClimateCatalog() {
+  server.use(http.get('*/ha-api/states', () => HttpResponse.json(catalogWithClimate())))
+}
+
+describe('HomeEntityPickerModal (ticket 9.3 + issue #37)', () => {
   beforeEach(() => {
     window.localStorage.clear()
     __resetHomeEntityStores()
@@ -32,12 +143,18 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     ListFocusContext.setActive(null)
   })
 
-  it('renders the domain groups and the catalog rows (sensor filtered out)', async () => {
+  it('level 1 renders one category card per catalog domain — known first, new domains after', async () => {
+    seedClimateCatalog()
     renderPicker()
 
-    await screen.findByText('Wasserpumpe')
+    await screen.findByText('Lichter')
 
-    for (const section of [
+    // one card per domain in the catalog: the 7 known ones + 'climate' (new)
+    // + 'sensor' (no longer filtered out)
+    expect(cards()).toHaveLength(9)
+    // known domains in HOME_ENTITY_DOMAINS priority order, unknowns after —
+    // alphabetical by domain ('climate' < 'sensor')
+    expect(cardTitles()).toEqual([
       'Lichter',
       'Schalter',
       'Lüfter',
@@ -45,21 +162,35 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
       'Rollläden',
       'Boolesche Werte',
       'Mediaplayer',
-    ]) {
-      expect(screen.getByText(section)).toBeInTheDocument()
-    }
-    // ticket 9.5: each default-selected light appears TWICE — once as a
-    // catalog row, once in the 'Reihenfolge' section
-    for (const light of HOME_LIGHTS) {
-      expect(screen.getAllByText(light.label)).toHaveLength(2)
-    }
-    expect(screen.getByText('Abendstimmung')).toBeInTheDocument()
-    expect(screen.getByText('Lüfter Wohnzimmer')).toBeInTheDocument()
-    expect(screen.getByText('TV Wohnzimmer')).toBeInTheDocument()
-    expect(screen.getByText('Garagentor')).toBeInTheDocument()
-    expect(screen.getByText('Nachtmodus')).toBeInTheDocument()
-    // the catalog fixture's sensor must NOT appear (not a controllable domain)
-    expect(screen.queryByText('Temperatur Wohnzimmer')).not.toBeInTheDocument()
+      'Climate',
+      'Sensor',
+    ])
+    // a card shows the domainLabel, the entity count and (for the default
+    // selection) the selected-count badge
+    const lightCard = cards()[0]
+    expect(lightCard.textContent).toContain('9 Entitäten')
+    expect(lightCard.textContent).toContain('· 9 ausgewählt')
+    const climateCard = cards()[7]
+    expect(climateCard.textContent).toContain('1 Entität')
+    // 'sensor' is no longer filtered out — it gets a card like any other domain
+    expect(cards()[8].textContent).toContain('Sensor')
+  })
+
+  it('a new domain in the catalog gets a working card without a code change', async () => {
+    seedClimateCatalog()
+    renderPicker()
+
+    await screen.findByText('Lichter')
+
+    // dial to the 'Climate' card (index 7: the 8 known/earlier domains first)
+    for (let i = 0; i < 7; i += 1) wheel(-1)
+    confirmDial()
+
+    await screen.findByText('Klimaanlage Wohnzimmer')
+    expect(screen.getByText('Climate')).toBeInTheDocument()
+    // level 2 shows the single entity row of the new domain only
+    const rows = Array.from(document.querySelectorAll('.section .row'))
+    expect(rows).toHaveLength(1)
   })
 
   it('shows the selection count in the header (default = the 9 lights)', async () => {
@@ -68,42 +199,101 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     await screen.findByText('9 ausgewählt')
   })
 
-  it('toggles a row: aria-pressed flips, the count grows, the id lands in localStorage', async () => {
+  it("dial-confirm on a card descends to level 2 — only that domain's rows render", async () => {
     renderPicker()
 
+    await screen.findByText('Lichter')
+
+    // focus starts on the first card ('Lichter'); one dial tick over to
+    // 'Schalter', then confirm
+    wheel(-1)
+    confirmDial()
+
     await screen.findByText('Wasserpumpe')
+
+    // level 2: the domain's section header and its rows…
+    expect(screen.getByText('Schalter')).toBeInTheDocument()
     const row = screen.getByRole('button', { name: /Wasserpumpe/ })
+    expect(row).toHaveAttribute('aria-pressed', 'false')
+    // …and nothing else: no level-1 cards, no reorder section (level 1 only),
+    // no rows of other domains
+    expect(cards()).toHaveLength(0)
+    expect(screen.queryByText('Reihenfolge')).not.toBeInTheDocument()
+    expect(screen.queryByText('Abendstimmung')).not.toBeInTheDocument()
+    expect(screen.queryByText('3er Stehlampe Gold')).not.toBeInTheDocument()
+    const domainRows = Array.from(document.querySelectorAll('.section .row'))
+    expect(domainRows).toHaveLength(1)
+  })
+
+  it('dial-back at level 2 restores focus on the originating card', async () => {
+    renderPicker()
+
+    await screen.findByText('Lichter')
+
+    // descend into 'Schalter' (the second card)…
+    wheel(-1)
+    confirmDial()
+    await screen.findByText('Wasserpumpe')
+    // …descending focuses the domain's first row (the parked focus is applied
+    // after the re-render)
+    expect(screen.getByRole('button', { name: /Wasserpumpe/ })).toHaveAttribute('tabIndex', '0')
+
+    pressBack()
+
+    // level-1 cards are back…
+    expect(cards()).toHaveLength(8)
+    // …and the focus is on the card we descended from ('Schalter', index 1)
+    const schalterCard = screen.getByRole('button', { name: /Schalter/ })
+    expect(schalterCard).toHaveAttribute('tabIndex', '0')
+    for (const card of cards()) {
+      if (card !== schalterCard) expect(card).toHaveAttribute('tabIndex', '-1')
+    }
+  })
+
+  it('toggles a row at level 2: aria-pressed flips, the count grows, the id lands in localStorage', async () => {
+    renderPicker()
+
+    await screen.findByText('Lichter')
+    wheel(-1)
+    confirmDial()
+
+    const row = await screen.findByRole('button', { name: /Wasserpumpe/ })
     expect(row).toHaveAttribute('aria-pressed', 'false')
 
     fireEvent.click(row)
 
     await screen.findByText('10 ausgewählt')
-    // ticket 9.5: the selected entity ALSO appears in the 'Reihenfolge'
-    // section (with its move buttons), so scope the row query to the catalog
-    // group instead of a bare name match
-    const schalterSection = screen.getByText('Schalter').closest('.section') as HTMLElement
-    const catalogRow = schalterSection.querySelector('[role="button"]') as HTMLElement
-    expect(catalogRow).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Wasserpumpe/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
     expect(readSelection()).toContain('switch.wasserpumpe')
-    // toggling the same row back removes it again (and clears its reorder row)
-    fireEvent.click(catalogRow)
+    // toggling the same row back removes it again
+    fireEvent.click(screen.getByRole('button', { name: /Wasserpumpe/ }))
     await screen.findByText('9 ausgewählt')
     expect(readSelection()).not.toContain('switch.wasserpumpe')
   })
 
-  it('keeps the reset button disabled while the selection is the default', async () => {
+  it('keeps the reset button disabled at level 2 while the selection is the default', async () => {
     renderPicker()
 
+    await screen.findByText('Lichter')
+    wheel(-1)
+    confirmDial()
     await screen.findByText('Wasserpumpe')
+
     expect(screen.getByRole('button', { name: 'Zurücksetzen' })).toBeDisabled()
   })
 
-  it('after a toggle the reset button is enabled and resets the selection and closes', async () => {
+  it('at level 2 a non-default selection enables reset (resets + closes) — and Fertig closes', async () => {
     const onClose = vi.fn()
     renderPicker(onClose)
 
-    await screen.findByText('Wasserpumpe')
-    fireEvent.click(screen.getByRole('button', { name: /Wasserpumpe/ }))
+    await screen.findByText('Lichter')
+    wheel(-1)
+    confirmDial()
+
+    fireEvent.click(await screen.findByRole('button', { name: /Wasserpumpe/ }))
     await screen.findByText('10 ausgewählt')
 
     const resetBtn = screen.getByRole('button', { name: 'Zurücksetzen' })
@@ -113,21 +303,16 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     await screen.findByText('9 ausgewählt')
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(readSelection()).toEqual(HOME_LIGHTS.map((light) => light.entityId))
-  })
 
-  it('closes on Fertig', async () => {
-    const onClose = vi.fn()
-    renderPicker(onClose)
-
-    await screen.findByText('Wasserpumpe')
+    // Fertig works at level 2 too
     fireEvent.click(screen.getByRole('button', { name: 'Fertig' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onClose).toHaveBeenCalledTimes(2)
   })
 
   it('the close button and the backdrop close the modal', async () => {
     const onClose = vi.fn()
     const first = renderPicker(onClose)
-    await screen.findByText('Wasserpumpe')
+    await screen.findByText('Lichter')
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -135,7 +320,7 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
 
     const onClose2 = vi.fn()
     const second = renderPicker(onClose2)
-    await screen.findByText('Wasserpumpe')
+    await screen.findByText('Lichter')
     fireEvent.click(screen.getByRole('dialog')) // the card swallows its own clicks
     expect(onClose2).not.toHaveBeenCalled()
     const backdrop = screen.getByRole('dialog').parentElement as HTMLElement
@@ -159,9 +344,8 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     await screen.findByText('Home Assistant nicht erreichbar')
     expect(screen.getByText('home assistant 502')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Erneut versuchen/ })).toBeInTheDocument()
-    // the (failed) catalog must not render any rows
-    expect(screen.queryByText('Wasserpumpe')).not.toBeInTheDocument()
-    expect(screen.queryByText('Zurücksetzen')).toBeDefined()
+    // the (failed) catalog must not render any category cards
+    expect(cards()).toHaveLength(0)
 
     // retry while the endpoint is STILL failing: a fresh request is issued
     // (no reused rejected promise) and the error state persists
@@ -174,9 +358,7 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     // contract violation)
     server.use(http.get('*/ha-api/states', () => HttpResponse.json([])))
     fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
-    await waitFor(() =>
-      expect(screen.getByText('Keine steuerbaren Entitäten gefunden')).toBeInTheDocument(),
-    )
+    await screen.findByText('Keine Entitäten gefunden')
   })
 
   // bug53: a timed-out catalog (the device's dominant failure mode — the
@@ -228,12 +410,36 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
     // bug55: [] = valid (empty) HA array contract
     server.use(http.get('*/ha-api/states', () => HttpResponse.json([])))
     fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
-    await screen.findByText('Keine steuerbaren Entitäten gefunden')
+    await screen.findByText('Keine Entitäten gefunden')
+  })
+
+  it('a retry reloads the catalog and re-renders the level-1 category cards', async () => {
+    let calls = 0
+    server.use(
+      http.get('*/ha-api/states', () => {
+        calls += 1
+        return HttpResponse.json({ error: 'down' }, { status: 502 })
+      }),
+    )
+    renderPicker()
+
+    await screen.findByText('home assistant 502')
+    expect(cards()).toHaveLength(0)
+
+    // the endpoint heals → retry fetches fresh…
+    seedClimateCatalog()
+    fireEvent.click(screen.getByRole('button', { name: /Erneut versuchen/ }))
+
+    // …and level 1 re-renders its category cards — including the new domain
+    await screen.findByText('Lichter')
+    expect(cards()).toHaveLength(9)
+    expect(cardTitles()).toContain('Climate')
   })
 
   // ticket 9.5: the 'Reihenfolge' section — the selection order IS the Home
   // carousel order; per row a ▲/▼ move button (flat focus chain, boundary
-  // clamped moves stay disabled) and immediate persistence of each swap
+  // clamped moves stay disabled) and immediate persistence of each swap.
+  // issue #37: the section renders at level 1 only.
   describe('reorder section (ticket 9.5)', () => {
     it('renders a numbered row per selected entity with the boundary buttons disabled', async () => {
       renderPicker()
@@ -327,41 +533,57 @@ describe('HomeEntityPickerModal (ticket 9.3)', () => {
 
   // bug53 (stale data retention): a failed TTL-expired refetch on top of an
   // already-loaded catalog keeps the list visible (selection usable) with a
-  // non-blocking error note — no blank screen, no error screen
-  it('keeps the loaded catalog visible with an error note when a refetch fails', async () => {
+  // non-blocking error note — no blank screen, no full error screen. issue
+  // #37: a fresh open always starts at level 1, so after the reload the
+  // category cards re-render.
+  it('keeps the loaded catalog visible with an error note when a refetch fails — a reopen returns to level 1', async () => {
     const realNow = Date.now
     let fakeNow = realNow()
     const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => fakeNow)
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const first = renderPicker()
+      await screen.findByText('Lichter')
+
+      // open the switch domain (level 2), then close again
+      wheel(-1)
+      confirmDial()
       await screen.findByText('Wasserpumpe')
-      // ticket 9.5: the default-selected light is listed twice (catalog row +
-      // 'Reihenfolge' row)
-      expect(screen.getAllByText('3er Stehlampe Gold')).toHaveLength(2)
       first.unmount()
 
       // beyond the 60 s catalog TTL, a remount re-fetches — and that
       // refetch fails
       fakeNow += 61_000
       server.use(
-        http.get('*/ha-api/states', () =>
-          HttpResponse.json({ message: 'boom' }, { status: 500 }),
-        ),
+        http.get('*/ha-api/states', () => HttpResponse.json({ message: 'boom' }, { status: 500 })),
       )
       renderPicker()
 
-      // the (stale) catalog rows stay visible and selectable… (the selected
-      // light is listed twice: catalog row + 'Reihenfolge' row)
-      expect(screen.getByText('Wasserpumpe')).toBeInTheDocument()
-      expect(screen.getAllByText('3er Stehlampe Gold')).toHaveLength(2)
+      // the (stale) catalog stays visible — and a fresh open starts at level
+      // 1, so the category cards + the 'Reihenfolge' section re-render…
+      expect(screen.getByText('Lichter')).toBeInTheDocument()
+      expect(cards()).toHaveLength(8)
+      expect(screen.getByText('Reihenfolge')).toBeInTheDocument()
+      const orderRows = Array.from(document.querySelectorAll('.orderRow'))
+      expect(orderRows).toHaveLength(9)
       // …with a non-blocking error note carrying the concrete reason
       await screen.findByText(/home assistant 500/)
-      // and the full error screen (with its retry row) does NOT replace it
+      // and the full error screen (with its retry row) does NOT replace it —
+      // with stale data the picker stays usable, no error screen
       expect(screen.queryByRole('button', { name: /Erneut versuchen/ })).not.toBeInTheDocument()
     } finally {
       nowSpy.mockRestore()
       warn.mockRestore()
     }
+  })
+
+  it('an empty catalog shows the plain empty-state text', async () => {
+    server.use(http.get('*/ha-api/states', () => HttpResponse.json([])))
+    renderPicker()
+
+    await screen.findByText('Keine Entitäten gefunden')
+    expect(cards()).toHaveLength(0)
+    // the footer stays rendered (reset disabled for the default selection)
+    expect(screen.getByRole('button', { name: 'Zurücksetzen' })).toBeDisabled()
   })
 })

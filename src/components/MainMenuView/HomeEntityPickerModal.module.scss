@@ -1,5 +1,6 @@
-// ticket 9.3 (Teil 2): entity picker overlay — grouped catalog list (domain
-// sections), per-row selection check, footer with Zurücksetzen/Fertig.
+// ticket 9.3 (Teil 2) + issue #37: entity picker overlay — 2-level sub-menu
+// (level 1: domain card grid, level 2: the open domain's row section), per-row
+// selection check, footer with Zurücksetzen/Fertig.
 // Nocturne glass language like HALightControlModal. Chromium 69: NO flex gap
 // (margins / flex-gap-y instead), no backdrop-filter, no color-mix.
 .backdrop {
@@ -124,6 +125,42 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: $s-2 $s-3 $s-1;
+}
+
+// issue #37: level-1 category cards — one per domain, derived from the
+// catalog. Chromium 69: CSS grid + grid-template-columns is OK (grid gap has
+// been in since Chrome 57); NO FLEX gap, no backdrop-filter, no :has — row
+// spacing via margin-bottom like the rows above.
+.categoryCards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: $s-3;
+}
+
+.categoryCard {
+  display: flex;
+  align-items: center;
+  margin-bottom: $s-3;
+  padding: $s-3;
+  border: 1px solid $divider;
+  border-radius: $r-lg;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color $dur-fast $ease-standard,
+    border-color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+
+.categoryTitle {
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  color: $text-primary;
+  @include truncate(1);
 }
 
 .row {
