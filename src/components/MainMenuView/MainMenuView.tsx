@@ -125,14 +125,23 @@ function buildRootSettingsRows(
     { id: 'set-bt', title: 'Bluetooth Pairing', value: '', kind: 'open-link' },
     // epic10 task 4: opens the Raspberry Pi provisioning/connection view
     { id: 'set-pi', title: 'Raspberry Pi', value: piRowValue(piMode), kind: 'open-link' },
-    // ticket 9.4: opens the Home Assistant connection settings view
-    { id: 'set-ha', title: 'Home Assistant', value: haRowValue(settings.ha), kind: 'open-link' },
-    // ticket 9.5: opens the home entity picker (select + reorder the carousel)
+    // ticket 9.4: opens the Home Assistant connection settings view; issue #37
+    // groups it under the 'Home Assistant' section and renames the row
+    {
+      id: 'set-ha',
+      title: 'Verbindung',
+      value: haRowValue(settings.ha),
+      kind: 'open-link',
+      section: 'Home Assistant',
+    },
+    // ticket 9.5: opens the home entity picker (select + reorder the carousel);
+    // issue #37 renames the row to 'Entity picker' (same section as set-ha)
     {
       id: 'set-home',
-      title: 'Home',
+      title: 'Entity picker',
       value: homeEntityCount === 1 ? '1 Entität' : `${homeEntityCount} Entitäten`,
       kind: 'open-link',
+      section: 'Home Assistant',
     },
   ]
 }
@@ -281,10 +290,11 @@ export interface MainMenuViewProps {
   // bug46: a dimmable HA light card opens the brightness / color-temperature
   // popup (rendered by the App's globalOverlays) instead of toggling directly
   onOpenLightControl?: (entityId: string, label: string) => void
-  // ticket 9.5: the 'Home' settings row opens the entity picker overlay
+  // ticket 9.5: the 'Entity picker' settings row opens the entity picker overlay
   // (rendered by the App's globalOverlays). The inline manage card that used
   // to open it from the Home carousel was removed in this ticket — the
-  // picker is reached via Einstellungen → Home now
+  // picker is reached via Einstellungen → Home Assistant → Entity picker now
+  // (issue #37)
   onOpenEntityPicker?: () => void
   // epic10 task 4: the 'Raspberry Pi' settings row opens the provisioning
   // view (rendered by the App's globalOverlays)
@@ -596,8 +606,8 @@ export function MainMenuView({
     // selection order.
     // ticket 9.5: the inline manage card ('Entitäten wählen') is GONE from
     // the Home carousel — the picker (selection + reordering) is reached via
-    // Einstellungen → Home now. An empty selection still gets an inert
-    // placeholder pointing to the new location
+    // Einstellungen → Home Assistant → Entity picker now (issue #37). An empty
+    // selection still gets an inert placeholder pointing to the new location
     const homeCards: MenuCard[] = selectedEntities.map((view) => ({
       id: 'ha-' + view.entityId,
       title: view.label,
