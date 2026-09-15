@@ -55,6 +55,9 @@ export function __resetPrefetchState(): void {
 
 function prefetchImage(url: string) {
   const img = new window.Image()
+  // match the card <img> cache-partition attrs (see MainMenuView pre-decode) so the warm hits their partition
+  img.crossOrigin = 'anonymous'
+  img.referrerPolicy = 'no-referrer'
   img.src = url
 }
 
