@@ -4,6 +4,7 @@
 // renders), unmapped slots carry placeholder markers, data-entity-id is set
 // only on real entities, and focusedIndex marks exactly one node.
 
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
@@ -400,5 +401,74 @@ describe('HomeDashboardView empty-zone suppression (issue #48)', () => {
     const second = container.querySelectorAll('.focused')
     expect(second.length).toBe(1)
     expect(second[0]).toHaveAttribute('data-entity-id', 'light.flurlicht')
+  })
+})
+
+// issue #53: on-device, scenes AND covers configured pushed the total zone
+// height past the 480px viewport — and the zones (direct flex children of
+// .scroller with the default flex-shrink: 1) were compressed BELOW their
+// content height instead of overflowing (thin empty boxes overlapping the
+// next zone; the bug51 class). jsdom does not compute class-based styles and
+// vitest's CSS pipeline intercepts .scss imports, so the fix is pinned in the
+// stylesheet source — same readFileSync idiom as PiServerModal.test.tsx and
+// the bug43 min-height pin in SettingsList.test.tsx.
+describe('HomeDashboardView stylesheet pins (issue #53)', () => {
+  const scss = readFileSync('src/components/MainMenuView/HomeDashboardView.module.scss', 'utf8')
+
+  // extract a top-level block (brace-balanced — .scroller nests its child
+  // selector)
+  const block = (selector: string): string => {
+    const start = scss.indexOf(`.${selector} {`)
+    expect(start, `${selector} block missing`).toBeGreaterThanOrEqual(0)
+    let depth = 0
+    let end = -1
+    for (let i = start; i < scss.length; i++) {
+      if (scss[i] === '{') depth += 1
+      else if (scss[i] === '}') {
+        depth -= 1
+        if (depth === 0) {
+          end = i
+          break
+        }
+      }
+    }
+    expect(end, `${selector} block unbalanced`).toBeGreaterThanOrEqual(0)
+    return scss.slice(start, end + 1)
+  }
+
+  it('pins the direct children of .scroller to flex-shrink: 0 (zones keep content height)', () => {
+    // The exact bug51 idiom (PiServerModal/HaSettingsModal .content,
+    // SettingsList rows): every zone stays at its content height so the
+    // overflow — with it the scroll and the dial's scrollIntoView — happens
+    // inside the port instead of compressing the zones.
+    const scroller = block('scroller')
+    expect(scroller).toContain('overflow-y: auto;')
+    expect(scroller).toMatch(/> \* \{\s*flex-shrink: 0;\s*\}/)
+  })
+
+  it('declares explicit content min-heights on .sceneBtn and .coverColumn', () => {
+    // Content-based heights alone were compressed on the device (bug36/bug43
+    // precedent: explicit min-heights survive where content-min didn't). The
+    // values are derived from the real scale (border-box, line-height 1.4):
+    // .sceneBtn = padding $s-3 x2 (24) + icon 20px + gap $s-1 (4) + label line
+    // $fs-sm x1.4 (16.8) = 64.8 -> 65px; .coverColumn = padding $s-2 x2 (16) +
+    // label line $fs-md x1.4 (19.6) + gap $s-2 (8) + button stack (32+8+32)
+    // = 115.6 -> 116px. Update both the SCSS and this pin together.
+    expect(block('sceneBtn')).toMatch(/min-height: 65px;/)
+    expect(block('coverColumn')).toMatch(/min-height: 116px;/)
+    // cover columns read as entity tiles — same tint as .lightTile / .sceneBtn
+    expect(block('coverColumn')).toContain('background: rgba(255, 255, 255, 0.07);')
+  })
+
+  it('introduces no raw flex gap (CR69: Chromium 69 ignores it)', () => {
+    // The only raw `gap:` in the module is on .lightGrid — a GRID container,
+    // CR69-safe since Chrome 66 and the repo's established grid pattern. All
+    // FLEX containers (.scroller and its zones) must stay on the margin-based
+    // flex-gap-x/y mixins.
+    const rawGaps = scss.match(/gap\s*:/g) ?? []
+    expect(rawGaps.length).toBe(1)
+    for (const selector of ['scroller', 'sceneBtn', 'coverColumn']) {
+      expect(block(selector)).not.toMatch(/gap\s*:/)
+    }
   })
 })

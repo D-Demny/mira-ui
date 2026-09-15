@@ -46,6 +46,16 @@
 // stuck up on CR69). Scrollbars stay invisible (same as settings list). The
 // column + margin-gap lines carry the zone spacing that used to live on .root
 // (CR69-safe margin mixin, never flex `gap`).
+//
+// issue #53: the zones (.sceneRow / .lightGrid / .coverSection) are direct
+// flex children of this column with the default flex-shrink: 1 — once scenes
+// AND covers are configured, total content exceeds the 480px device viewport
+// and instead of overflowing, the zones were compressed BELOW their content
+// height (thin empty boxes, the cover section painted over the light grid —
+// the exact bug51 class fixed in PiServerModal/HaSettingsModal .content).
+// .scroller > * { flex-shrink: 0 } is the same rule the SettingsList rows
+// carry — every zone keeps its content height and the overflow (with it the
+// scroll, including the dial's scrollIntoView) happens instead.
 .scroller {
   display: flex;
   flex-direction: column;
@@ -57,6 +67,10 @@
 
   &::-webkit-scrollbar {
     display: none;
+  }
+
+  > * {
+    flex-shrink: 0;
   }
 }
 
@@ -70,6 +84,11 @@
 .sceneBtn {
   flex: 1 1 0;
   min-width: 0;
+  // issue #53: explicit content height — padding $s-3 x2 (24) + icon 20px +
+  // gap $s-1 (4) + label line $fs-sm x1.4 (16.8) = 64.8 -> 65px. Content-based
+  // height alone was compressed on the device (bug36/bug43 precedent: explicit
+  // min-heights survive where content-min didn't).
+  min-height: 65px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -247,18 +266,25 @@
 .coverColumn {
   flex: 1 1 0;
   min-width: 0;
+  // issue #53: explicit content height — padding $s-2 x2 (16) + label line
+  // $fs-md x1.4 (19.6) + gap $s-2 (8) + button stack (32 + 8 + 32) =
+  // 115.6 -> 116px; same belt-and-braces rationale as .sceneBtn min-height.
+  min-height: 116px;
   display: flex;
   flex-direction: column;
   align-items: center;
   @include flex-gap-y($s-2);
   padding: $s-2;
   border-radius: $r-md;
+  // issue #53: entity-tile background — same tile tint as .lightTile /
+  // .sceneBtn, so cover columns read as tiles (hover brightens, house idiom)
+  background: rgba(255, 255, 255, 0.07);
   cursor: pointer;
   user-select: none;
   transition: background-color $dur-fast $ease-standard;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.11);
   }
 }
 
