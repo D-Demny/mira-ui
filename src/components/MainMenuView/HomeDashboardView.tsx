@@ -20,9 +20,13 @@
 // [0..coverColumns). Slot COUNTS drive the offsets (placeholders are focus
 // stops too): offset 1 = sceneRow.length, offset 2 = sceneRow.length +
 // lightGrid.length. focusedIndex undefined / out of range → nothing focused.
-// ticket 9.6 W2-4: fine dial scrolling — a useLayoutEffect on focusedIndex
-// scrolls the focused slot into view when the grid overflows its container
-// (the ContentCarousel house pattern, zero-geometry fallback included).
+// ticket 9.6 W2-4 + issue #45: fine dial scrolling — the dashboard carries
+// its OWN vertical scroll port (.scroller, the SettingsList idiom) because
+// the hosting content pane is overflow:hidden: touch did nothing and dial
+// had to nudge that hidden pane via scrollIntoView (reliable down, stuck up
+// on CR69). A useLayoutEffect on focusedIndex scrolls the focused slot into
+// view when it escapes the scroller's containment; zero-geometry fallback
+// included.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
@@ -127,12 +131,13 @@ export function HomeDashboardView({
     }
   }
 
-  // keep the focused slot visible while the dial rotates across the grid —
-  // mirrors the ContentCarousel house pattern (useLayoutEffect on focusedIndex:
-  // same frame as the .focused class commit; instant 'auto' behavior for dial
-  // ticks). The grid itself never scrolls (.root is a plain column, the app
-  // shell clips), so containment is checked against the hosting container —
-  // MainMenuView's content pane in production, the test wrapper in jsdom.
+  // keep the focused slot visible while the dial rotates across the dashboard —
+  // issue #45: gridRef now points at .scroller, the dashboard's own vertical
+  // scroll port (SettingsList idiom), so containment is checked against the
+  // scroller ITSELF instead of the hosting container (the old hidden pane).
+  // Same frame as the .focused class commit; instant 'auto' behavior for dial
+  // ticks now works bidirectionally on CR69, because the scrolled element is a
+  // real overflow:auto port (the hidden content pane stuck scrolling upward).
   // Zero-geometry environments (jsdom / first paint pending) fall back to the
   // native call exactly like the carousel's zero-viewport branch.
   useLayoutEffect(() => {
@@ -140,7 +145,8 @@ export function HomeDashboardView({
     const slot = slotEls.current.get(focusedIndex)
     const grid = gridRef.current
     if (!slot || !grid) return
-    const container = grid.parentElement ?? grid
+    // issue #45: the scroller IS the scroll port — no parentElement indirection
+    const container = grid
     if (container.clientWidth <= 0 || container.clientHeight <= 0) {
       slot.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' })
       return
@@ -281,167 +287,172 @@ export function HomeDashboardView({
   }
 
   return (
-    <div className={styles.root} ref={gridRef}>
+    <div className={styles.root}>
       {/* ticket 9.6 W2: placeholder toast — absolute-positioned pill above the
-          grid, so showing/hiding it never reflows the zones */}
+          zones, a SIBLING of the scroller (pinned to .root), so showing/hiding
+          it never reflows or scrolls with the content */}
       {toast !== null && (
         <div className={styles.toast} role="status" aria-live="polite">
           {toast}
         </div>
       )}
-      {/* Z1 — scene row */}
-      <div className={styles.sceneRow}>
-        {sceneRow.map((slot, i) => (
-          <div
-            key={slot.entityId ?? `scene-placeholder-${i}`}
-            // W2-4: focus-chain registry (scene slots occupy chain indices 0..sceneRow)
-            ref={(el) => setSlotEl(i, el)}
-            className={`${styles.sceneBtn}${slot.isPlaceholder ? ` ${styles.placeholder}` : ''}${
-              i === sceneFocus ? ` ${styles.focused}` : ''
-            }`}
-            // real entities only — placeholders keep entityId null and the
-            // attribute is omitted (a press toasts instead, see above)
-            data-entity-id={slot.entityId}
-            data-dashboard-placeholder={slot.isPlaceholder ? 'true' : undefined}
-            onClick={() => handleSceneTap(slot)}
-          >
-            <MenuIcon name={SCENE_ICON} size={20} />
-            <span className={styles.sceneLabel}>{slot.label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Z2 — light grid (2-column CSS grid, flat slot list from Task A) */}
-      <div className={styles.lightGrid}>
-        {lightGrid.map((tile, i) => (
-          <div
-            key={tile.entityId ?? `light-placeholder-${i}`}
-            // W2-4: focus-chain registry (lights start after the scene row)
-            ref={(el) => setSlotEl(sceneRow.length + i, el)}
-            className={`${styles.lightTile}${tile.isPlaceholder ? ` ${styles.placeholder}` : ''}${
-              i === lightFocus ? ` ${styles.focused}` : ''
-            }`}
-            data-entity-id={tile.entityId}
-            data-dashboard-placeholder={tile.isPlaceholder ? 'true' : undefined}
-            // W2-3a: holdable ONLY when dimmable — placeholders are dimmable by
-            // design, so they hold too (the parent routes the null-entity model)
-            onPointerDown={
-              tile.dimmable
-                ? (e) => startHold(`light-${i}`, e, () => onLightHold?.(tile))
-                : undefined
-            }
-            onPointerMove={tile.dimmable ? (e) => moveHold(`light-${i}`, e) : undefined}
-            onPointerUp={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
-            onPointerCancel={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
-            onClick={() => {
-              if (isHeldClick(`light-${i}`)) return // the hold already handled it
-              handleLightTap(tile)
-            }}
-          >
-            <span className={styles.tileIcon}>
-              <MenuIcon name={LIGHT_ICON} size={20} />
-            </span>
-            <div className={styles.tileBody}>
-              <span className={styles.tileLabel}>{tile.label}</span>
-              <div className={styles.tileReadout}>
-                <span className={styles.brightnessBar}>
-                  {tile.brightnessPct !== null && (
-                    <>
-                      <span
-                        className={styles.brightnessFill}
-                        style={{ width: `${tile.brightnessPct}%` }}
-                      />
-                      <span className={styles.knob} style={{ left: `${tile.brightnessPct}%` }} />
-                    </>
-                  )}
-                </span>
-                <span className={styles.stateCol}>
-                  {tile.brightnessPct !== null && (
-                    <span className={styles.pct}>{tile.brightnessPct}%</span>
-                  )}
-                  <span className={styles.state}>{tile.isOn ? 'An' : 'Aus'}</span>
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Z3 — cover section (header + one column per cover) */}
-      <section
-        className={`${styles.coverSection}${coverSection.isPlaceholder ? ` ${styles.placeholder}` : ''}`}
-        // section-level marker: NO cover is mapped at all → the whole section
-        // (header + columns) is mock content
-        data-dashboard-placeholder={coverSection.isPlaceholder ? 'true' : undefined}
-      >
-        <div className={styles.coverHeader}>
-          <span className={styles.coverTitle}>{coverSection.title}</span>
-          <span className={styles.coverSubtitle}>{coverSection.subtitle}</span>
-        </div>
-        <div className={styles.coverColumns}>
-          {coverSection.columns.map((col, i) => (
+      {/* issue #45: .scroller — the dashboard's own vertical scroll port.
+          Wraps ONLY the three zones below; the toast stays pinned outside it */}
+      <div className={styles.scroller} data-home-scroller="true" ref={gridRef}>
+        {/* Z1 — scene row */}
+        <div className={styles.sceneRow}>
+          {sceneRow.map((slot, i) => (
             <div
-              key={col.entityId ?? `cover-placeholder-${i}`}
-              // W2-4: focus-chain registry (covers start after scenes + lights)
-              ref={(el) => setSlotEl(sceneRow.length + lightGrid.length + i, el)}
-              className={`${styles.coverColumn}${col.isPlaceholder ? ` ${styles.placeholder}` : ''}${
-                i === coverFocus ? ` ${styles.focused}` : ''
+              key={slot.entityId ?? `scene-placeholder-${i}`}
+              // W2-4: focus-chain registry (scene slots occupy chain indices 0..sceneRow)
+              ref={(el) => setSlotEl(i, el)}
+              className={`${styles.sceneBtn}${slot.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+                i === sceneFocus ? ` ${styles.focused}` : ''
               }`}
-              data-entity-id={col.entityId}
-              data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
+              // real entities only — placeholders keep entityId null and the
+              // attribute is omitted (a press toasts instead, see above)
+              data-entity-id={slot.entityId}
+              data-dashboard-placeholder={slot.isPlaceholder ? 'true' : undefined}
+              onClick={() => handleSceneTap(slot)}
             >
-              <span className={styles.coverLabel}>{col.label}</span>
-              <span className={styles.coverBtns}>
-                {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
-                    hold is per cover, not per button; a fired hold suppresses
-                    the short-press of that same press on either button */}
-                <span
-                  className={styles.coverBtn}
-                  data-cover-action="up"
-                  onPointerDown={(e) =>
-                    startHold(`cover-${i}`, e, () => {
-                      // W2-3: a placeholder column hold reuses the W2-2 toast
-                      // (the parent's onCoverHold is a no-op for these columns)
-                      if (col.isPlaceholder) showPlaceholderToast(col.label)
-                      onCoverHold?.(col)
-                    })
-                  }
-                  onPointerMove={(e) => moveHold(`cover-${i}`, e)}
-                  onPointerUp={() => releaseHold(`cover-${i}`)}
-                  onPointerCancel={() => releaseHold(`cover-${i}`)}
-                  onClick={() => {
-                    if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                    handleCoverAction(col, 'up')
-                  }}
-                >
-                  ^
-                </span>
-                <span
-                  className={styles.coverBtn}
-                  data-cover-action="down"
-                  onPointerDown={(e) =>
-                    startHold(`cover-${i}`, e, () => {
-                      // W2-3: a placeholder column hold reuses the W2-2 toast
-                      // (the parent's onCoverHold is a no-op for these columns)
-                      if (col.isPlaceholder) showPlaceholderToast(col.label)
-                      onCoverHold?.(col)
-                    })
-                  }
-                  onPointerMove={(e) => moveHold(`cover-${i}`, e)}
-                  onPointerUp={() => releaseHold(`cover-${i}`)}
-                  onPointerCancel={() => releaseHold(`cover-${i}`)}
-                  onClick={() => {
-                    if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                    handleCoverAction(col, 'down')
-                  }}
-                >
-                  v
-                </span>
-              </span>
+              <MenuIcon name={SCENE_ICON} size={20} />
+              <span className={styles.sceneLabel}>{slot.label}</span>
             </div>
           ))}
         </div>
-      </section>
+
+        {/* Z2 — light grid (2-column CSS grid, flat slot list from Task A) */}
+        <div className={styles.lightGrid}>
+          {lightGrid.map((tile, i) => (
+            <div
+              key={tile.entityId ?? `light-placeholder-${i}`}
+              // W2-4: focus-chain registry (lights start after the scene row)
+              ref={(el) => setSlotEl(sceneRow.length + i, el)}
+              className={`${styles.lightTile}${tile.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+                i === lightFocus ? ` ${styles.focused}` : ''
+              }`}
+              data-entity-id={tile.entityId}
+              data-dashboard-placeholder={tile.isPlaceholder ? 'true' : undefined}
+              // W2-3a: holdable ONLY when dimmable — placeholders are dimmable by
+              // design, so they hold too (the parent routes the null-entity model)
+              onPointerDown={
+                tile.dimmable
+                  ? (e) => startHold(`light-${i}`, e, () => onLightHold?.(tile))
+                  : undefined
+              }
+              onPointerMove={tile.dimmable ? (e) => moveHold(`light-${i}`, e) : undefined}
+              onPointerUp={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
+              onPointerCancel={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
+              onClick={() => {
+                if (isHeldClick(`light-${i}`)) return // the hold already handled it
+                handleLightTap(tile)
+              }}
+            >
+              <span className={styles.tileIcon}>
+                <MenuIcon name={LIGHT_ICON} size={20} />
+              </span>
+              <div className={styles.tileBody}>
+                <span className={styles.tileLabel}>{tile.label}</span>
+                <div className={styles.tileReadout}>
+                  <span className={styles.brightnessBar}>
+                    {tile.brightnessPct !== null && (
+                      <>
+                        <span
+                          className={styles.brightnessFill}
+                          style={{ width: `${tile.brightnessPct}%` }}
+                        />
+                        <span className={styles.knob} style={{ left: `${tile.brightnessPct}%` }} />
+                      </>
+                    )}
+                  </span>
+                  <span className={styles.stateCol}>
+                    {tile.brightnessPct !== null && (
+                      <span className={styles.pct}>{tile.brightnessPct}%</span>
+                    )}
+                    <span className={styles.state}>{tile.isOn ? 'An' : 'Aus'}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Z3 — cover section (header + one column per cover) */}
+        <section
+          className={`${styles.coverSection}${coverSection.isPlaceholder ? ` ${styles.placeholder}` : ''}`}
+          // section-level marker: NO cover is mapped at all → the whole section
+          // (header + columns) is mock content
+          data-dashboard-placeholder={coverSection.isPlaceholder ? 'true' : undefined}
+        >
+          <div className={styles.coverHeader}>
+            <span className={styles.coverTitle}>{coverSection.title}</span>
+            <span className={styles.coverSubtitle}>{coverSection.subtitle}</span>
+          </div>
+          <div className={styles.coverColumns}>
+            {coverSection.columns.map((col, i) => (
+              <div
+                key={col.entityId ?? `cover-placeholder-${i}`}
+                // W2-4: focus-chain registry (covers start after scenes + lights)
+                ref={(el) => setSlotEl(sceneRow.length + lightGrid.length + i, el)}
+                className={`${styles.coverColumn}${col.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+                  i === coverFocus ? ` ${styles.focused}` : ''
+                }`}
+                data-entity-id={col.entityId}
+                data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
+              >
+                <span className={styles.coverLabel}>{col.label}</span>
+                <span className={styles.coverBtns}>
+                  {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
+                    hold is per cover, not per button; a fired hold suppresses
+                    the short-press of that same press on either button */}
+                  <span
+                    className={styles.coverBtn}
+                    data-cover-action="up"
+                    onPointerDown={(e) =>
+                      startHold(`cover-${i}`, e, () => {
+                        // W2-3: a placeholder column hold reuses the W2-2 toast
+                        // (the parent's onCoverHold is a no-op for these columns)
+                        if (col.isPlaceholder) showPlaceholderToast(col.label)
+                        onCoverHold?.(col)
+                      })
+                    }
+                    onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                    onPointerUp={() => releaseHold(`cover-${i}`)}
+                    onPointerCancel={() => releaseHold(`cover-${i}`)}
+                    onClick={() => {
+                      if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                      handleCoverAction(col, 'up')
+                    }}
+                  >
+                    ^
+                  </span>
+                  <span
+                    className={styles.coverBtn}
+                    data-cover-action="down"
+                    onPointerDown={(e) =>
+                      startHold(`cover-${i}`, e, () => {
+                        // W2-3: a placeholder column hold reuses the W2-2 toast
+                        // (the parent's onCoverHold is a no-op for these columns)
+                        if (col.isPlaceholder) showPlaceholderToast(col.label)
+                        onCoverHold?.(col)
+                      })
+                    }
+                    onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                    onPointerUp={() => releaseHold(`cover-${i}`)}
+                    onPointerCancel={() => releaseHold(`cover-${i}`)}
+                    onClick={() => {
+                      if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                      handleCoverAction(col, 'down')
+                    }}
+                  >
+                    v
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   )
 }
