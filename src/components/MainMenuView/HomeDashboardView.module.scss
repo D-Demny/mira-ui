@@ -4,14 +4,20 @@
 // font scale from _variables.scss, margin-based flex spacing (NO flex `gap` —
 // Chromium 69 ignores it; grid containers may use raw `gap`, shipped since
 // Chrome 66, codebase precedent in App/Menu/Controls .module.scss), no
-// backdrop-filter. No scroll port here — the wrapper is a plain column and
-// MainMenuView (Task C) owns the content-area geometry.
+// backdrop-filter. issue #45: there IS a scroll port now (.scroller) — .root is
+// the full-height positioning context around it; MainMenuView (Task C) still
+// owns the content-area geometry.
 
 .root {
   position: relative; // anchor for the placeholder toast (ticket 9.6 W2)
   display: flex;
   flex-direction: column;
-  @include flex-gap-y($s-4);
+  // issue #45: full height so .scroller gets a definite box in BOTH hosting
+  // modes — solid: parent is a display:contents wrapper (height resolves
+  // against the content pane); underflow: height:100% block with left padding.
+  // Content scrolls INSIDE the padded inset, it does not clip. The flex-gap-y
+  // zone spacing moved to .scroller (the zones are its children now).
+  height: 100%;
   box-sizing: border-box;
   padding: $s-5 $s-6;
 }
@@ -32,6 +38,26 @@
   font-size: $fs-sm;
   line-height: 1.3;
   @include truncate(1);
+}
+
+// issue #45: the dashboard's own vertical scroll port — the SettingsList .list
+// idiom. Without it touch does nothing and dial navigation had to nudge the
+// hidden overflow:hidden content pane via scrollIntoView (reliable down,
+// stuck up on CR69). Scrollbars stay invisible (same as settings list). The
+// column + margin-gap lines carry the zone spacing that used to live on .root
+// (CR69-safe margin mixin, never flex `gap`).
+.scroller {
+  display: flex;
+  flex-direction: column;
+  @include flex-gap-y($s-4);
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 // ------------------------------------------------------------ Z1 scene row

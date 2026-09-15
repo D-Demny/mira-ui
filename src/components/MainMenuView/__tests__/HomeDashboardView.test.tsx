@@ -228,11 +228,13 @@ describe('HomeDashboardView touch hold (ticket 9.6 W2-3a)', () => {
   })
 })
 
-// ticket 9.6 W2-4: fine dial navigation — a focused slot outside the grid's
-// visible area is scrolled into view on every dial tick (useLayoutEffect,
-// ContentCarousel house pattern). jsdom has no geometry, so the zero-viewport
-// fallback branch runs: the native scrollIntoView call is made unconditionally.
-describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4)', () => {
+// ticket 9.6 W2-4 + issue #45: fine dial navigation — a focused slot outside
+// the scroll port's visible area is scrolled into view on every dial tick
+// (useLayoutEffect; containment is checked against the .scroller itself, the
+// dashboard's own vertical scroll port). jsdom has no geometry, so the
+// zero-viewport fallback branch runs: the native scrollIntoView call is made
+// unconditionally.
+describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4, issue #45)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -276,5 +278,49 @@ describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4)', () => {
     expect(scrollIntoView).not.toHaveBeenCalled()
     rerender(<HomeDashboardView entities={entities} />) // undefined → still nothing
     expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('gives the dashboard its own vertical scroll port around all three zones (issue #45)', () => {
+    const { container } = render(<HomeDashboardView entities={[]} />)
+    // exactly one scroll port — the W2-4 effect's containment target
+    expect(container.querySelectorAll('[data-home-scroller="true"]').length).toBe(1)
+    const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
+    // all three zones render INSIDE the scroller (touch + dial scroll it natively)
+    expect(scroller.querySelector('.sceneRow')).not.toBeNull()
+    expect(scroller.querySelector('.lightGrid')).not.toBeNull()
+    expect(scroller.querySelector('.coverSection')).not.toBeNull()
+    // the placeholder toast stays a SIBLING of the scroller — pinned to .root,
+    // it never scrolls with the content
+    fireEvent.click(scroller.querySelector('.sceneBtn') as HTMLElement)
+    const toast = container.querySelector('[role="status"]') as HTMLElement
+    expect(toast).not.toBeNull()
+    expect(toast.closest('[data-home-scroller="true"]')).toBeNull()
+  })
+
+  it('moving focus back UP still nudges scrollIntoView when outside containment (issue #45)', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const entities = [
+      scene('scene.abendstimmung', 'Abendstimmung'),
+      light('light.esstisch_lampe', 'Esstisch Lampe'),
+      light('light.flurlicht', 'Flurlampe'),
+    ]
+    // start deep in the chain (index 4 = 2nd light tile), then dial back UP to
+    // the scene row — with the dedicated scroller port (issue #45) the upward
+    // nudge is as reliable as the downward one; on jsdom's zero geometry this
+    // takes the fallback branch, same unconditional native call.
+    const { rerender } = render(<HomeDashboardView entities={entities} focusedIndex={4} />)
+    scrollIntoView.mockClear()
+
+    rerender(<HomeDashboardView entities={entities} focusedIndex={1} />)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).toHaveBeenLastCalledWith({
+      behavior: 'auto',
+      block: 'nearest',
+      inline: 'center',
+    })
+    // the receiver is a SCENE slot (row index 1), not the light tile we left
+    const scrolled = scrollIntoView.mock.instances.at(-1) as unknown as HTMLElement | undefined
+    expect(scrolled).not.toBeUndefined()
+    expect(scrolled).toHaveClass('sceneBtn')
   })
 })
