@@ -1,10 +1,14 @@
 // ticket 9.6 (Task B): the Home dashboard grid — the replacement for the Home
-// content carousel. Three zones in fixed render order (top → bottom):
-//   Z1 scene row   — horizontal buttons, icon above label
+// content carousel. Zones in fixed render order (top → bottom), each rendered
+// ONLY when at least one real entity is configured for it (issue #48: an
+// empty zone would otherwise show pure placeholder mock content):
+//   Z1 scene row   — horizontal buttons, icon above label (hidden w/o scenes)
 //   Z2 light grid  — 2-column CSS grid tiles: icon left, label, brightness
-//                    bar with knob + % readout, An/Aus status
+//                    bar with knob + % readout, An/Aus status. Always rendered
+//                    (0 lights → the full placeholder tile set, by design)
 //   Z3 cover section — header ("Wohnzimmer und Esszimmer" / "Rollo Steuerung
 //                    EG") above one column per cover, each with ^ / v buttons
+//                    (hidden w/o covers)
 //
 // Rendering on top of the view models from ./homeDashboard (Task A). No
 // store access — all actuation flows through the optional short-press
@@ -15,11 +19,13 @@
 // placeholder node still calls its callback (the parent ignores null
 // entityIds) and shows this component's local inline toast.
 //
-// Focus chain (dial navigation): one linear index over ALL slots in render
+// Focus chain (dial navigation): one linear index over ALL RENDERED slots in
 // order — scenes[0..sceneRow) → lights[0..lightGrid) → cover columns
 // [0..coverColumns). Slot COUNTS drive the offsets (placeholders are focus
 // stops too): offset 1 = sceneRow.length, offset 2 = sceneRow.length +
-// lightGrid.length. focusedIndex undefined / out of range → nothing focused.
+// lightGrid.length. issue #48: a suppressed zone has length 0, so its slots
+// drop out of the chain and the remaining zones shift up automatically.
+// focusedIndex undefined / out of range → nothing focused.
 // ticket 9.6 W2-4 + issue #45: fine dial scrolling — the dashboard carries
 // its OWN vertical scroll port (.scroller, the SettingsList idiom) because
 // the hosting content pane is overflow:hidden: touch did nothing and dial
@@ -90,20 +96,32 @@ export function HomeDashboardView({
   onLightHold,
   onCoverHold,
 }: HomeDashboardViewProps) {
-  // the three zone view models — the builders fill placeholder slots for
-  // unmapped entities (see homeDashboard.ts), so the zones below always render
+  // the zone view models — issue #48: a zone renders ONLY when at least one
+  // real entity is configured for it; with zero entities the builders'
+  // placeholder fill would be pure mock content, so the whole zone (row /
+  // section) is suppressed. Lights stay unconditional by design (the grid
+  // always shows, filling with placeholder tiles). The same suppression must
+  // be mirrored in MainMenuView's homeDashboard model (dial stop count +
+  // confirm/hold routing), which runs the identical builders.
   const { sceneRow, lightGrid, coverSection } = useMemo(() => {
     const classified = classifyEntities(entities)
     return {
-      sceneRow: buildSceneRow(classified.scenes),
+      // zero scenes → no row at all (no buttons, no space)
+      sceneRow: classified.scenes.length === 0 ? [] : buildSceneRow(classified.scenes),
       lightGrid: buildLightGrid(classified.lights),
-      coverSection: buildCoverSection(classified.covers),
+      // zero covers → no section at all (no header, no columns); the spread
+      // keeps the CoverSectionModel shape for the (unrendered) fallback
+      coverSection:
+        classified.covers.length === 0
+          ? { ...buildCoverSection(classified.covers), columns: [] }
+          : buildCoverSection(classified.covers),
     }
   }, [entities])
 
-  // linear focus chain: scenes → lights → cover columns. Out-of-range indices
-  // focus nothing (the chain is as long as the rendered slots, which include
-  // placeholders)
+  // linear focus chain over the RENDERED zones: scenes → lights → cover
+  // columns (suppressed zones have length 0 and drop out, issue #48).
+  // Out-of-range indices focus nothing (the chain is as long as the rendered
+  // slots, which include placeholders)
   let sceneFocus = -1
   let lightFocus = -1
   let coverFocus = -1
@@ -299,27 +317,29 @@ export function HomeDashboardView({
       {/* issue #45: .scroller — the dashboard's own vertical scroll port.
           Wraps ONLY the three zones below; the toast stays pinned outside it */}
       <div className={styles.scroller} data-home-scroller="true" ref={gridRef}>
-        {/* Z1 — scene row */}
-        <div className={styles.sceneRow}>
-          {sceneRow.map((slot, i) => (
-            <div
-              key={slot.entityId ?? `scene-placeholder-${i}`}
-              // W2-4: focus-chain registry (scene slots occupy chain indices 0..sceneRow)
-              ref={(el) => setSlotEl(i, el)}
-              className={`${styles.sceneBtn}${slot.isPlaceholder ? ` ${styles.placeholder}` : ''}${
-                i === sceneFocus ? ` ${styles.focused}` : ''
-              }`}
-              // real entities only — placeholders keep entityId null and the
-              // attribute is omitted (a press toasts instead, see above)
-              data-entity-id={slot.entityId}
-              data-dashboard-placeholder={slot.isPlaceholder ? 'true' : undefined}
-              onClick={() => handleSceneTap(slot)}
-            >
-              <MenuIcon name={SCENE_ICON} size={20} />
-              <span className={styles.sceneLabel}>{slot.label}</span>
-            </div>
-          ))}
-        </div>
+        {/* Z1 — scene row (issue #48: rendered only when real scenes exist) */}
+        {sceneRow.length > 0 && (
+          <div className={styles.sceneRow}>
+            {sceneRow.map((slot, i) => (
+              <div
+                key={slot.entityId ?? `scene-placeholder-${i}`}
+                // W2-4: focus-chain registry (scene slots occupy chain indices 0..sceneRow)
+                ref={(el) => setSlotEl(i, el)}
+                className={`${styles.sceneBtn}${slot.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+                  i === sceneFocus ? ` ${styles.focused}` : ''
+                }`}
+                // real entities only — placeholders keep entityId null and the
+                // attribute is omitted (a press toasts instead, see above)
+                data-entity-id={slot.entityId}
+                data-dashboard-placeholder={slot.isPlaceholder ? 'true' : undefined}
+                onClick={() => handleSceneTap(slot)}
+              >
+                <MenuIcon name={SCENE_ICON} size={20} />
+                <span className={styles.sceneLabel}>{slot.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Z2 — light grid (2-column CSS grid, flat slot list from Task A) */}
         <div className={styles.lightGrid}>
@@ -377,81 +397,83 @@ export function HomeDashboardView({
           ))}
         </div>
 
-        {/* Z3 — cover section (header + one column per cover) */}
-        <section
-          className={`${styles.coverSection}${coverSection.isPlaceholder ? ` ${styles.placeholder}` : ''}`}
-          // section-level marker: NO cover is mapped at all → the whole section
-          // (header + columns) is mock content
-          data-dashboard-placeholder={coverSection.isPlaceholder ? 'true' : undefined}
-        >
-          <div className={styles.coverHeader}>
-            <span className={styles.coverTitle}>{coverSection.title}</span>
-            <span className={styles.coverSubtitle}>{coverSection.subtitle}</span>
-          </div>
-          <div className={styles.coverColumns}>
-            {coverSection.columns.map((col, i) => (
-              <div
-                key={col.entityId ?? `cover-placeholder-${i}`}
-                // W2-4: focus-chain registry (covers start after scenes + lights)
-                ref={(el) => setSlotEl(sceneRow.length + lightGrid.length + i, el)}
-                className={`${styles.coverColumn}${col.isPlaceholder ? ` ${styles.placeholder}` : ''}${
-                  i === coverFocus ? ` ${styles.focused}` : ''
-                }`}
-                data-entity-id={col.entityId}
-                data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
-              >
-                <span className={styles.coverLabel}>{col.label}</span>
-                <span className={styles.coverBtns}>
-                  {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
-                    hold is per cover, not per button; a fired hold suppresses
-                    the short-press of that same press on either button */}
-                  <span
-                    className={styles.coverBtn}
-                    data-cover-action="up"
-                    onPointerDown={(e) =>
-                      startHold(`cover-${i}`, e, () => {
-                        // W2-3: a placeholder column hold reuses the W2-2 toast
-                        // (the parent's onCoverHold is a no-op for these columns)
-                        if (col.isPlaceholder) showPlaceholderToast(col.label)
-                        onCoverHold?.(col)
-                      })
-                    }
-                    onPointerMove={(e) => moveHold(`cover-${i}`, e)}
-                    onPointerUp={() => releaseHold(`cover-${i}`)}
-                    onPointerCancel={() => releaseHold(`cover-${i}`)}
-                    onClick={() => {
-                      if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                      handleCoverAction(col, 'up')
-                    }}
-                  >
-                    ^
+        {/* Z3 — cover section (issue #48: rendered only when real covers exist) */}
+        {coverSection.columns.length > 0 && (
+          <section
+            className={`${styles.coverSection}${coverSection.isPlaceholder ? ` ${styles.placeholder}` : ''}`}
+            // section-level marker: the zero-cover case (isPlaceholder true) is
+            // never rendered anymore (issue #48) — kept for model parity
+            data-dashboard-placeholder={coverSection.isPlaceholder ? 'true' : undefined}
+          >
+            <div className={styles.coverHeader}>
+              <span className={styles.coverTitle}>{coverSection.title}</span>
+              <span className={styles.coverSubtitle}>{coverSection.subtitle}</span>
+            </div>
+            <div className={styles.coverColumns}>
+              {coverSection.columns.map((col, i) => (
+                <div
+                  key={col.entityId ?? `cover-placeholder-${i}`}
+                  // W2-4: focus-chain registry (covers start after scenes + lights)
+                  ref={(el) => setSlotEl(sceneRow.length + lightGrid.length + i, el)}
+                  className={`${styles.coverColumn}${col.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+                    i === coverFocus ? ` ${styles.focused}` : ''
+                  }`}
+                  data-entity-id={col.entityId}
+                  data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
+                >
+                  <span className={styles.coverLabel}>{col.label}</span>
+                  <span className={styles.coverBtns}>
+                    {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
+                      hold is per cover, not per button; a fired hold suppresses
+                      the short-press of that same press on either button */}
+                    <span
+                      className={styles.coverBtn}
+                      data-cover-action="up"
+                      onPointerDown={(e) =>
+                        startHold(`cover-${i}`, e, () => {
+                          // W2-3: a placeholder column hold reuses the W2-2 toast
+                          // (the parent's onCoverHold is a no-op for these columns)
+                          if (col.isPlaceholder) showPlaceholderToast(col.label)
+                          onCoverHold?.(col)
+                        })
+                      }
+                      onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                      onPointerUp={() => releaseHold(`cover-${i}`)}
+                      onPointerCancel={() => releaseHold(`cover-${i}`)}
+                      onClick={() => {
+                        if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                        handleCoverAction(col, 'up')
+                      }}
+                    >
+                      ^
+                    </span>
+                    <span
+                      className={styles.coverBtn}
+                      data-cover-action="down"
+                      onPointerDown={(e) =>
+                        startHold(`cover-${i}`, e, () => {
+                          // W2-3: a placeholder column hold reuses the W2-2 toast
+                          // (the parent's onCoverHold is a no-op for these columns)
+                          if (col.isPlaceholder) showPlaceholderToast(col.label)
+                          onCoverHold?.(col)
+                        })
+                      }
+                      onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                      onPointerUp={() => releaseHold(`cover-${i}`)}
+                      onPointerCancel={() => releaseHold(`cover-${i}`)}
+                      onClick={() => {
+                        if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                        handleCoverAction(col, 'down')
+                      }}
+                    >
+                      v
+                    </span>
                   </span>
-                  <span
-                    className={styles.coverBtn}
-                    data-cover-action="down"
-                    onPointerDown={(e) =>
-                      startHold(`cover-${i}`, e, () => {
-                        // W2-3: a placeholder column hold reuses the W2-2 toast
-                        // (the parent's onCoverHold is a no-op for these columns)
-                        if (col.isPlaceholder) showPlaceholderToast(col.label)
-                        onCoverHold?.(col)
-                      })
-                    }
-                    onPointerMove={(e) => moveHold(`cover-${i}`, e)}
-                    onPointerUp={() => releaseHold(`cover-${i}`)}
-                    onPointerCancel={() => releaseHold(`cover-${i}`)}
-                    onClick={() => {
-                      if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                      handleCoverAction(col, 'down')
-                    }}
-                  >
-                    v
-                  </span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )

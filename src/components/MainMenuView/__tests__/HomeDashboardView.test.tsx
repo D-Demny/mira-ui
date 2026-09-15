@@ -1,7 +1,8 @@
 // ticket 9.6 (Task B): smoke test for HomeDashboardView — the pure rendering
-// contract on top of the homeDashboard.ts view models (Task A): all three
-// zones always render, unmapped slots carry placeholder markers, data-entity-id
-// is set only on real entities, and focusedIndex marks exactly one node.
+// contract on top of the homeDashboard.ts view models (Task A): a zone renders
+// only when real entities exist for it (issue #48; the light grid always
+// renders), unmapped slots carry placeholder markers, data-entity-id is set
+// only on real entities, and focusedIndex marks exactly one node.
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
@@ -33,27 +34,32 @@ function light(entityId: string, label: string): DashboardEntity {
   }
 }
 
+function cover(entityId: string, label: string): DashboardEntity {
+  return {
+    entityId,
+    domain: 'cover',
+    label,
+    state: 'closed',
+    active: null,
+    dimmable: false,
+    brightnessPct: null,
+  }
+}
+
 describe('HomeDashboardView (ticket9.6)', () => {
-  it('renders all three zones with placeholder markers when nothing is configured', () => {
+  it('renders only the light grid (placeholder tiles) when nothing is configured (issue #48)', () => {
     const { container } = render(<HomeDashboardView entities={[]} />)
-    // 3 scene slots + 4 light tiles + section + 2 cover columns = 10 marked nodes
-    expect(container.querySelectorAll('[data-dashboard-placeholder="true"]').length).toBe(10)
-    // default mockup labels across all three zones
-    for (const label of [
-      'Normales Licht',
-      'Cosy time',
-      'Betti Zeit',
-      'Esstisch',
-      'Flurlicht',
-      'Stehlampen',
-      'Treppenspots',
-      'Wohnzimmer und Esszimmer',
-      'Rollo Steuerung EG',
-      'Wohnzimmer',
-      'Esszimmer',
-    ]) {
+    // no scene row and no cover section at all — only the light grid renders,
+    // filled with its 4 placeholder tiles (the always-on zone by design)
+    expect(container.querySelector('.sceneRow')).toBeNull()
+    expect(container.querySelector('.coverSection')).toBeNull()
+    expect(container.querySelectorAll('[data-dashboard-placeholder="true"]').length).toBe(4)
+    for (const label of ['Esstisch', 'Flurlicht', 'Stehlampen', 'Treppenspots']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
+    // the scene/cover mock content is gone with the zones
+    expect(screen.queryByText('Normales Licht')).not.toBeInTheDocument()
+    expect(screen.queryByText('Wohnzimmer und Esszimmer')).not.toBeInTheDocument()
   })
 
   it('renders real labels and fills the remaining slots with placeholders', () => {
@@ -64,10 +70,12 @@ describe('HomeDashboardView (ticket9.6)', () => {
     ]
     const { container } = render(<HomeDashboardView entities={entities} />)
     // data-entity-id on the 3 real nodes only — placeholders fill the rest
-    // (2 scene slots + 2 light tiles + section + 2 cover columns = 7 marked)
+    // (2 scene slots + 2 light tiles = 4 marked; no covers configured → the
+    // cover section is suppressed, issue #48)
     expect(container.querySelectorAll('[data-entity-id]').length).toBe(3)
     expect(screen.getByText('Abendstimmung')).toBeInTheDocument()
-    expect(container.querySelectorAll('[data-dashboard-placeholder="true"]').length).toBe(7)
+    expect(container.querySelector('.coverSection')).toBeNull()
+    expect(container.querySelectorAll('[data-dashboard-placeholder="true"]').length).toBe(4)
   })
 
   it('marks exactly one node focused (chain: scenes → lights → covers)', () => {
@@ -168,18 +176,26 @@ describe('HomeDashboardView touch hold (ticket 9.6 W2-3a)', () => {
     vi.useFakeTimers()
     const onCoverAction = vi.fn()
     const onCoverHold = vi.fn()
-    // no real cover → both columns are placeholders, still holdable
+    // issue #48: zero covers suppress the whole section — a real cover is
+    // needed for any column to hold at all (1 real + 1 placeholder column)
     const { container } = render(
-      <HomeDashboardView entities={[]} onCoverAction={onCoverAction} onCoverHold={onCoverHold} />,
+      <HomeDashboardView
+        entities={[cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]}
+        onCoverAction={onCoverAction}
+        onCoverHold={onCoverHold}
+      />,
     )
-    const upBtn = nodeFor(container, '[data-cover-action="up"]')
+    const upBtn = nodeFor(
+      container,
+      '[data-entity-id="cover.wohnzimmer_rollo"] [data-cover-action="up"]',
+    )
 
     fireEvent.pointerDown(upBtn)
     vi.advanceTimersByTime(CARD_HOLD_MS) // the deadline fires the column hold
     expect(onCoverHold).toHaveBeenCalledTimes(1)
-    // placeholder column model carries entityId null + the mockup label
+    // the REAL column model (entityId + label, not a placeholder)
     expect(onCoverHold).toHaveBeenCalledWith(
-      expect.objectContaining({ entityId: null, label: 'Wohnzimmer' }),
+      expect.objectContaining({ entityId: 'cover.wohnzimmer_rollo', isPlaceholder: false }),
     )
 
     // a fired hold suppresses the subsequent ^ short-press on the same press
@@ -191,11 +207,17 @@ describe('HomeDashboardView touch hold (ticket 9.6 W2-3a)', () => {
   it('placeholder cover column hold also shows the W2-2 toast', () => {
     vi.useFakeTimers()
     const onCoverHold = vi.fn()
-    // no real cover → both columns are placeholders
-    const { container } = render(<HomeDashboardView entities={[]} onCoverHold={onCoverHold} />)
-    const upBtn = nodeFor(container, '[data-cover-action="up"]')
+    // one real cover → one real column + one placeholder column ('Esszimmer')
+    const { container } = render(
+      <HomeDashboardView
+        entities={[cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]}
+        onCoverHold={onCoverHold}
+      />,
+    )
+    const upBtns = container.querySelectorAll('[data-cover-action="up"]')
+    const placeholderUp = upBtns[1] as HTMLElement
 
-    fireEvent.pointerDown(upBtn)
+    fireEvent.pointerDown(placeholderUp)
     act(() => {
       vi.advanceTimersByTime(CARD_HOLD_MS) // the deadline fires the column hold
     })
@@ -204,7 +226,7 @@ describe('HomeDashboardView touch hold (ticket 9.6 W2-3a)', () => {
     // reuses the W2-2 toast as the feedback for the hold
     const toast = container.querySelector('[role="status"]')
     expect(toast).not.toBeNull()
-    expect(toast).toHaveTextContent('„Wohnzimmer" ist noch nicht zugewiesen')
+    expect(toast).toHaveTextContent('„Esszimmer" ist noch nicht zugewiesen')
   })
 
   it('short press (under CARD_HOLD_MS) fires the tap only, no hold', () => {
@@ -269,7 +291,8 @@ describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4, issue #45)', (
   it('is a no-op for out-of-range or undefined focusedIndex', () => {
     const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
     const entities = [light('light.esstisch_lampe', 'Esstisch Lampe')]
-    // 3 scene slots + 4 light tiles + 2 cover columns → 9 total focus stops
+    // issue #48: 0 scenes / 0 covers → both zones suppressed → 4 total focus
+    // stops (1 real + 3 placeholder light tiles), index 0 = the first light
     const { rerender } = render(<HomeDashboardView entities={entities} focusedIndex={0} />)
     expect(scrollIntoView).toHaveBeenCalled() // valid focus at mount
     scrollIntoView.mockClear()
@@ -281,7 +304,14 @@ describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4, issue #45)', (
   })
 
   it('gives the dashboard its own vertical scroll port around all three zones (issue #45)', () => {
-    const { container } = render(<HomeDashboardView entities={[]} />)
+    // issue #48: a zone renders only for its configured entities — give each
+    // of the three zones one real entity so all of them are inside the scroller
+    const entities = [
+      scene('scene.abendstimmung', 'Abendstimmung'),
+      light('light.esstisch_lampe', 'Esstisch Lampe'),
+      cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo'),
+    ]
+    const { container } = render(<HomeDashboardView entities={entities} />)
     // exactly one scroll port — the W2-4 effect's containment target
     expect(container.querySelectorAll('[data-home-scroller="true"]').length).toBe(1)
     const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
@@ -290,8 +320,10 @@ describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4, issue #45)', (
     expect(scroller.querySelector('.lightGrid')).not.toBeNull()
     expect(scroller.querySelector('.coverSection')).not.toBeNull()
     // the placeholder toast stays a SIBLING of the scroller — pinned to .root,
-    // it never scrolls with the content
-    fireEvent.click(scroller.querySelector('.sceneBtn') as HTMLElement)
+    // it never scrolls with the content (pressing a PLACEHOLDER scene slot)
+    fireEvent.click(
+      scroller.querySelector('.sceneRow [data-dashboard-placeholder="true"]') as HTMLElement,
+    )
     const toast = container.querySelector('[role="status"]') as HTMLElement
     expect(toast).not.toBeNull()
     expect(toast.closest('[data-home-scroller="true"]')).toBeNull()
@@ -322,5 +354,51 @@ describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4, issue #45)', (
     const scrolled = scrollIntoView.mock.instances.at(-1) as unknown as HTMLElement | undefined
     expect(scrolled).not.toBeUndefined()
     expect(scrolled).toHaveClass('sceneBtn')
+  })
+})
+
+// issue #48: empty-zone suppression — a zone with zero configured entities
+// renders NOTHING (no buttons, no header, no columns), and the focus chain
+// skips it so the remaining zones shift up.
+describe('HomeDashboardView empty-zone suppression (issue #48)', () => {
+  it('renders no scene row when zero scenes are configured', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[light('light.esstisch_lampe', 'Esstisch Lampe')]} />,
+    )
+    expect(container.querySelector('.sceneRow')).toBeNull()
+    // the light grid still renders: 1 real tile + 3 placeholder tiles
+    expect(container.querySelectorAll('[data-entity-id]').length).toBe(1)
+    expect(container.querySelectorAll('[data-dashboard-placeholder="true"]').length).toBe(3)
+  })
+
+  it('renders no cover section when zero covers are configured', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[scene('scene.abendstimmung', 'Abendstimmung')]} />,
+    )
+    expect(container.querySelector('.coverSection')).toBeNull()
+    // the scene row still renders: 1 real button + 2 placeholder buttons
+    expect(container.querySelectorAll('.sceneRow [data-dashboard-placeholder="true"]').length).toBe(
+      2,
+    )
+    expect(screen.getByText('Abendstimmung')).toBeInTheDocument()
+  })
+
+  it('focus chain skips hidden zones — index 0 targets the first light slot', () => {
+    // 0 scenes + 2 lights + 0 covers → 4 focus stops, all light slots
+    const entities = [
+      light('light.esstisch_lampe', 'Esstisch Lampe'),
+      light('light.flurlicht', 'Flurlampe'),
+    ]
+    const { container, rerender } = render(
+      <HomeDashboardView entities={entities} focusedIndex={0} />,
+    )
+    const focused = container.querySelectorAll('.focused')
+    expect(focused.length).toBe(1)
+    expect(focused[0]).toHaveAttribute('data-entity-id', 'light.esstisch_lampe')
+
+    rerender(<HomeDashboardView entities={entities} focusedIndex={1} />)
+    const second = container.querySelectorAll('.focused')
+    expect(second.length).toBe(1)
+    expect(second[0]).toHaveAttribute('data-entity-id', 'light.flurlicht')
   })
 })
