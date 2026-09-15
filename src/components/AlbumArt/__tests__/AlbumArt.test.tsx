@@ -9,7 +9,7 @@ import {
 } from '@/hooks/useMiraServer'
 import { __resetSettings, updateSettings } from '@/settings'
 import type { MiraServerCapabilities } from '@/api/miraServer'
-import { AlbumArt } from '../AlbumArt'
+import { AlbumArt, RETRY_DELAY_MS } from '../AlbumArt'
 
 describe('AlbumArt', () => {
   it('renders an img for a valid source', () => {
@@ -32,16 +32,86 @@ describe('AlbumArt', () => {
     expect(container.querySelector('.placeholder svg')).toBeInTheDocument()
   })
 
-  it('shows the music-note placeholder when the image fails to load (bug15)', () => {
-    const { container } = render(<AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />)
-    const img = screen.getByRole('img', { name: 'Cover' })
-    expect(img).toBeInTheDocument()
+  // bug15/#50: since the single bounded retry (F2), the placeholder is only
+  // permanent once the retry fails too — a first failure blanks the broken
+  // img and schedules one re-fetch after RETRY_DELAY_MS
+  it('shows the music-note placeholder when the image fails and its single retry fails (bug15/#50 F2)', () => {
+    vi.useFakeTimers()
+    const { container, unmount } = render(<AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />)
 
-    // a failed load swaps the broken img for the music-note fallback (no black box)
-    fireEvent.error(img)
+    fireEvent.error(screen.getByRole('img', { name: 'Cover' })) // first failure → retry scheduled
+    expect(screen.getByRole('img', { name: 'Cover' })).not.toHaveAttribute('src') // broken img blanked
+    act(() => { vi.advanceTimersByTime(RETRY_DELAY_MS) })
 
+    // only the second (retry) failure swaps in the music-note fallback — never a black box
+    fireEvent.error(screen.getByRole('img', { name: 'Cover' }))
     expect(screen.queryByRole('img', { name: 'Cover' })).not.toBeInTheDocument()
     expect(container.querySelector('.placeholder svg')).toBeInTheDocument()
+
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('retries a failed standalone load exactly once, after RETRY_DELAY_MS (#50 F2)', () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />)
+    const img = screen.getByRole('img', { name: 'Cover' })
+    const baseline = vi.getTimerCount()
+
+    // first failure: the broken img is blanked — React drops the src
+    // attribute (placeholder shows through) — and exactly one retry is
+    // scheduled
+    fireEvent.error(img)
+    expect(img).not.toHaveAttribute('src')
+    expect(vi.getTimerCount()).toBe(baseline + 1)
+
+    // nothing is re-set before the delay has elapsed
+    act(() => { vi.advanceTimersByTime(RETRY_DELAY_MS - 1) })
+    expect(img).not.toHaveAttribute('src')
+
+    // after RETRY_DELAY_MS the src is re-set to force a fresh fetch ...
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(img).toHaveAttribute('src', 'http://img/broken.jpg')
+    expect(vi.getTimerCount()).toBe(baseline)
+
+    // ... and a successful retry settles with the img visible (no further
+    // retry is possible for this mount in any case)
+    fireEvent.load(img)
+    expect(img).toHaveAttribute('src', 'http://img/broken.jpg')
+
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps the placeholder and never retries twice when the retry fails too (#50 F2)', () => {
+    vi.useFakeTimers()
+    const { container, unmount } = render(<AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />)
+
+    fireEvent.error(screen.getByRole('img', { name: 'Cover' })) // first failure → retry scheduled
+    act(() => { vi.advanceTimersByTime(RETRY_DELAY_MS) })
+
+    // the re-set load fails again: permanent placeholder, no second retry
+    fireEvent.error(screen.getByRole('img', { name: 'Cover' }))
+    expect(screen.queryByRole('img', { name: 'Cover' })).not.toBeInTheDocument()
+    expect(container.querySelector('.placeholder svg')).toBeInTheDocument()
+    expect(vi.getTimerCount()).toBe(0)
+
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('does not touch the retry path on a successful load (#50 F2)', () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<AlbumArt src="http://img/a.jpg" alt="Cover" size={100} />)
+
+    fireEvent.load(screen.getByRole('img', { name: 'Cover' }))
+
+    // no retry timer was ever scheduled and the img stays as-is
+    expect(vi.getTimerCount()).toBe(0)
+    expect(screen.getByRole('img', { name: 'Cover' })).toHaveAttribute('src', 'http://img/a.jpg')
+
+    unmount()
+    vi.useRealTimers()
   })
 })
 
