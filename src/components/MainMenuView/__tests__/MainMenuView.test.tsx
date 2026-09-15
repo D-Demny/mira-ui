@@ -1438,20 +1438,16 @@ describe('MainMenuView', () => {
       // tile order follows the selection (default = HOME_LIGHTS menu order)
       const titles = tiles.map((tile) => tile.querySelector('.tileLabel')?.textContent)
       expect(titles).toEqual(HOME_LIGHTS.map((light) => light.label))
-      // no scenes/covers selected → the scene row and cover section are pure
-      // W1 placeholder zones (mock content, marked data-dashboard-placeholder)
-      expect(content.querySelectorAll('.sceneBtn[data-dashboard-placeholder="true"]')).toHaveLength(
-        3,
-      )
+      // issue #48: no scenes/covers selected → the scene row and cover section
+      // are suppressed entirely (their placeholder zones would be pure mock
+      // content), so only the light grid renders
+      expect(content.querySelector('.sceneRow')).toBeNull()
+      expect(content.querySelector('.coverSection')).toBeNull()
       for (const label of ['Normales Licht', 'Cosy time', 'Betti Zeit']) {
-        expect(screen.getByText(label)).toBeInTheDocument()
+        expect(screen.queryByText(label)).not.toBeInTheDocument()
       }
-      expect(content.querySelector('.coverSection')).toHaveAttribute(
-        'data-dashboard-placeholder',
-        'true',
-      )
-      expect(screen.getByText('Wohnzimmer und Esszimmer')).toBeInTheDocument()
-      expect(screen.getByText('Rollo Steuerung EG')).toBeInTheDocument()
+      expect(screen.queryByText('Wohnzimmer und Esszimmer')).not.toBeInTheDocument()
+      expect(screen.queryByText('Rollo Steuerung EG')).not.toBeInTheDocument()
       // ticket 9.5: no manage card — the picker is reached via
       // Einstellungen → Home Assistant → Entity picker (issue #37)
       expect(screen.queryByText('Entitäten wählen')).not.toBeInTheDocument()
@@ -1704,28 +1700,26 @@ describe('MainMenuView', () => {
           return HttpResponse.json([{ entity_id: body.entity_id, state: 'none', attributes: {} }])
         }),
       )
-      // empty selection → every node on the dashboard is a placeholder (scene
-      // slots, all 4 light tiles incl. 'Esstisch', and both cover columns), so
-      // each press below must toast and never leave a request behind
+      // empty selection → issue #48 suppresses the scene row and the cover
+      // section, so ONLY the light grid renders (all 4 tiles are placeholders,
+      // incl. 'Esstisch'); each press below must toast and never leave a
+      // request behind
       localStorage.setItem(SELECTION_LS_KEY, '[]')
       const { container } = render(<MainMenuView />)
 
-      fireEvent.click(screen.getByText('Normales Licht')) // scene placeholder
+      fireEvent.click(screen.getByText('Esstisch')) // light placeholder
       await screen.findByRole('status')
-      expect(screen.getByRole('status')).toHaveTextContent(
-        '„Normales Licht" ist noch nicht zugewiesen',
-      )
+      expect(screen.getByRole('status')).toHaveTextContent('„Esstisch" ist noch nicht zugewiesen')
       expect(toggled).toEqual([])
       expect(turnedOn).toEqual([])
 
-      fireEvent.click(screen.getByText('Esstisch')) // light placeholder
-      expect(screen.getByRole('status')).toHaveTextContent('„Esstisch" ist noch nicht zugewiesen')
+      fireEvent.click(screen.getByText('Flurlicht')) // light placeholder
+      expect(screen.getByRole('status')).toHaveTextContent('„Flurlicht" ist noch nicht zugewiesen')
 
-      // the cover section is fully a placeholder (no cover selected): pressing
-      // the first column's up button toasts for that column's label
-      const up = container.querySelector('[data-cover-action="up"]') as Element
-      fireEvent.click(up)
-      expect(screen.getByRole('status')).toHaveTextContent('„Wohnzimmer" ist noch nicht zugewiesen')
+      // no scene row and no cover column at all (issue #48): nothing else on
+      // the dashboard can send a request
+      expect(container.querySelector('.sceneBtn')).toBeNull()
+      expect(container.querySelector('[data-cover-action="up"]')).toBeNull()
 
       // still no request of any kind left the component
       expect(toggled).toEqual([])
@@ -1739,10 +1733,13 @@ describe('MainMenuView', () => {
       const { container } = render(<MainMenuView />)
 
       const content = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
-      // no real entity nodes — 3 scene slots + 4 light tiles + the cover
-      // section + 2 cover columns = 10 placeholder-marked nodes, zero .card
+      // no real entity nodes — issue #48 suppresses the scene row and cover
+      // section, so only the light grid's 4 placeholder tiles are
+      // placeholder-marked; zero .card elements
       expect(content.querySelectorAll('[data-entity-id]')).toHaveLength(0)
-      expect(content.querySelectorAll('[data-dashboard-placeholder="true"]')).toHaveLength(10)
+      expect(content.querySelectorAll('[data-dashboard-placeholder="true"]')).toHaveLength(4)
+      expect(content.querySelector('.sceneRow')).toBeNull()
+      expect(content.querySelector('.coverSection')).toBeNull()
       expect(content.querySelectorAll('.card')).toHaveLength(0)
     })
   })
@@ -2938,7 +2935,9 @@ describe('MainMenuView', () => {
       // (the default) + focus in the sidebar pane → expanded 250px inset.
       updateSettings({ sidebarBackground: 'blur' })
       const { container } = render(<MainMenuView />)
-      await screen.findByText('Wohnzimmer und Esszimmer') // dashboard cover header
+      // issue #48: no covers in the default selection → the cover section is
+      // suppressed, so wait for a light tile instead (dashboard rendered)
+      await screen.findByText('Esstisch Hängelampe')
       const view = container.firstElementChild as HTMLElement
       const homeWrap = () => {
         const contentPane = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
@@ -3076,7 +3075,9 @@ describe('MainMenuView', () => {
       // pairing, applied exclusively like the carousel's)
       updateSettings({ sidebarBackground: 'blur', autoCollapseSidebar: 'on' })
       const { container } = render(<MainMenuView />)
-      await screen.findByText('Wohnzimmer und Esszimmer') // home dashboard (default category)
+      // issue #48: the cover section is suppressed in the default selection —
+      // wait for a light tile instead (home dashboard rendered, default category)
+      await screen.findByText('Esstisch Hängelampe')
       const homeWrap = () => {
         const contentPane = container.querySelector('[aria-label="Menü-Inhalt"]') as HTMLElement
         return contentPane.firstElementChild as HTMLElement
@@ -3092,7 +3093,7 @@ describe('MainMenuView', () => {
       // selecting the Home item moves the focus to the content pane (bug20) →
       // the 72px icon-only glass takes over, the collapsed variant applies
       fireEvent.click(screen.getByRole('button', { name: 'Home' }))
-      await screen.findByText('Wohnzimmer und Esszimmer')
+      await screen.findByText('Esstisch Hängelampe')
       expect(asideEl(container).className).toContain('collapsed')
       expect(homeWrap().className).toContain('homeUnderflowCollapsed')
 
@@ -3112,7 +3113,9 @@ describe('MainMenuView', () => {
       // home dashboard's; issue #32: the list used to keep the 250px inset)
       updateSettings({ sidebarBackground: 'blur', autoCollapseSidebar: 'on' })
       const { container } = render(<MainMenuView />)
-      await screen.findByText('Wohnzimmer und Esszimmer') // home dashboard (default category)
+      // issue #48: the cover section is suppressed in the default selection —
+      // wait for a light tile instead (home dashboard rendered, default category)
+      await screen.findByText('Esstisch Hängelampe')
       const listWrap = () => {
         const list = container.querySelector('[aria-label="Einstellungen"]') as HTMLElement
         return list.parentElement as HTMLElement
@@ -3337,12 +3340,9 @@ describe('MainMenuView', () => {
       })
 
       // Home is the focused sidebar item — confirm enters the content pane
-      // with grid slot 0 (the first SCENE placeholder) focused; three ticks
-      // walk the scene slots and land on the first light
+      // with grid slot 0 focused; issue #48 suppressed the empty scene row, so
+      // slot 0 IS the first (dimmable) light already
       confirmDial()
-      wheel(-10)
-      wheel(-10)
-      wheel(-10)
       // single press (dial) on a grid slot
       confirmDial()
 
@@ -3367,10 +3367,8 @@ describe('MainMenuView', () => {
         expect(screen.getAllByText('Aus')).toHaveLength(HOME_LIGHTS.length)
       })
 
-      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
-      wheel(-10) // walk the three scene slots onto the first (dimmable) light
-      wheel(-10)
-      wheel(-10)
+      confirmDial() // enter the Home content pane — issue #48 suppressed the
+      // empty scene row, so slot 0 is already the first (dimmable) light
 
       // the hardware layer fires entry.onHold for a press held ≥ CARD_HOLD_MS
       act(() => {
@@ -3406,31 +3404,21 @@ describe('MainMenuView', () => {
       )
       const onOpenLightControl = vi.fn()
       const { container } = render(<MainMenuView onOpenLightControl={onOpenLightControl} />)
-      await screen.findByText('Normales Licht') // scene placeholder — grid rendered
+      await screen.findByText('Esstisch') // placeholder light tile — grid rendered
 
-      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
+      confirmDial() // enter the Home content pane — issue #48 suppressed the
+      // scene row (no scenes selected), so slot 0 is a placeholder LIGHT tile
+      // ('Esstisch'), not a scene slot
       // a genuine pointer TAP on the placeholder node fires the component-local
       // toast (the dial-confirm path routes through onConfirmContent, which
       // bypasses the DOM and therefore can't trigger the tile's onClick)
-      fireEvent.click(screen.getByText('Normales Licht'))
+      fireEvent.click(screen.getByText('Esstisch'))
       await screen.findByRole('status')
-      expect(screen.getByRole('status')).toHaveTextContent(
-        '„Normales Licht" ist noch nicht zugewiesen',
-      )
+      expect(screen.getByRole('status')).toHaveTextContent('„Esstisch" ist noch nicht zugewiesen')
 
-      // ticket 9.6 W2-3: a hold on a SCENE slot does nothing — no modal,
-      // no endpoint
-      act(() => {
-        ListFocusContext.entry.onHold?.()
-      })
-      expect(onOpenLightControl).not.toHaveBeenCalled()
-
-      // walk the scene slots onto a placeholder LIGHT tile and hold it there —
-      // the control view opens with a 'placeholder:<label>' id (the modal then
-      // shows its empty demo state for unknown ids, intended per ticket)
-      wheel(-10)
-      wheel(-10)
-      wheel(-10)
+      // ticket 9.6 W2-3: a hold on the placeholder LIGHT tile opens the
+      // control view with a 'placeholder:<label>' id (the modal then shows its
+      // empty demo state for unknown ids, intended per ticket)
       act(() => {
         ListFocusContext.entry.onHold?.()
       })
@@ -3480,11 +3468,9 @@ describe('MainMenuView', () => {
 
       // ticket 9.6 W2-3: a non-dimmable REAL light never opens the control view
       // (the touch path doesn't even arm a hold on it, and the dial hold runs
-      // the same dimmability check) — slot 4 is this tile
+      // the same dimmability check) — issue #48 suppressed the scene row, so
+      // this tile sits at slot 1 (one tick from the first light)
       confirmDial()
-      wheel(-10)
-      wheel(-10)
-      wheel(-10)
       wheel(-10)
       act(() => {
         ListFocusContext.entry.onHold?.()
@@ -3529,13 +3515,11 @@ describe('MainMenuView', () => {
 
       // ticket 9.6 W2-3: the legacy SUPPORT_BRIGHTNESS bit (bit 0) counts as
       // dimmable — the press did not change the dial focus, so confirm enters
-      // the content pane first and the wheel ticks then walk scenes + the two
-      // other lights onto the '3er Deko' tile; holding it opens the control
-      // view with entityId + label (no further toggle on top of the tap)
+      // the content pane first; issue #48 suppressed the scene row, so two
+      // wheel ticks walk onto the '3er Deko' tile (slot 2); holding it opens
+      // the control view with entityId + label (no further toggle on top of
+      // the tap)
       confirmDial()
-      wheel(-10)
-      wheel(-10)
-      wheel(-10)
       wheel(-10)
       wheel(-10)
       act(() => {
@@ -3627,10 +3611,11 @@ describe('MainMenuView', () => {
       const { container } = render(<MainMenuView />)
       await screen.findByText('Wohnzimmer und Esszimmer') // cover section header rendered
 
-      confirmDial() // enter the Home content pane, grid slot 0 (scene) focused
-      // walk scenes (3 slots) + placeholder lights (4 slots) onto the real
-      // cover column — slot 7
-      for (let i = 0; i < 7; i++) wheel(-10)
+      confirmDial() // enter the Home content pane, grid slot 0 (placeholder
+      // light) focused — issue #48 suppressed the empty scene row
+      // walk the placeholder lights (4 slots) onto the real cover column —
+      // slot 4 (was slot 7 before issue #48's suppression)
+      for (let i = 0; i < 4; i++) wheel(-10)
 
       // ticket 9.6 W2-3: a dial hold on a REAL moving cover column stops it
       act(() => {
