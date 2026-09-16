@@ -29,7 +29,12 @@ import { useColorExtract, colorCacheGet, darkBg, rgba } from '@/hooks/useColorEx
 import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
-import { COLLAPSED_SIDEBAR_WIDTH, SIDEBAR_WIDTH } from './carouselWindow'
+import {
+  COLLAPSED_SIDEBAR_WIDTH,
+  SCROLL_SAFE_MARGIN,
+  SIDEBAR_WIDTH,
+  windowRange,
+} from './carouselWindow'
 import { SettingsList, type SettingsRow } from './SettingsList'
 import { MENU_CATEGORIES } from './mockData'
 import type { MenuCard, MenuCategory } from './mockData'
@@ -1193,20 +1198,44 @@ export function MainMenuView({
   // reset warms the full new band). The covers of the stable band interior
   // were warmed earlier and warmArt skips them — same warm timing (band
   // entry) as before, ~2 lookups instead of ~235 per tick.
+  // issue50 F1: on top of that the band is COMPLETION-AWARE and MOUNTED-
+  // WINDOW-AWARE — warmedArt only counts settled (loaded) covers as warmed,
+  // caps in-flight fetches at MAX_WARM_INFLIGHT with a FIFO queue, retries
+  // failures once, and this effect skips the indices the mounted carousel
+  // window ± SCROLL_SAFE_MARGIN already fetches via its own <img>s.
   useEffect(() => {
-    const warmRange = (category: MenuCategory, from: number, to: number) => {
+    // issue50 F1: the band only warms OUTSIDE the mounted window — inside
+    // [start - SCROLL_SAFE_MARGIN, end + SCROLL_SAFE_MARGIN) of what the
+    // carousel mounts (pure math, same windowRange() slice with scroll = null),
+    // the mounted cards' own <img> is the authoritative fetch. The pure-math
+    // window under-covers the scroll-widened one on very wide viewports; the
+    // few overlaps it leaves are exactly the pre-F1 behavior. Only the
+    // displayed category mounts a carousel — every other category's cards are
+    // mounted nowhere, so its band is never skipped (the sidebar-preview swap
+    // still pays no fetch, bug8.2).
+    const mountedSkip = (count: number, focusIndex: number) => {
+      const mounted = windowRange(count, focusIndex, null)
+      return {
+        start: Math.max(0, mounted.start - SCROLL_SAFE_MARGIN),
+        end: Math.min(count, mounted.end + SCROLL_SAFE_MARGIN),
+      }
+    }
+    const warmRange = (
+      category: MenuCategory,
+      from: number,
+      to: number,
+      skip: { start: number; end: number } | null,
+    ) => {
       for (let i = from; i < to; i++) {
+        if (skip && i >= skip.start && i < skip.end) continue
         const art = category.cards[i].art
         if (!art) continue
         // epic10 task 2: warm the url the cards actually load (ArtImage)
         const url = remoteBlur ? remoteArtUrl(art) : art
-        if (!warmArt(url)) continue
-        const img = new Image()
-        // match AlbumArt's fetch attributes so the browser reuses the same
-        // cache entry (CORS images are cached separately)
-        img.crossOrigin = 'anonymous'
-        img.referrerPolicy = 'no-referrer'
-        img.src = url
+        // issue50 F1: completion-aware — warmedArt tracks pending/done/failed,
+        // caps in-flight fetches at MAX_WARM_INFLIGHT with a FIFO queue, and
+        // retries failures once; the Image + listeners live inside the module
+        warmArt(url)
       }
     }
     const lastBand = lastWarmBandRef.current
@@ -1215,18 +1244,20 @@ export function MainMenuView({
       const focusIndex = isDisplayed && focus.activePane === 'content' ? focus.contentIndex : 0
       const bandStart = Math.max(0, focusIndex - PREDECODE_RADIUS)
       const bandEnd = Math.min(category.cards.length, focusIndex + 1 + PREDECODE_RADIUS)
+      const skip = isDisplayed ? mountedSkip(category.cards.length, focusIndex) : null
       const prev = lastBand.get(category.id)
       if (prev && prev.category === category && prev.remote === remoteBlur) {
         // same card list and same url flavor: warm only what the band gained
         // since the last run (a dial tick gained one edge card; a
         // back-and-forth slide gains nothing, because the dropped edge was
-        // already warmed)
-        if (bandStart < prev.start) warmRange(category, bandStart, Math.min(bandEnd, prev.start))
-        if (bandEnd > prev.end) warmRange(category, Math.max(bandStart, prev.end), bandEnd)
+        // already warmed or is still inside the mounted-window skip)
+        if (bandStart < prev.start) warmRange(category, bandStart, Math.min(bandEnd, prev.start), skip)
+        if (bandEnd > prev.end) warmRange(category, Math.max(bandStart, prev.end), bandEnd, skip)
       } else {
         // first sighting, rebuilt card list, or a remoteBlur flip: warm the
-        // full band — warmArt de-dupes the urls already in the set
-        warmRange(category, bandStart, bandEnd)
+        // full band — warmArt de-dupes urls already done, pending, queued, or
+        // retrying
+        warmRange(category, bandStart, bandEnd, skip)
       }
       lastBand.set(category.id, { start: bandStart, end: bandEnd, category, remote: remoteBlur })
     }
