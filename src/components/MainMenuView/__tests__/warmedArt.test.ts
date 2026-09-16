@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MAX_WARM_INFLIGHT,
   WARMED_ART_MAX,
+  WARM_SETTLE_TIMEOUT_MS,
   __resetWarmedArt,
   hasWarmedArt,
   warmArt,
@@ -128,6 +129,66 @@ describe('warmedArt (bug8.2 pre-decode, bug45 C FIFO cap, issue50 F1 completion-
     // settle the rest — everything ends up cached
     for (let i = 3; i < 6; i++) image.load(i)
     expect(warmedArtStats().entries).toBe(6)
+  })
+
+  it('settles a hung fetch as failed after WARM_SETTLE_TIMEOUT_MS — slot released, url re-warmable (F4-B)', () => {
+    const image = stubImage()
+    // fill the cap with three urls that fire neither load nor error + one
+    // queued behind them
+    for (let i = 0; i < MAX_WARM_INFLIGHT; i++) warmArt(`http://a/${i}.jpg`)
+    expect(warmArt('http://a/queued.jpg')).toBe(true)
+    // while pending: not warmed, not re-warmable, queued url cannot start
+    expect(hasWarmedArt('http://a/0.jpg')).toBe(false)
+    expect(warmArt('http://a/0.jpg')).toBe(false)
+    expect(image.created).toHaveLength(MAX_WARM_INFLIGHT)
+
+    // after the bound: the hung urls settle as failed (re-warmable) and
+    // release their slots — the FIFO queue must not wedge behind a hung
+    // fetch (issue50 F4-B)
+    vi.advanceTimersByTime(WARM_SETTLE_TIMEOUT_MS)
+    expect(hasWarmedArt('http://a/0.jpg')).toBe(false)
+    expect(image.bySrc('http://a/queued.jpg')).toHaveLength(1)
+    expect(image.created).toHaveLength(MAX_WARM_INFLIGHT + 1)
+
+    // a timed-out url is re-warmable: a fresh request starts and can succeed
+    expect(warmArt('http://a/0.jpg')).toBe(true)
+    const fresh = image.created.length - 1
+    expect(image.created[fresh].src).toBe('http://a/0.jpg')
+    image.load(fresh)
+    expect(hasWarmedArt('http://a/0.jpg')).toBe(true)
+  })
+
+  it('a fast onerror clears the original settle deadline — the retry keeps its own bound (F4-B)', () => {
+    const image = stubImage()
+    warmArt('http://a/r.jpg')
+    // fails well before the settle bound: one bounded retry is scheduled at t=1800
+    vi.advanceTimersByTime(300)
+    image.fail(0)
+    expect(image.created).toHaveLength(1)
+    // the original deadline (t=8000) passes while the retry fetch (started at
+    // t=1800) is still in flight — it must NOT kill the retry (the deadline
+    // was cleared on failure); only the retry's own bound (t=9800) applies
+    vi.advanceTimersByTime(WARM_SETTLE_TIMEOUT_MS - 300)
+    expect(image.bySrc('http://a/r.jpg')).toHaveLength(2)
+    expect(warmArt('http://a/r.jpg')).toBe(false) // retry still in flight
+    // the retry's own deadline (t=9800) settles it as failed — re-warmable
+    vi.advanceTimersByTime(1800)
+    expect(hasWarmedArt('http://a/r.jpg')).toBe(false)
+    expect(warmArt('http://a/r.jpg')).toBe(true)
+  })
+
+  it('a settled fetch keeps its done state past the settle bound (deadline cleared on load, F4-B)', () => {
+    const image = stubImage()
+    warmArt('http://a/ok.jpg')
+    vi.advanceTimersByTime(1000)
+    image.load(0)
+    expect(hasWarmedArt('http://a/ok.jpg')).toBe(true)
+    // the original deadline (t=8000) has since passed — the settled url is
+    // untouched, still cached
+    vi.advanceTimersByTime(WARM_SETTLE_TIMEOUT_MS)
+    expect(image.created).toHaveLength(1)
+    expect(hasWarmedArt('http://a/ok.jpg')).toBe(true)
+    expect(warmArt('http://a/ok.jpg')).toBe(false)
   })
 
   it('a bounded retry re-enters at the FRONT of the FIFO queue and counts against the cap', () => {

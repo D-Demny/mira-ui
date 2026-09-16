@@ -16,11 +16,25 @@
 // `pending` until settled (no early GC — the decoded bitmap must survive into
 // Chromium's image cache), and plain onload/onerror + setTimeout keep it
 // Chromium 69 safe.
+// issue50 F4-B: on top of that a pending url SETTLES ON ITS OWN after
+// WARM_SETTLE_TIMEOUT_MS — a Chromium-69 Image() can fire neither load nor
+// error at all, and such a hung fetch would otherwise hold one of the
+// MAX_WARM_INFLIGHT FIFO slots forever (wedge pump() behind it). The timeout
+// settles the url as failed (re-warmable, no bounded retry — a later warmArt()
+// re-arms it with a fresh budget) and releases its slot so the queue can
+// advance. Plain setTimeout again: Chromium 69 safe.
 export const WARMED_ART_MAX = 1000
 
 // issue50 F1: at most this many band cover fetches in flight at once — the
 // mounted cards' own <img> requests then keep the remaining connection slots
 export const MAX_WARM_INFLIGHT = 3
+
+// issue50 F4-B: a pending fetch that fires NEITHER load NOR error within this
+// bound settles as failed (re-warmable) and releases its FIFO slot — on weak
+// embedded Chromium builds an Image() can hang with no event at all, and one
+// such hung fetch must not wedge the whole warm queue. Mirrors the
+// REMOTE_ART_TIMEOUT_MS settle pattern in AlbumArt.ts.
+export const WARM_SETTLE_TIMEOUT_MS = 8000
 
 // issue50 F1: one bounded retry after a failed fetch (same rhythm as the
 // card-img retry in AlbumArt) — a second failure settles the url as failed;
@@ -44,6 +58,9 @@ const done = new Set<string>()
 // its own bounded retry
 const failed = new Set<string>()
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// issue50 F4-B: per-pending-url settle deadline (cleared on every settle path
+// — success, failure, and __resetWarmedArt) so it can fire at most once
+const settleTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 function startFetch(url: string): void {
   const img = new Image()
@@ -54,6 +71,12 @@ function startFetch(url: string): void {
   img.onload = () => settle(url, true)
   img.onerror = () => settle(url, false)
   pending.set(url, img)
+  // issue50 F4-B: release this FIFO slot if load/error never fires at all —
+  // a hung Image() must not hold a slot forever (plain setTimeout: CR69-safe)
+  settleTimers.set(
+    url,
+    setTimeout(() => settleTimeout(url), WARM_SETTLE_TIMEOUT_MS),
+  )
   img.src = url
 }
 
@@ -69,8 +92,32 @@ function pump(): void {
   }
 }
 
+// issue50 F4-B: the settle deadline fired without load or error in between —
+// settle as failed and release the FIFO slot. A hung fetch gets NO bounded
+// retry (the browser produced no signal at all); a later warmArt() re-arms it
+// with a fresh retry budget, so it stays re-warmable, never hammered
+function settleTimeout(url: string): void {
+  const img = pending.get(url)
+  settleTimers.delete(url) // defensive: the deadline already fired
+  if (!img) return // stale deadline after __resetWarmedArt — no state to move
+  pending.delete(url)
+  img.onload = null
+  img.onerror = null
+  failed.add(url)
+  retried.delete(url)
+  pump()
+}
+
 function settle(url: string, ok: boolean): void {
   const img = pending.get(url)
+  // issue50 F4-B: this url settles through THIS path — drop its deadline so a
+  // fast onerror cannot arm a stray late timeout against the bounded retry
+  // that follows
+  const settleTimer = settleTimers.get(url)
+  if (settleTimer !== undefined) {
+    clearTimeout(settleTimer)
+    settleTimers.delete(url)
+  }
   if (!img) return // stale event after __resetWarmedArt — no state to move
   pending.delete(url)
   img.onload = null
@@ -145,6 +192,9 @@ export function __resetWarmedArt(): void {
     img.onerror = null
   }
   for (const timer of retryTimers.values()) clearTimeout(timer)
+  // issue50 F4-B: drop the settle deadlines too — a stale timeout must not
+  // move the fresh state after a reset
+  for (const timer of settleTimers.values()) clearTimeout(timer)
   pending.clear()
   retrying.clear()
   retried.clear()
@@ -153,4 +203,5 @@ export function __resetWarmedArt(): void {
   done.clear()
   failed.clear()
   retryTimers.clear()
+  settleTimers.clear()
 }
