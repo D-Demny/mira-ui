@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
@@ -17,6 +17,34 @@ const lyrics = (words: string): LyricsResult => ({
   lines: [{ startTimeMs: '0', words }],
 })
 
+// issue50 F1: jsdom never fires load for new Image(), so warmArt requests stay
+// pending and the readout would report 0/1000. The stub collects the created
+// Images and the test settles them manually — matching the bug45 contract that
+// a successfully warmed url counts in the occupancy readout.
+interface StubImage {
+  src: string
+  crossOrigin: string | null
+  referrerPolicy: string
+  onload: (() => void) | null
+  onerror: (() => void) | null
+}
+
+function stubImages() {
+  const created: StubImage[] = []
+  vi.stubGlobal('Image', function () {
+    const img: StubImage = {
+      src: '',
+      crossOrigin: null,
+      referrerPolicy: 'no-referrer',
+      onload: null,
+      onerror: null,
+    }
+    created.push(img)
+    return img as unknown as HTMLImageElement
+  })
+  return created
+}
+
 describe('__cacheStats (bug45 option C: cache readout)', () => {
   beforeEach(() => {
     clearCache()
@@ -26,6 +54,10 @@ describe('__cacheStats (bug45 option C: cache readout)', () => {
     __resetHomeLightStore()
     __resetLyricsCache()
     __resetWarmedArt()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('reports every store with the expected shape and the approved bounds', () => {
@@ -130,8 +162,12 @@ describe('__cacheStats (bug45 option C: cache readout)', () => {
     seedColorCache(url2, [10, 20, 30])
     primeLyricsCache('lyr1', lyrics('hello'))
     primeLyricsCache('lyr2', lyrics('world'))
+    const images = stubImages()
     warmArt(url1)
     warmArt(url2)
+    // settle both warm requests — bug45 readout counts successfully warmed urls
+    images[0].onload?.()
+    images[1].onload?.()
 
     const stats = __cacheStats()
     expect(stats.usePlaylists).toEqual({ entries: 1, items: 1, approxBytes: 350 })

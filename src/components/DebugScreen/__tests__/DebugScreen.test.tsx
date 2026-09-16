@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
@@ -40,7 +40,39 @@ const status: DebugStatus = {
   previous_problems: [],
 }
 
+// issue50 F1: jsdom never fires load for new Image(), so the warm request
+// would stay pending and the readout would report 0/1000 — the stub collects
+// the created Images and the test settles it manually (bug45 contract: a
+// successfully warmed url counts in the occupancy readout)
+interface StubImage {
+  src: string
+  crossOrigin: string | null
+  referrerPolicy: string
+  onload: (() => void) | null
+  onerror: (() => void) | null
+}
+
+function stubImages() {
+  const created: StubImage[] = []
+  vi.stubGlobal('Image', function () {
+    const img: StubImage = {
+      src: '',
+      crossOrigin: null,
+      referrerPolicy: 'no-referrer',
+      onload: null,
+      onerror: null,
+    }
+    created.push(img)
+    return img as unknown as HTMLImageElement
+  })
+  return created
+}
+
 describe('DebugScreen — bug45 option C cache readout', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('shows the UI cache section with per-store occupancy', async () => {
     server.use(http.get('*/debug/status', () => HttpResponse.json(status)))
 
@@ -48,7 +80,10 @@ describe('DebugScreen — bug45 option C cache readout', () => {
     clearColorCache()
     __resetWarmedArt()
     seedColorCache(url1, [200, 100, 50])
+    const images = stubImages()
     warmArt(url1)
+    // settle the warm request — bug45 readout counts successfully warmed urls
+    images[0].onload?.()
 
     render(<DebugScreen open onClose={() => {}} onReport={() => {}} />)
 

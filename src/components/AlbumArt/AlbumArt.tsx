@@ -11,6 +11,12 @@ interface Props {
 
 const FADE_MS = 220
 
+// #50 F2: a saturated-burst cover failure is usually transient — retry one
+// time after this delay before settling on the placeholder. Chrome does not
+// cache failed loads, so blanking and re-setting the src forces a fresh
+// fetch of the same URL.
+export const RETRY_DELAY_MS = 1500
+
 // epic10 task 2: the remoteBlur artwork loader. While the Pi feature is
 // enabled the Pi's pre-processed 160x160 image loads first; on error OR
 // timeout the img swaps to the direct (Spotify CDN) url — only AFTER the
@@ -35,6 +41,14 @@ function ArtImage({
   // over and no state update is needed on src changes
   const [failedSrc, setFailedSrc] = useState('')
   const timeoutRef = useRef(0)
+  // #50 F2: standalone retry bookkeeping — retrySrc: the src currently
+  // blanked out awaiting its single re-set ('' = none); retriedRef: the src
+  // whose one retry has already been used up. Both value-keyed, so a track
+  // switch can never carry stale retry state over and the handler can never
+  // fire more than once per (mount, src).
+  const [retrySrc, setRetrySrc] = useState('')
+  const retriedRef = useRef('')
+  const retryTimerRef = useRef(0)
 
   useEffect(() => {
     if (!remote) return
@@ -52,12 +66,19 @@ function ArtImage({
     }
   }, [src, remote])
 
+  // #50 F2: a pending re-set must never outlive the component (no timer leak)
+  useEffect(() => () => window.clearTimeout(retryTimerRef.current), [])
+
   const failed = remote && failedSrc === src
   const loaded = remote && !failed ? remoteArtUrl(src) : src
+  // #50 F2: while a standalone retry is pending the broken img is blanked
+  // (the placeholder layer shows through); after RETRY_DELAY_MS the re-set
+  // of the same url forces a fresh fetch
+  const displaySrc = !remote && retrySrc === src ? '' : loaded
 
   return (
     <img
-      src={loaded}
+      src={displaySrc}
       alt={alt}
       decoding="async"
       crossOrigin="anonymous"
@@ -68,8 +89,18 @@ function ArtImage({
         if (remote && !failed) {
           // the Pi image failed (or timed out): swap to the CDN url
           setFailedSrc(src)
+        } else if (!remote && retrySrc !== src && retriedRef.current !== src) {
+          // #50 F2: first standalone failure — blank the broken img
+          // (placeholder shows through) and re-set the same src after
+          // RETRY_DELAY_MS to force a single refetch; only the second
+          // failure marks the layer failed
+          retriedRef.current = src
+          setRetrySrc(src)
+          window.clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = window.setTimeout(() => setRetrySrc(''), RETRY_DELAY_MS)
         } else {
-          // standalone image failure, or the CDN fallback failed too
+          // standalone image failure after the single retry, or the CDN
+          // fallback failed too: permanent placeholder
           onFailed()
         }
       }}
