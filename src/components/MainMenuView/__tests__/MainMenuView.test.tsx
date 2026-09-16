@@ -724,13 +724,15 @@ describe('MainMenuView', () => {
       fireEvent.click(screen.getByText('Road Trip'))
       await screen.findByText('Band Track 0')
 
-      // focus is on track 0: the warmed band is [0, 21) — but indices 0..18
-      // sit inside the mounted window (WINDOW_BEFORE/AFTER around 0) widened
-      // by SCROLL_SAFE_MARGIN, where the mounted cards' own <img> is the
-      // authoritative fetch (issue50 F1): only the outer edge (19-20) is
-      // pre-decoded. The band still never front-loads all 100 covers into
-      // Chromium's image cache
+      // focus is on track 0: the warmed band is [0, 21) — issue50 F4-A
+      // restores FULL-band coverage for windowed (≥ NO_WINDOW_THRESHOLD)
+      // lists: every card in the band, including the visible interior
+      // (band-0..18), is pre-decoded instead of relying on the mounted
+      // cards' own <img> burst. The band still never front-loads all 100
+      // covers into Chromium's image cache
       await waitFor(() => expect(hasWarmedArt('http://img/band-20.jpg')).toBe(true))
+      // visible interior of the window is now covered by the band (F4-A)
+      expect(hasWarmedArt('http://img/band-5.jpg')).toBe(true)
       expect(hasWarmedArt('http://img/band-21.jpg')).toBe(false)
       expect(hasWarmedArt('http://img/band-99.jpg')).toBe(false)
     })
@@ -899,10 +901,10 @@ describe('MainMenuView', () => {
       const fresh = created.slice(preTick)
       expect(fresh).toHaveLength(1)
       expect(fresh[0].src).toBe('http://img/band-21.jpg')
-      // issue50 F1: the stable band interior (inside the mounted window ±
-      // SCROLL_SAFE_MARGIN) is never pre-decoded — the cards' own <img> is
-      // authoritative — so no re-warm exists to assert against
-      expect(created.filter((img) => img.src === 'http://img/band-5.jpg')).toHaveLength(0)
+      // issue50 F4-A: the stable band interior IS pre-decoded on windowed
+      // lists — the entry band [0,21) was warmed in full, so dialing meets a
+      // decoded cover (band-5) without any re-warm pass for it
+      expect(created.some((img) => img.src === 'http://img/band-5.jpg')).toBe(true)
     })
 
     it('a category switch warms the full entry band of the rebuilt category', async () => {
@@ -971,13 +973,12 @@ describe('MainMenuView', () => {
         .slice(beforeReopen)
         .map((img) => img.src)
         .filter((src) => src.startsWith('http://img/'))
-      // issue50 F1: the re-warmed entry band [0, 21) minus the mounted window
-      // (WINDOW_BEFORE/AFTER around focus 0) + SCROLL_SAFE_MARGIN — indices
-      // 0..18 are fetched by the mounted cards' own <img>, only the outer
-      // edge (19-20) is pre-decoded
-      expect(afterReopen).toHaveLength(2)
+      // issue50 F4-A: the re-warmed entry band [0, 21) is warmed IN FULL on
+      // this windowed (100-track) list — the mounted-window skip no longer
+      // applies to long queues, so all 21 covers are pre-decoded
+      expect(afterReopen).toHaveLength(21)
       expect(new Set(afterReopen)).toEqual(
-        new Set(['http://img/band-19.jpg', 'http://img/band-20.jpg']),
+        new Set(Array.from({ length: 21 }, (_, i) => `http://img/band-${i}.jpg`)),
       )
     })
   })

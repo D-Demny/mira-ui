@@ -31,6 +31,7 @@ import { SidebarNav } from './SidebarNav'
 import { ContentCarousel } from './ContentCarousel'
 import {
   COLLAPSED_SIDEBAR_WIDTH,
+  NO_WINDOW_THRESHOLD,
   SCROLL_SAFE_MARGIN,
   SIDEBAR_WIDTH,
   windowRange,
@@ -1203,16 +1204,28 @@ export function MainMenuView({
   // caps in-flight fetches at MAX_WARM_INFLIGHT with a FIFO queue, retries
   // failures once, and this effect skips the indices the mounted carousel
   // window ± SCROLL_SAFE_MARGIN already fetches via its own <img>s.
+  // issue50 F4-A: the skip is restricted to fully-mounted short lists — for
+  // long (windowed) queues the band warms the FULL band again, so visible
+  // off-center cards get pre-decoded covers instead of relying on the
+  // unsynchronized per-card <img> burst (the round-2 "dead zone" fix).
   useEffect(() => {
-    // issue50 F1: the band only warms OUTSIDE the mounted window — inside
-    // [start - SCROLL_SAFE_MARGIN, end + SCROLL_SAFE_MARGIN) of what the
-    // carousel mounts (pure math, same windowRange() slice with scroll = null),
-    // the mounted cards' own <img> is the authoritative fetch. The pure-math
-    // window under-covers the scroll-widened one on very wide viewports; the
-    // few overlaps it leaves are exactly the pre-F1 behavior. Only the
-    // displayed category mounts a carousel — every other category's cards are
-    // mounted nowhere, so its band is never skipped (the sidebar-preview swap
-    // still pays no fetch, bug8.2).
+    // issue50 F1: for a fully-mounted (short) list the band only warms
+    // OUTSIDE the mounted window — inside [start - SCROLL_SAFE_MARGIN,
+    // end + SCROLL_SAFE_MARGIN) of what the carousel mounts (pure math, same
+    // windowRange() slice with scroll = null), the mounted cards' own <img>
+    // is the authoritative fetch and warming the same urls again would only
+    // duplicate work. The pure-math window under-covers the scroll-widened
+    // one on very wide viewports; the few overlaps it leaves are exactly the
+    // pre-F1 behavior. Only the displayed category mounts a carousel — every
+    // other category's cards are mounted nowhere, so its band is never
+    // skipped (the sidebar-preview swap still pays no fetch, bug8.2).
+    // issue50 F4-A: on a long (windowed) list this skip is DROPPED (null):
+    // the unsynchronized burst of per-card <img> requests of the freshly
+    // mounted window is what leaves visible off-center cards on permanent
+    // placeholders, so the band warms the FULL PREDECODE_RADIUS band again —
+    // pre-F1 coverage restored. Memory-safe: only WHICH indices are warmed
+    // changes (urls stay band-bounded), and warmedArt keeps its
+    // MAX_WARM_INFLIGHT cap + completion tracking for either case.
     const mountedSkip = (count: number, focusIndex: number) => {
       const mounted = windowRange(count, focusIndex, null)
       return {
@@ -1244,7 +1257,14 @@ export function MainMenuView({
       const focusIndex = isDisplayed && focus.activePane === 'content' ? focus.contentIndex : 0
       const bandStart = Math.max(0, focusIndex - PREDECODE_RADIUS)
       const bandEnd = Math.min(category.cards.length, focusIndex + 1 + PREDECODE_RADIUS)
-      const skip = isDisplayed ? mountedSkip(category.cards.length, focusIndex) : null
+      // issue50 F4-A: the mounted-window skip applies ONLY while the whole
+      // list is mounted (count < NO_WINDOW_THRESHOLD — windowRange returns
+      // [0, count), so every card already fetches its own <img>). For a long
+      // queue the band warms the full band: pass null, no skip.
+      const skip =
+        isDisplayed && category.cards.length < NO_WINDOW_THRESHOLD
+          ? mountedSkip(category.cards.length, focusIndex)
+          : null
       const prev = lastBand.get(category.id)
       if (prev && prev.category === category && prev.remote === remoteBlur) {
         // same card list and same url flavor: warm only what the band gained
