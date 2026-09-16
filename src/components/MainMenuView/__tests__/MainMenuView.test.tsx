@@ -16,7 +16,7 @@ import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorE
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import { __resetWarmedArt, hasWarmedArt } from '../warmedArt'
-import { dialScrollLeft } from '../carouselWindow'
+import { SCROLL_SAFE_MARGIN, WINDOW_BEFORE, dialScrollLeft } from '../carouselWindow'
 
 const mockPlaylists = [
   {
@@ -673,7 +673,40 @@ describe('MainMenuView', () => {
       },
     }))
 
+    // issue50 F1: warmedArt is completion-aware — jsdom never fires load for
+    // a real Image, so the stub completes every fetch one tick after creation
+    function stubLoadedImage(): HTMLImageElement[] {
+      const created: HTMLImageElement[] = []
+      const RealImage = window.Image
+      vi.stubGlobal('Image', function () {
+        const img = new RealImage()
+        created.push(img)
+        setTimeout(() => {
+          if (img.onload) img.onload(new Event('load'))
+        }, 0)
+        return img
+      })
+      return created
+    }
+
+    // seed the color cache so useColorExtract never creates its own Image for
+    // a focused cover (it would pollute the pre-decode assertions)
+    function seedColors(): void {
+      for (const item of LONG_TRACKS) {
+        seedColorCache(item.track.album.images[0].url, [10, 20, 30])
+      }
+      seedColorCache('http://img/s.jpg', [10, 20, 30])
+      seedColorCache('http://img/r.jpg', [10, 20, 30])
+      seedColorCache('http://img/liked.jpg', [10, 20, 30])
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
     it('warms only focus ± 20 of the displayed track list, not the whole list', async () => {
+      stubLoadedImage()
+      seedColors()
       server.use(
         http.get('*/web-api/playlists/pl-1/tracks', () =>
           HttpResponse.json({
@@ -691,14 +724,20 @@ describe('MainMenuView', () => {
       fireEvent.click(screen.getByText('Road Trip'))
       await screen.findByText('Band Track 0')
 
-      // focus is on track 0: the warmed band is [0, 21) — the pre-decode no
-      // longer front-loads all 100 covers into Chromium's image cache
+      // focus is on track 0: the warmed band is [0, 21) — but indices 0..18
+      // sit inside the mounted window (WINDOW_BEFORE/AFTER around 0) widened
+      // by SCROLL_SAFE_MARGIN, where the mounted cards' own <img> is the
+      // authoritative fetch (issue50 F1): only the outer edge (19-20) is
+      // pre-decoded. The band still never front-loads all 100 covers into
+      // Chromium's image cache
       await waitFor(() => expect(hasWarmedArt('http://img/band-20.jpg')).toBe(true))
       expect(hasWarmedArt('http://img/band-21.jpg')).toBe(false)
       expect(hasWarmedArt('http://img/band-99.jpg')).toBe(false)
     })
 
     it('the band follows the dial focus (new edge covers get warmed on the move)', async () => {
+      stubLoadedImage()
+      seedColors()
       server.use(
         http.get('*/web-api/playlists/pl-1/tracks', () =>
           HttpResponse.json({
@@ -726,22 +765,31 @@ describe('MainMenuView', () => {
       expect(screen.getByText('Band Track 50').closest('.card')).toHaveClass('cardFocused')
     })
 
-    it('warms the entire list for categories below the band span (bug8.2 behavior unchanged)', async () => {
-      // 10 tracks: 2*20+1 = 41 > 10 → the focus band covers the whole list
+    it('skips the band entirely for a fully-mounted short list (cards are authoritative)', async () => {
+      // issue50 F1: 10 tracks is below NO_WINDOW_THRESHOLD — the carousel
+      // mounts the FULL list, every cover has its own <img>, so the band
+      // pre-decode adds nothing there (the cards' fetches are authoritative)
+      const created = stubLoadedImage()
+      seedColors()
+      const SHORT_TRACKS = Array.from({ length: 10 }, (_, i) => ({
+        is_local: false,
+        track: {
+          id: `st-${i}`,
+          name: `Short Track ${i}`,
+          uri: `spotify:track:st-${i}`,
+          artists: [{ name: 'Someone' }],
+          album: { name: 'An Album', images: [{ url: `http://img/short-${i}.jpg` }] },
+          position: i,
+        },
+      }))
+      // the focused card's cover would otherwise create a color-extract Image
+      for (const item of SHORT_TRACKS) {
+        seedColorCache(item.track.album.images[0].url, [10, 20, 30])
+      }
       server.use(
         http.get('*/web-api/playlists/pl-2/tracks', () =>
           HttpResponse.json({
-            items: Array.from({ length: 10 }, (_, i) => ({
-              is_local: false,
-              track: {
-                id: `st-${i}`,
-                name: `Short Track ${i}`,
-                uri: `spotify:track:st-${i}`,
-                artists: [{ name: 'Someone' }],
-                album: { name: 'An Album', images: [{ url: `http://img/short-${i}.jpg` }] },
-                position: i,
-              },
-            })),
+            items: SHORT_TRACKS,
             total: 10,
             limit: 50,
             offset: 0,
@@ -755,7 +803,13 @@ describe('MainMenuView', () => {
       fireEvent.click(screen.getByText('Workout'))
       await screen.findByText('Short Track 0')
 
-      await waitFor(() => expect(hasWarmedArt('http://img/short-9.jpg')).toBe(true))
+      // the last card is mounted (the full short list renders in place), so
+      // its cover comes from the card's own <img> — not from the pre-decode
+      expect(screen.getByText('Short Track 9')).toBeInTheDocument()
+      const bandSrcs = created
+        .map((img) => img.src)
+        .filter((src) => src.startsWith('http://img/short-'))
+      expect(bandSrcs).toHaveLength(0)
     })
   })
 
@@ -818,6 +872,11 @@ describe('MainMenuView', () => {
       vi.stubGlobal('Image', function () {
         const img = new RealImage()
         created.push(img)
+        // issue50 F1: warmedArt is completion-aware — jsdom never fires load
+        // for a real Image, so complete the fetch one tick after creation
+        setTimeout(() => {
+          if (img.onload) img.onload(new Event('load'))
+        }, 0)
         return img
       })
       trackListFixture()
@@ -840,8 +899,10 @@ describe('MainMenuView', () => {
       const fresh = created.slice(preTick)
       expect(fresh).toHaveLength(1)
       expect(fresh[0].src).toBe('http://img/band-21.jpg')
-      // the stable band interior is NOT re-warmed
-      expect(created.filter((img) => img.src === 'http://img/band-5.jpg')).toHaveLength(1)
+      // issue50 F1: the stable band interior (inside the mounted window ±
+      // SCROLL_SAFE_MARGIN) is never pre-decoded — the cards' own <img> is
+      // authoritative — so no re-warm exists to assert against
+      expect(created.filter((img) => img.src === 'http://img/band-5.jpg')).toHaveLength(0)
     })
 
     it('a category switch warms the full entry band of the rebuilt category', async () => {
@@ -850,6 +911,11 @@ describe('MainMenuView', () => {
       vi.stubGlobal('Image', function () {
         const img = new RealImage()
         created.push(img)
+        // issue50 F1: warmedArt is completion-aware — jsdom never fires load
+        // for a real Image, so complete the fetch one tick after creation
+        setTimeout(() => {
+          if (img.onload) img.onload(new Event('load'))
+        }, 0)
         return img
       })
       trackListFixture()
@@ -867,6 +933,14 @@ describe('MainMenuView', () => {
       // band of the rebuilt categories is re-warmed
       __resetWarmedArt()
       pressBack()
+      // issue50 F1: behind the MAX_WARM_INFLIGHT cap the FIFO queue drains as
+      // the in-flight fetches settle — wait for s.jpg (last in queue) before
+      // slicing, or the capture races the pump
+      await waitFor(() => {
+        expect(
+          created.slice(beforeSwitch).some((img) => img.src === 'http://img/s.jpg'),
+        ).toBe(true)
+      })
       const afterLeave = created.slice(beforeSwitch)
       // ticket 9.3: scope to the network covers — the rebuilt home category
       // re-warms its self-contained data-URI entity art, which the pre-decode
@@ -875,10 +949,12 @@ describe('MainMenuView', () => {
       const afterLeaveNet = afterLeave
         .map((img) => img.src)
         .filter((src) => src.startsWith('http://img/'))
-      // Road Trip + Liked Songs (Workout has no image) + the recent track
-      expect(new Set(afterLeaveNet)).toEqual(
-        new Set(['http://img/r.jpg', 'http://img/liked.jpg', 'http://img/s.jpg']),
-      )
+      // issue50 F1: the rebuilt 'playlists' category is the DISPLAYED one
+      // (3 cards, fully mounted below NO_WINDOW_THRESHOLD) — its band sits
+      // entirely inside the mounted window + SCROLL_SAFE_MARGIN, so its
+      // covers come from the cards' own <img> and are NOT pre-decoded. Only
+      // the non-displayed categories (the recent track) get re-warmed.
+      expect(new Set(afterLeaveNet)).toEqual(new Set(['http://img/s.jpg']))
       // the deep band the dial had warmed (band-30..70) is NOT re-warmed —
       // it is outside the entry band of every rebuilt category
       expect(afterLeave.some((img) => img.src.startsWith('http://img/band-'))).toBe(false)
@@ -897,10 +973,12 @@ describe('MainMenuView', () => {
         .slice(beforeReopen)
         .map((img) => img.src)
         .filter((src) => src.startsWith('http://img/'))
-      expect(afterReopen).toHaveLength(21)
-      expect(new Set(afterReopen)).toEqual(
-        new Set(Array.from({ length: 21 }, (_, i) => `http://img/band-${i}.jpg`)),
-      )
+      // issue50 F1: the re-warmed entry band [0, 21) minus the mounted window
+      // (WINDOW_BEFORE/AFTER around focus 0) + SCROLL_SAFE_MARGIN — indices
+      // 0..18 are fetched by the mounted cards' own <img>, only the outer
+      // edge (19-20) is pre-decoded
+      expect(afterReopen).toHaveLength(2)
+      expect(new Set(afterReopen)).toEqual(new Set(['http://img/band-19.jpg', 'http://img/band-20.jpg']))
     })
   })
 
@@ -915,6 +993,12 @@ describe('MainMenuView', () => {
       vi.stubGlobal('Image', function () {
         const img = new RealImage()
         created.push(img)
+        // issue50 F1: warmedArt is completion-aware and capped at
+        // MAX_WARM_INFLIGHT — jsdom never fires load for a real Image, so
+        // complete the fetch one tick after creation or queued urls starve
+        setTimeout(() => {
+          if (img.onload) img.onload(new Event('load'))
+        }, 0)
         return img
       })
 
