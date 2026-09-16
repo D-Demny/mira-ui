@@ -401,13 +401,19 @@ export function MainMenuView({
   // ticket 9.6 (Task C): the Home dashboard grid's view models — the same
   // pure builders HomeDashboardView uses internally, so MainMenuView can
   // count the dial focus slots (scenes → lights → cover columns; placeholders
-  // are focus stops too) without re-implementing the mapping math
+  // are focus stops too) without re-implementing the mapping math. issue #48:
+  // the SAME empty-zone suppression as in HomeDashboardView is mirrored here,
+  // so the dial stop count and the confirm/hold routing below match exactly
+  // what the dashboard renders (a suppressed zone contributes zero slots).
   const homeDashboard = useMemo(() => {
     const { scenes, lights, covers } = classifyEntities(selectedEntities)
     return {
-      sceneRow: buildSceneRow(scenes),
+      sceneRow: scenes.length === 0 ? [] : buildSceneRow(scenes),
       lightGrid: buildLightGrid(lights),
-      coverSection: buildCoverSection(covers),
+      coverSection:
+        covers.length === 0
+          ? { ...buildCoverSection(covers), columns: [] }
+          : buildCoverSection(covers),
     }
   }, [selectedEntities])
 
