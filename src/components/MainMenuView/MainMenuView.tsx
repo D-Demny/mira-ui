@@ -1251,7 +1251,8 @@ export function MainMenuView({
         // since the last run (a dial tick gained one edge card; a
         // back-and-forth slide gains nothing, because the dropped edge was
         // already warmed or is still inside the mounted-window skip)
-        if (bandStart < prev.start) warmRange(category, bandStart, Math.min(bandEnd, prev.start), skip)
+        if (bandStart < prev.start)
+          warmRange(category, bandStart, Math.min(bandEnd, prev.start), skip)
         if (bandEnd > prev.end) warmRange(category, Math.max(bandStart, prev.end), bandEnd, skip)
       } else {
         // first sighting, rebuilt card list, or a remoteBlur flip: warm the

@@ -3,10 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
 import { REMOTE_ART_TIMEOUT_MS, remoteArtUrl } from '@/api/miraImg'
-import {
-  __resetMiraServerState,
-  checkMiraServer,
-} from '@/hooks/useMiraServer'
+import { __resetMiraServerState, checkMiraServer } from '@/hooks/useMiraServer'
 import { __resetSettings, updateSettings } from '@/settings'
 import type { MiraServerCapabilities } from '@/api/miraServer'
 import { AlbumArt, RETRY_DELAY_MS } from '../AlbumArt'
@@ -37,11 +34,15 @@ describe('AlbumArt', () => {
   // img and schedules one re-fetch after RETRY_DELAY_MS
   it('shows the music-note placeholder when the image fails and its single retry fails (bug15/#50 F2)', () => {
     vi.useFakeTimers()
-    const { container, unmount } = render(<AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />)
+    const { container, unmount } = render(
+      <AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />,
+    )
 
     fireEvent.error(screen.getByRole('img', { name: 'Cover' })) // first failure → retry scheduled
     expect(screen.getByRole('img', { name: 'Cover' })).not.toHaveAttribute('src') // broken img blanked
-    act(() => { vi.advanceTimersByTime(RETRY_DELAY_MS) })
+    act(() => {
+      vi.advanceTimersByTime(RETRY_DELAY_MS)
+    })
 
     // only the second (retry) failure swaps in the music-note fallback — never a black box
     fireEvent.error(screen.getByRole('img', { name: 'Cover' }))
@@ -66,11 +67,15 @@ describe('AlbumArt', () => {
     expect(vi.getTimerCount()).toBe(baseline + 1)
 
     // nothing is re-set before the delay has elapsed
-    act(() => { vi.advanceTimersByTime(RETRY_DELAY_MS - 1) })
+    act(() => {
+      vi.advanceTimersByTime(RETRY_DELAY_MS - 1)
+    })
     expect(img).not.toHaveAttribute('src')
 
     // after RETRY_DELAY_MS the src is re-set to force a fresh fetch ...
-    act(() => { vi.advanceTimersByTime(1) })
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
     expect(img).toHaveAttribute('src', 'http://img/broken.jpg')
     expect(vi.getTimerCount()).toBe(baseline)
 
@@ -85,10 +90,14 @@ describe('AlbumArt', () => {
 
   it('keeps the placeholder and never retries twice when the retry fails too (#50 F2)', () => {
     vi.useFakeTimers()
-    const { container, unmount } = render(<AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />)
+    const { container, unmount } = render(
+      <AlbumArt src="http://img/broken.jpg" alt="Cover" size={100} />,
+    )
 
     fireEvent.error(screen.getByRole('img', { name: 'Cover' })) // first failure → retry scheduled
-    act(() => { vi.advanceTimersByTime(RETRY_DELAY_MS) })
+    act(() => {
+      vi.advanceTimersByTime(RETRY_DELAY_MS)
+    })
 
     // the re-set load fails again: permanent placeholder, no second retry
     fireEvent.error(screen.getByRole('img', { name: 'Cover' }))
@@ -139,7 +148,14 @@ describe('epic10 task 2: remoteBlur artwork adapter', () => {
     server.use(http.get('*/api/v1/capabilities', () => HttpResponse.json(COMPUTE)))
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })

@@ -16,7 +16,7 @@ import { clearColorCache, seedColorCache, darkBg, rgba } from '@/hooks/useColorE
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import { __resetWarmedArt, hasWarmedArt } from '../warmedArt'
-import { SCROLL_SAFE_MARGIN, WINDOW_BEFORE, dialScrollLeft } from '../carouselWindow'
+import { dialScrollLeft } from '../carouselWindow'
 
 const mockPlaylists = [
   {
@@ -937,9 +937,7 @@ describe('MainMenuView', () => {
       // the in-flight fetches settle — wait for s.jpg (last in queue) before
       // slicing, or the capture races the pump
       await waitFor(() => {
-        expect(
-          created.slice(beforeSwitch).some((img) => img.src === 'http://img/s.jpg'),
-        ).toBe(true)
+        expect(created.slice(beforeSwitch).some((img) => img.src === 'http://img/s.jpg')).toBe(true)
       })
       const afterLeave = created.slice(beforeSwitch)
       // ticket 9.3: scope to the network covers — the rebuilt home category
@@ -978,7 +976,9 @@ describe('MainMenuView', () => {
       // 0..18 are fetched by the mounted cards' own <img>, only the outer
       // edge (19-20) is pre-decoded
       expect(afterReopen).toHaveLength(2)
-      expect(new Set(afterReopen)).toEqual(new Set(['http://img/band-19.jpg', 'http://img/band-20.jpg']))
+      expect(new Set(afterReopen)).toEqual(
+        new Set(['http://img/band-19.jpg', 'http://img/band-20.jpg']),
+      )
     })
   })
 
