@@ -474,7 +474,7 @@ export function HomeDashboardView({
                 // issue #57 T1: scene slots occupy chain indices 0..sceneRow
                 onClick={() => handleSceneTap(slot, i)}
               >
-                // issue #57 T3: per-slot icon (HA icon first, then label map)
+                {/* issue #57 T3: per-slot icon (HA icon first, then label map) */}
                 <MenuIcon name={sceneMenuIcon(slot.icon, slot.label)} size={20} />
                 <span className={styles.sceneLabel}>{slot.label}</span>
               </div>
