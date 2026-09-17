@@ -2,14 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   activateHaEntity,
   callHaService,
+  coverPositionPct,
   entityActive,
+  entityIcon,
   fetchHaEntityList,
   fetchHaEntityState,
   humanizeEntityLabel,
   lightCapabilities,
   toHomeEntityCatalog,
 } from '@/api/homeassistant'
-import type { HaEntityCatalogEntry } from '@/api/homeassistant'
+import type { HaEntityCatalogEntry, HaEntityState } from '@/api/homeassistant'
 import { HOME_LIGHTS } from '@/hooks/useHomeLight'
 
 // ticket 9.3: one view per selected HA entity — the Home carousel renders
@@ -27,6 +29,11 @@ export interface HomeEntityView {
   active: boolean | null
   dimmable: boolean
   brightnessPct: number | null
+  // issue #57 (T2): HA's attributes.icon passthrough (absent when the entity
+  // reports no icon) + the clamped cover position 0–100 for covers only —
+  // carried through to the dashboard view models for the zone restyling task
+  icon?: string
+  positionPct: number | null
   actuate: () => void
   // ticket 9.6 W2: directional cover control (the Home dashboard's ^/v/stop
   // buttons) — covers cannot be toggled, the direction is explicit
@@ -749,14 +756,15 @@ export function useHomeSelectedEntities(pollActive: boolean = false): HomeEntity
     const state = stateOf(entityId)
     const domain = domainOf(entityId)
     const meta = homeEntityMeta(entityId)
-    const caps =
-      domain === 'light'
-        ? lightCapabilities({
-            entity_id: entityId,
-            state: state.state ?? '',
-            attributes: state.attributes ?? {},
-          })
-        : { dimmable: false, brightnessPct: null }
+    // issue #57 (T2): the raw state shape the attribute derivations consume —
+    // lightCapabilities (brightness), entityIcon and coverPositionPct all read
+    // the same live attributes, so one shared object keeps them in sync
+    const rawState: HaEntityState = {
+      entity_id: entityId,
+      state: state.state ?? '',
+      attributes: state.attributes ?? {},
+    }
+    const caps = domain === 'light' ? lightCapabilities(rawState) : { dimmable: false, brightnessPct: null }
     return {
       entityId,
       domain,
@@ -769,6 +777,8 @@ export function useHomeSelectedEntities(pollActive: boolean = false): HomeEntity
       active: state.state === null ? null : entityActive(domain, state.state),
       dimmable: caps.dimmable,
       brightnessPct: caps.brightnessPct,
+      icon: entityIcon(rawState) ?? undefined,
+      positionPct: domain === 'cover' ? coverPositionPct(rawState) : null,
       actuate: () => void actuateEntity(entityId),
       coverActuate: (action: 'open' | 'close' | 'stop') => void actuateCover(entityId, action),
     }

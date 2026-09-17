@@ -20,6 +20,7 @@ function scene(entityId: string, label: string): DashboardEntity {
     active: null,
     dimmable: false,
     brightnessPct: null,
+    positionPct: null, // issue #57 (T2): fixtures carry no cover position
   }
 }
 
@@ -32,6 +33,7 @@ function light(entityId: string, label: string): DashboardEntity {
     active: true,
     dimmable: true,
     brightnessPct: 40,
+    positionPct: null, // issue #57 (T2): fixtures carry no cover position
   }
 }
 
@@ -44,6 +46,7 @@ function cover(entityId: string, label: string): DashboardEntity {
     active: null,
     dimmable: false,
     brightnessPct: null,
+    positionPct: null, // issue #57 (T2): fixtures report no position
   }
 }
 
@@ -153,6 +156,7 @@ describe('HomeDashboardView touch hold (ticket 9.6 W2-3a)', () => {
       active: true,
       dimmable: false,
       brightnessPct: null,
+      positionPct: null, // issue #57 (T2): fixtures carry no cover position
     }
     const { container } = render(
       <HomeDashboardView entities={[entity]} onLightTap={onLightTap} onLightHold={onLightHold} />,

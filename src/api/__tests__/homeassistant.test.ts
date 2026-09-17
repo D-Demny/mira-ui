@@ -373,6 +373,76 @@ describe('homeassistant api', () => {
       }
       expect(toHomeEntityCatalog(raw)).toEqual([])
     })
+
+    it('carries attributes.icon through for every domain that reports one (issue #57 T2)', () => {
+      const raw: Record<string, HaEntityState> = {
+        'light.bulb': {
+          entity_id: 'light.bulb',
+          state: 'on',
+          attributes: { icon: 'mdi:lightbulb' },
+        },
+        'cover.rollo': {
+          entity_id: 'cover.rollo',
+          state: 'open',
+          attributes: { icon: 'mdi:window-closed-variant' },
+        },
+        'scene.cosy': { entity_id: 'scene.cosy', state: 'none', attributes: { icon: 'mdi:sofa' } },
+      }
+      const byId = new Map(toHomeEntityCatalog(raw).map((e) => [e.entityId, e]))
+      expect(byId.get('light.bulb')?.icon).toBe('mdi:lightbulb')
+      expect(byId.get('cover.rollo')?.icon).toBe('mdi:window-closed-variant')
+      expect(byId.get('scene.cosy')?.icon).toBe('mdi:sofa')
+    })
+
+    it('leaves icon absent when the attribute is missing, empty, or not a string (issue #57 T2)', () => {
+      const raw: Record<string, HaEntityState> = {
+        'light.no_attrs': { entity_id: 'light.no_attrs', state: 'on' },
+        'light.empty_icon': {
+          entity_id: 'light.empty_icon',
+          state: 'on',
+          attributes: { icon: '' },
+        },
+        'light.null_icon': { entity_id: 'light.null_icon', state: 'on', attributes: { icon: null } },
+        'light.weird_icon': { entity_id: 'light.weird_icon', state: 'on', attributes: { icon: 42 } },
+      }
+      const entries = toHomeEntityCatalog(raw)
+      for (const entry of entries) expect(entry.icon).toBeUndefined()
+    })
+
+    it('carries the cover positionPct clamped + rounded into 0–100, null when absent/null, and null for non-covers (issue #57 T2)', () => {
+      const raw: Record<string, HaEntityState> = {
+        'cover.normal': {
+          entity_id: 'cover.normal',
+          state: 'open',
+          attributes: { position: 42.6 },
+        },
+        'cover.over': { entity_id: 'cover.over', state: 'open', attributes: { position: 130 } },
+        'cover.under': {
+          entity_id: 'cover.under',
+          state: 'closed',
+          attributes: { position: -5 },
+        },
+        'cover.no_position': { entity_id: 'cover.no_position', state: 'open' },
+        'cover.null_position': {
+          entity_id: 'cover.null_position',
+          state: 'open',
+          attributes: { position: null },
+        },
+        'light.position_attr': {
+          entity_id: 'light.position_attr',
+          state: 'on',
+          attributes: { position: 50 },
+        },
+      }
+      const byId = new Map(toHomeEntityCatalog(raw).map((e) => [e.entityId, e]))
+      expect(byId.get('cover.normal')?.positionPct).toBe(43) // rounded
+      expect(byId.get('cover.over')?.positionPct).toBe(100) // clamped up
+      expect(byId.get('cover.under')?.positionPct).toBe(0) // clamped down
+      expect(byId.get('cover.no_position')?.positionPct).toBeNull() // attribute absent
+      expect(byId.get('cover.null_position')?.positionPct).toBeNull() // null value
+      // other domains never carry a position, even with the attribute present
+      expect(byId.get('light.position_attr')?.positionPct).toBeNull()
+    })
   })
 
   describe('entityActive (ticket 9.3)', () => {

@@ -26,6 +26,9 @@ function entity(overrides: Partial<DashboardEntity> & { entityId: string }): Das
     active: true,
     dimmable: false,
     brightnessPct: null,
+    // issue #57 (T2): no icon by default (absent), no cover position — the
+    // propagation tests below override both explicitly
+    positionPct: null,
     ...overrides,
   }
 }
@@ -80,7 +83,12 @@ describe('buildSceneRow (ticket9.6)', () => {
   it('keeps one configured scene first, pads the rest in placeholder order', () => {
     const row = buildSceneRow([entity({ entityId: 'scene.cosy', domain: 'scene', label: 'Cosy' })])
     expect(row).toHaveLength(3)
-    expect(row[0]).toEqual({ entityId: 'scene.cosy', label: 'Cosy', isPlaceholder: false })
+    expect(row[0]).toEqual({
+      entityId: 'scene.cosy',
+      label: 'Cosy',
+      isPlaceholder: false,
+      icon: null, // issue #57 (T2): fixture entity carries no HA icon
+    })
     expect(row[1].label).toBe('Cosy time')
     expect(row[2].label).toBe('Betti Zeit')
     expect(row.slice(1).every((slot) => slot.isPlaceholder)).toBe(true)
@@ -130,6 +138,7 @@ describe('buildLightGrid (ticket9.6)', () => {
         brightnessPct: expected.brightnessPct,
         dimmable: true,
         isPlaceholder: true,
+        icon: null, // issue #57 (T2): placeholders carry no HA icon
       })
     })
     // slot order per mockup: Esstisch 20% An / Flurlicht 50% An /
@@ -155,6 +164,7 @@ describe('buildLightGrid (ticket9.6)', () => {
       brightnessPct: 20,
       dimmable: true,
       isPlaceholder: false,
+      icon: null, // issue #57 (T2): fixture entity carries no HA icon
     })
     expect(grid.slice(1).map((t) => t.label)).toEqual(['Flurlicht', 'Stehlampen', 'Treppenspots'])
     expect(grid.slice(1).every((t) => t.isPlaceholder)).toBe(true)
@@ -249,6 +259,7 @@ describe('buildCoverSection (ticket9.6)', () => {
         label: COVER_PLACEHOLDER_LABELS[i],
         state: null,
         isPlaceholder: true,
+        positionPct: null, // issue #57 (T2): placeholders have no position
       })
     })
   })
@@ -264,6 +275,7 @@ describe('buildCoverSection (ticket9.6)', () => {
       label: 'Rollo WZ',
       state: 'open',
       isPlaceholder: false,
+      positionPct: null, // issue #57 (T2): fixture cover reports no position
     })
     expect(section.columns[1].isPlaceholder).toBe(true)
     expect(section.columns[1].label).toBe('Esszimmer')
@@ -287,5 +299,36 @@ describe('buildCoverSection (ticket9.6)', () => {
     ])
     expect(section.isPlaceholder).toBe(false)
     expect(section.columns.map((c) => c.entityId)).toEqual(['cover.a', 'cover.b', 'cover.c'])
+  })
+})
+
+describe('icon + position propagation (issue #57 T2)', () => {
+  it('buildSceneRow carries the entity icon into real slots, null for placeholders and icon-less entities', () => {
+    const row = buildSceneRow([
+      entity({ entityId: 'scene.cosy', domain: 'scene', label: 'Cosy', icon: 'mdi:sofa' }),
+      entity({ entityId: 'scene.normal', domain: 'scene', label: 'Normal' }),
+    ])
+    expect(row.map((slot) => slot.icon)).toEqual(['mdi:sofa', null, null])
+  })
+
+  it('buildLightGrid carries the entity icon into real tiles, null for placeholders and icon-less entities', () => {
+    const grid = buildLightGrid([
+      light('light.esstisch', { label: 'Esstisch', icon: 'mdi:ceiling-light' }),
+      light('light.flur', { label: 'Flurlicht' }),
+    ])
+    expect(grid.map((tile) => tile.icon)).toEqual([
+      'mdi:ceiling-light',
+      null,
+      null, // placeholder tiles never carry an icon
+      null,
+    ])
+  })
+
+  it('buildCoverSection carries the cover position into real columns, null for placeholders and position-less covers', () => {
+    const section = buildCoverSection([
+      entity({ entityId: 'cover.wz', domain: 'cover', label: 'WZ', positionPct: 42 }),
+      entity({ entityId: 'cover.ess', domain: 'cover', label: 'Ess' }),
+    ])
+    expect(section.columns.map((column) => column.positionPct)).toEqual([42, null])
   })
 })
