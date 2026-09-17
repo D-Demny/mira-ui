@@ -17,6 +17,9 @@ export type MenuIconName =
   | 'pendant'
   | 'lamp'
   | 'spot'
+  // issue #57 (T5): home-dashboard cover columns — roller blind (frame +
+  // slats), the static zone icon of every cover column
+  | 'blinds'
 
 export type MenuCardKind = 'media' | 'action'
 
