@@ -971,6 +971,14 @@ export function MainMenuView({
     cardHoldRoutingRef.current(card, index)
   }, [])
 
+  // issue #57 T1: touch-scroll focus reset for the Home dashboard. View-local
+  // flag, not hook state — the hook's contentIndex is a plain [0, count) index
+  // with no "nothing" representation, so hiding the focused slot is done by
+  // gating the focusedIndex PROP of <HomeDashboardView>. A real finger scroll
+  // (HomeDashboardView's onTouchScroll) sets it; any dial tick on Home or a
+  // fresh slot tap clears it (the restore paths below).
+  const [homeTouchFocusCleared, setHomeTouchFocusCleared] = useState(false)
+
   // bug25: adjust mode — the wheel changes the value of the adjusting row
   // instead of moving the focus; turning past the min/max boundary leaves
   // adjust mode and the focus moves on with the same tick. bug35: the
@@ -978,6 +986,13 @@ export function MainMenuView({
   // adjust mode); while auto brightness is ON (slider disabled) or at the
   // min/max bound the tick falls through to plain row navigation
   const handleWheelContent = (dir: 1 | -1): boolean => {
+    // issue #57 T1: a dial tick on Home restores any touch-cleared focus —
+    // the tick itself navigates as usual (return false), and with the flag
+    // reset the next focused slot renders its .focused state again
+    if (confirmedCategory.id === 'home') {
+      setHomeTouchFocusCleared(false)
+      return false
+    }
     if (confirmedCategory.id !== 'settings' || !isAdjustLevel) return false
     const row = settingsAdjustRows[focus.contentIndex]
     const slider = row?.slider
@@ -1037,6 +1052,9 @@ export function MainMenuView({
           setSettingsLevel('root')
           setAdjustingRowId(null)
         }
+        // issue #57 T1: (re)entering Home starts with a fresh dial focus — a
+        // touch-scroll reset from an earlier visit must not carry over
+        if (category.id === 'home') setHomeTouchFocusCleared(false)
       }
     },
     onConfirmContent: (index) => {
@@ -1420,7 +1438,13 @@ export function MainMenuView({
           >
             <HomeDashboardView
               entities={selectedEntities}
-              focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
+              // issue #57 T1: the dial focus hides after a touch scroll until a
+              // dial tick or slot tap restores it (homeTouchFocusCleared above)
+              focusedIndex={
+                focus.activePane === 'content' && !homeTouchFocusCleared
+                  ? focus.contentIndex
+                  : undefined
+              }
               // ticket 9.6 W2: short-press wiring (tap + dial confirm)
               onSceneTap={homeSceneTap}
               onLightTap={homeLightTap}
@@ -1429,6 +1453,16 @@ export function MainMenuView({
               // dial hold (homeHoldRoute), so both input paths stay in lockstep
               onLightHold={(tile) => homeHoldRoute(tile, null)}
               onCoverHold={(column) => homeHoldRoute(null, column)}
+              // issue #57 T1: tap → focus re-root — a SHORT tap moves the dial
+              // onto the tapped slot WITHOUT confirming (the slot's own tap
+              // callback already ran) and restores any cleared focus
+              onSlotTapped={(index) => {
+                setHomeTouchFocusCleared(false)
+                focus.focusContent(index)
+              }}
+              // issue #57 T1: touch scroll → clear the dial focus until the next
+              // dial tick or slot tap (gated into focusedIndex above)
+              onTouchScroll={() => setHomeTouchFocusCleared(true)}
             />
           </div>
         ) : (
