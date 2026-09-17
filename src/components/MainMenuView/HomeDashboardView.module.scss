@@ -95,8 +95,15 @@
   justify-content: center;
   @include flex-gap-y($s-1);
   padding: $s-3 $s-2;
-  border-radius: $r-md;
-  background: rgba(255, 255, 255, 0.07);
+  // issue #57 T3: scene buttons read as DARK TILES, not bare buttons — the
+  // radius matches the section-level tile language (.coverSection uses $r-lg)
+  // and the base tint is slightly richer than the light tiles' flat 0.07 wash
+  // (white-alpha on the dark root only: no bright fills, CR69-safe). The thin
+  // border gives the tile an edge; .placeholder overrides it with its dashed
+  // border later in this file (same specificity, later wins).
+  border-radius: $r-lg;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   color: $text-primary;
   cursor: pointer;
   user-select: none;
@@ -107,7 +114,8 @@
     box-shadow $dur-fast $ease-standard;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.11);
+    // stays below the .focused base (0.14) so focus still reads stronger
+    background: rgba(255, 255, 255, 0.13);
   }
 }
 

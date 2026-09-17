@@ -7,6 +7,8 @@
 // up-down, long-press → HALightControlModal) is W2 and keys off the entityId
 // carried here.
 
+import type { MenuIconName } from './mockData'
+
 // The input shape: exactly the fields these builders need, structurally
 // satisfied by `HomeEntityView` (src/hooks/useHomeEntities.ts, ticket 9.3 —
 // the output of useHomeSelectedEntities()) so the real carousel data can be
@@ -101,6 +103,25 @@ export function buildSceneRow(scenes: readonly DashboardEntity[]): SceneSlotMode
     })
   }
   return out
+}
+
+// issue #57 T3: pick the tile icon for a scene slot (HomeDashboardView Z1).
+// Priority: (a) the carried HA icon, matched against a small family table —
+// HA scene icons are usually generic, so this is only a bonus signal;
+// (b) the curated label map — the practical primary path. Anything unmatched
+// (including every placeholder label except the two curated ones) falls back
+// to the bulb default, which fits "Normales Licht" and most light scenes.
+export function sceneMenuIcon(icon: string | null, label: string): MenuIconName {
+  if (icon !== null) {
+    const i = icon.toLowerCase()
+    if (i.includes('candle')) return 'candle'
+    if (i.includes('moon') || i.includes('night')) return 'moon'
+    if (i.includes('lightbulb') || i.includes('light')) return 'bulb'
+  }
+  const l = label.toLowerCase()
+  if (l.includes('cosy')) return 'candle'
+  if (l.includes('betti')) return 'moon'
+  return 'bulb'
 }
 
 // --------------------------------------------------------------------- light grid
