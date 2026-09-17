@@ -717,3 +717,26 @@ describe('HomeDashboardView cover column layout (issue #57 T5)', () => {
     }
   })
 })
+
+// issue #57 (T3 follow-up): a bare `//` comment line that sat INSIDE the scene
+// slot's JSX element was parsed as JSXText and rendered above the icon on
+// device. Pin the scene slot text so it carries only icon + label — never a
+// leaked comment marker.
+describe('HomeDashboardView scene slot markup (issue #57 T3 comment leak)', () => {
+  it('renders no leaked bare // comment text inside any scene slot', () => {
+    // one real scene → the row renders with 1 real + 2 placeholder slots
+    const { container } = render(
+      <HomeDashboardView entities={[scene('scene.abendstimmung', 'Abendstimmung')]} />,
+    )
+    const slots = Array.from(container.querySelectorAll('.sceneBtn'))
+    expect(slots.length).toBeGreaterThan(0)
+    for (const slot of slots) {
+      const text = (slot.textContent ?? '').trim()
+      expect(text).not.toContain('issue #57')
+      expect(text.startsWith('//')).toBe(false)
+    }
+    // the real slot's visible text is its label only
+    const real = container.querySelector('[data-entity-id="scene.abendstimmung"]') as HTMLElement
+    expect((real.textContent ?? '').trim()).toBe('Abendstimmung')
+  })
+})
