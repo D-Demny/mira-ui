@@ -198,6 +198,26 @@ export function lightCapabilities(entity: HaEntityState): {
   return { dimmable, brightnessPct }
 }
 
+// issue #57 (T2): HA's /states payload carries attributes.icon on EVERY entity
+// (mdi icons like "mdi:lightbulb"); some integrations report null or omit it.
+// Kept only when it is a non-empty string — the Home dashboard models carry
+// it through for the zone restyling task (T3).
+export function entityIcon(entity: HaEntityState): string | null {
+  const raw = (entity.attributes ?? {}).icon
+  return typeof raw === 'string' && raw.length > 0 ? raw : null
+}
+
+// issue #57 (T2): HA cover's attributes.position is 0–100 (0 = fully closed,
+// 100 = fully open); it is absent for covers without position support and on
+// every non-cover domain → null. Rounded + clamped so a malformed value can
+// never reach the UI as a >100 % or negative readout (mirrors the clamp
+// discipline of lightCapabilities' brightness handling).
+export function coverPositionPct(entity: HaEntityState): number | null {
+  const raw = (entity.attributes ?? {}).position
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
+  return Math.min(100, Math.max(0, Math.round(raw)))
+}
+
 // ticket 9.3 / issue #37: the KNOWN (controllable) domains — now only a
 // PRIORITY list for catalog sorting (every domain from GET /states enters the
 // catalog, unknown ones sort after these in alphabetical order). Also the set
@@ -244,6 +264,11 @@ export interface HaEntityCatalogEntry {
   label: string
   state: string
   active: boolean | null
+  // issue #57 (T2): HA's attributes.icon passthrough — absent when the entity
+  // reports no icon; cover position 0–100 for covers only (null otherwise).
+  // Both are carried to the Home dashboard view models for zone restyling.
+  icon?: string
+  positionPct: number | null
 }
 
 // ticket 9.3: which state counts as "active" per domain. `null` = no active
@@ -298,7 +323,19 @@ export function toHomeEntityCatalog(raw: Record<string, HaEntityState>): HaEntit
     const rawLabel = (entity.attributes ?? {}).friendly_name
     const label =
       typeof rawLabel === 'string' && rawLabel.length > 0 ? rawLabel : humanizeEntityLabel(entityId)
-    entries.push({ entityId, domain, label, state, active: entityActive(domain, state) })
+    // issue #57 (T2): carry the HA icon through (absent when the entity
+    // reports none) and the clamped cover position (covers only)
+    const entry: HaEntityCatalogEntry = {
+      entityId,
+      domain,
+      label,
+      state,
+      active: entityActive(domain, state),
+      positionPct: domain === 'cover' ? coverPositionPct(entity) : null,
+    }
+    const icon = entityIcon(entity)
+    if (icon !== null) entry.icon = icon
+    entries.push(entry)
   }
   const knownDomains = HOME_ENTITY_DOMAINS as readonly string[]
   entries.sort((a, b) => {

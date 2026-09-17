@@ -22,6 +22,12 @@ export interface DashboardEntity {
   active: boolean | null
   dimmable: boolean
   brightnessPct: number | null
+  // issue #57 (T2): HA's attributes.icon passthrough (absent when the entity
+  // reports no icon) + the clamped cover position 0–100 for covers only
+  // (null for non-covers and covers without position support) — carried into
+  // the zone models below; rendering them is the restyling task (T3)
+  icon?: string
+  positionPct: number | null
 }
 
 // ---------------------------------------------------------------- classification
@@ -69,12 +75,14 @@ export const SCENE_PLACEHOLDER_LABELS: readonly string[] = [
 
 // render-ready scene button. `entityId === null` marks a placeholder — the
 // UI must style/mark it differently (Task B) and W2 toasts instead of
-// activating when pressed. Icons are a Task B presentation concern (the
-// entity data carries no icon attribute), derived from domain/placeholder.
+// activating when pressed. `icon` carries the real entity's HA icon through
+// (issue #57 T2); placeholders have none → null (the zone restyling task T3
+// decides what renders there).
 export interface SceneSlotModel {
   entityId: string | null
   label: string
   isPlaceholder: boolean
+  icon: string | null
 }
 
 export function buildSceneRow(scenes: readonly DashboardEntity[]): SceneSlotModel[] {
@@ -82,12 +90,14 @@ export function buildSceneRow(scenes: readonly DashboardEntity[]): SceneSlotMode
     entityId: scene.entityId,
     label: scene.label,
     isPlaceholder: false,
+    icon: scene.icon ?? null,
   }))
   for (let i = scenes.length; i < SCENE_ROW_SIZE; i++) {
     out.push({
       entityId: null,
       label: SCENE_PLACEHOLDER_LABELS[i % SCENE_PLACEHOLDER_LABELS.length],
       isPlaceholder: true,
+      icon: null,
     })
   }
   return out
@@ -133,6 +143,7 @@ export interface LightTileModel {
   brightnessPct: number | null
   dimmable: boolean
   isPlaceholder: boolean
+  icon: string | null
 }
 
 export function buildLightGrid(lights: readonly DashboardEntity[]): LightTileModel[] {
@@ -149,6 +160,7 @@ export function buildLightGrid(lights: readonly DashboardEntity[]): LightTileMod
         brightnessPct: clampBrightnessPct(light.brightnessPct),
         dimmable: light.dimmable,
         isPlaceholder: false,
+        icon: light.icon ?? null,
       })
     } else {
       const placeholder = LIGHT_PLACEHOLDERS[i % LIGHT_PLACEHOLDERS.length]
@@ -159,6 +171,7 @@ export function buildLightGrid(lights: readonly DashboardEntity[]): LightTileMod
         brightnessPct: placeholder.brightnessPct,
         dimmable: true,
         isPlaceholder: true,
+        icon: null,
       })
     }
   }
@@ -181,11 +194,15 @@ export const COVER_PLACEHOLDER_LABELS: readonly string[] = ['Wohnzimmer', 'Esszi
 
 // one control column. `state` (e.g. 'open' / 'closed' / 'opening') stays as
 // the raw HA state string — W2 maps it to the up/down visual + stop handling.
+// `positionPct` is the clamped 0–100 cover position (issue #57 T2) — null for
+// placeholders and covers without position support; the restyling task (T3)
+// renders it.
 export interface CoverColumnModel {
   entityId: string | null
   label: string
   state: string | null
   isPlaceholder: boolean
+  positionPct: number | null
 }
 
 // `isPlaceholder` on the SECTION itself: true = no cover is mapped at all, so
@@ -208,6 +225,7 @@ export function buildCoverSection(covers: readonly DashboardEntity[]): CoverSect
         label: cover.label,
         state: cover.state,
         isPlaceholder: false,
+        positionPct: cover.positionPct,
       })
     } else {
       columns.push({
@@ -215,6 +233,7 @@ export function buildCoverSection(covers: readonly DashboardEntity[]): CoverSect
         label: COVER_PLACEHOLDER_LABELS[i % COVER_PLACEHOLDER_LABELS.length],
         state: null,
         isPlaceholder: true,
+        positionPct: null,
       })
     }
   }
