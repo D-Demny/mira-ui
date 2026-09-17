@@ -37,13 +37,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import styles from './HomeDashboardView.module.scss'
-import type { MenuIconName } from './mockData'
 import { MenuIcon } from './MenuIcon'
 import {
   buildCoverSection,
   buildLightGrid,
   buildSceneRow,
   classifyEntities,
+  lightMenuIcon,
   sceneMenuIcon,
 } from './homeDashboard'
 import type {
@@ -113,12 +113,11 @@ const TOUCH_SCROLL_SLOP_PX = 10
 // finger-lift and well before any deliberate dial-driven scroll follows)
 const TOUCH_SCROLL_IDLE_MS = 400
 
-// issue #57 T3: scene slots get their icon CONTEXTUALLY — sceneMenuIcon()
-// (homeDashboard.ts) maps the slot's carried HA icon onto a tile icon, with a
-// curated per-label fallback (HA scene icons are usually generic). The light
-// grid keeps one fixed zone icon; covers deliberately get NO zone icon: their
+// issue #57 T3/T4: scene AND light slots get their icon CONTEXTUALLY —
+// sceneMenuIcon() / lightMenuIcon() (homeDashboard.ts) map each slot's/tile's
+// carried HA icon onto a tile icon, with a curated per-label fallback (HA
+// icons are usually generic). Covers deliberately get NO zone icon: their
 // ^ / v buttons ARE the arrows in the mockup.
-const LIGHT_ICON: MenuIconName = 'settings'
 
 export function HomeDashboardView({
   entities,
@@ -483,12 +482,19 @@ export function HomeDashboardView({
 
         {/* Z2 — light grid (2-column CSS grid, flat slot list from Task A) */}
         <div className={styles.lightGrid}>
-          {lightGrid.map((tile, i) => (
+          {lightGrid.map((tile, i) => {
+            // issue #57 T4 readout rule: an OFF dimmable tile shows '0%' next
+            // to 'Aus' (its level is known to be zero); ON with a KNOWN level
+            // shows the number; ON without one (level unknown) shows no number
+            // at all. Non-dimmable tiles keep the plain rule (the level as
+            // reported, null → nothing).
+            const pct = !tile.isOn && tile.dimmable ? '0%' : tile.brightnessPct !== null ? `${tile.brightnessPct}%` : null
+            return (
             <div
               key={tile.entityId ?? `light-placeholder-${i}`}
               // W2-4: focus-chain registry (lights start after the scene row)
               ref={(el) => setSlotEl(sceneRow.length + i, el)}
-              className={`${styles.lightTile}${tile.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+              className={`${styles.lightTile}${tile.isOn ? ` ${styles.tileIsOn}` : ` ${styles.tileIsOff}`}${tile.isPlaceholder ? ` ${styles.placeholder}` : ''}${
                 i === lightFocus ? ` ${styles.focused}` : ''
               }`}
               data-entity-id={tile.entityId}
@@ -510,7 +516,8 @@ export function HomeDashboardView({
               }}
             >
               <span className={styles.tileIcon}>
-                <MenuIcon name={LIGHT_ICON} size={20} />
+                {/* issue #57 T4: per-tile icon (HA icon first, then label map) */}
+                <MenuIcon name={lightMenuIcon(tile.icon, tile.label)} size={20} />
               </span>
               <div className={styles.tileBody}>
                 <span className={styles.tileLabel}>{tile.label}</span>
@@ -527,15 +534,14 @@ export function HomeDashboardView({
                     )}
                   </span>
                   <span className={styles.stateCol}>
-                    {tile.brightnessPct !== null && (
-                      <span className={styles.pct}>{tile.brightnessPct}%</span>
-                    )}
+                    {pct !== null && <span className={styles.pct}>{pct}</span>}
                     <span className={styles.state}>{tile.isOn ? 'An' : 'Aus'}</span>
                   </span>
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Z3 — cover section (issue #48: rendered only when real covers exist) */}

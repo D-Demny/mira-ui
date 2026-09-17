@@ -142,7 +142,9 @@
   box-sizing: border-box;
   min-height: 76px;
   padding: $s-3;
-  border-radius: $r-md;
+  // issue #57 T4: the section-level tile language from T3 — light tiles join
+  // .sceneBtn / .coverSection on the larger radius (was $r-md)
+  border-radius: $r-lg;
   background: rgba(255, 255, 255, 0.07);
   color: $text-primary;
   cursor: pointer;
@@ -158,6 +160,40 @@
   }
 }
 
+// issue #57 T4: state-aware tile accents. NO warm token exists in
+// _variables.scss ($accent is the Spotify green), so the amber ON accent is
+// LOCAL to this zone — a mid warm amber that reads as "lit" on the dark washes
+// above; OFF tiles get the muted treatment instead (see below). Both classes
+// sit at .lightTile specificity, defined after it, and before the shared
+// .focused (which must still win the background in the focused state).
+$light-amber: #ffc14d;
+
+.tileIsOn {
+  // lit tile: warm tint on the icon chip + warm track/fill (the slider below)
+  .tileIcon {
+    background: rgba($light-amber, 0.16);
+    color: $light-amber;
+  }
+  .brightnessBar {
+    background: rgba($light-amber, 0.24);
+  }
+  .brightnessFill {
+    background: $light-amber;
+  }
+}
+
+.tileIsOff {
+  // extinguished tile: darker muted gray wash + dimmed icon (opacity ~0.5);
+  // the track stays neutral and empty (the JS renders no fill/knob at all)
+  background: rgba(255, 255, 255, 0.04);
+  .tileIcon {
+    opacity: 0.5;
+  }
+  .brightnessBar {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
 .tileIcon {
   flex: 0 0 auto;
   display: flex;
@@ -169,6 +205,12 @@
   border-radius: $r-sm;
   background: rgba(255, 255, 255, 0.08);
   color: $text-secondary;
+  // issue #57 T4: the ON/OFF accent (background + color) and the dimmed-icon
+  // opacity fade in/out with the house fast ease instead of popping
+  transition:
+    background-color $dur-fast $ease-standard,
+    color $dur-fast $ease-standard,
+    opacity $dur-fast $ease-standard;
 }
 
 .tileBody {
@@ -195,7 +237,9 @@
 .brightnessBar {
   position: relative;
   flex: 1 1 auto;
-  height: 4px;
+  // issue #57 T4: THICKER rounded track (was 4px) — the fill and knob keep the
+  // proportional width/left % driven per tile in the component
+  height: 6px;
   margin-right: $s-2;
   border-radius: $r-pill;
   background: rgba(255, 255, 255, 0.18);

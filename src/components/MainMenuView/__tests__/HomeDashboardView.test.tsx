@@ -584,3 +584,67 @@ describe('HomeDashboardView tap + touch-scroll focus (issue #57 T1)', () => {
     expect(onTouchScroll).toHaveBeenCalledTimes(1)
   })
 })
+
+// issue #57 T4: light tile readout rule + state-aware styling classes. The
+// readout shows '0%' next to 'Aus' for OFF dimmable tiles (the level is known
+// to be zero), the reported 'N%' for ON tiles with a KNOWN level, and no
+// number at all for ON tiles whose level is unknown (brightnessPct null).
+// Non-dimmable tiles keep the plain rule. Tiles carry .tileIsOn / .tileIsOff
+// so the SCSS can render the warm ON accent / muted OFF treatment.
+describe('HomeDashboardView light readout + state classes (issue #57 T4)', () => {
+  function offDimmable(entityId: string, label: string): DashboardEntity {
+    return { ...light(entityId, label), active: false, brightnessPct: null }
+  }
+
+  function onUnknownLevel(entityId: string, label: string): DashboardEntity {
+    return { ...light(entityId, label), brightnessPct: null }
+  }
+
+  it('shows 0% next to Aus for an OFF dimmable tile', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[offDimmable('light.sofa', 'Sofa'), light('light.tisch', 'Tisch')]} />,
+    )
+    const tile = container.querySelector('[data-entity-id="light.sofa"]') as HTMLElement
+    expect(tile.textContent).toContain('0%')
+    expect(tile.textContent).toContain('Aus')
+  })
+
+  it('shows the reported percent next to An for an ON tile with a known level', () => {
+    const { container } = render(<HomeDashboardView entities={[light('light.tisch', 'Tisch')]} />)
+    // the light() fixture reports brightnessPct 40 → the readout shows it
+    const tile = container.querySelector('[data-entity-id="light.tisch"]') as HTMLElement
+    expect(tile.textContent).toContain('40%')
+    expect(tile.textContent).toContain('An')
+  })
+
+  it('shows no number for an ON tile whose level is unknown (just An)', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[onUnknownLevel('light.kueste', 'Kueste')]} />,
+    )
+    const tile = container.querySelector('[data-entity-id="light.kueste"]') as HTMLElement
+    expect(tile.textContent).not.toContain('%')
+    expect(tile.textContent).toContain('An')
+  })
+
+  it('keeps non-dimmable tiles on the plain rule (no number without a level)', () => {
+    const { container } = render(
+      <HomeDashboardView
+        entities={[{ ...light('light.lichtschalter', 'Lichtschalter'), dimmable: false, brightnessPct: null }]}
+      />,
+    )
+    const tile = container.querySelector('[data-entity-id="light.lichtschalter"]') as HTMLElement
+    expect(tile.textContent).not.toContain('%')
+  })
+
+  it('marks light tiles with the state classes (.tileIsOn / .tileIsOff)', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[light('light.an', 'An'), offDimmable('light.aus', 'Aus')]} />,
+    )
+    const onTile = container.querySelector('[data-entity-id="light.an"]') as HTMLElement
+    const offTile = container.querySelector('[data-entity-id="light.aus"]') as HTMLElement
+    expect(onTile.classList.contains('tileIsOn')).toBe(true)
+    expect(onTile.classList.contains('tileIsOff')).toBe(false)
+    expect(offTile.classList.contains('tileIsOff')).toBe(true)
+    expect(offTile.classList.contains('tileIsOn')).toBe(false)
+  })
+})

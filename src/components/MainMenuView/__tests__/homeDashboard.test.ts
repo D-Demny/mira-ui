@@ -14,6 +14,7 @@ import {
   buildSceneRow,
   classifyEntities,
   clampBrightnessPct,
+  lightMenuIcon,
   sceneMenuIcon,
 } from '../homeDashboard'
 
@@ -373,5 +374,65 @@ describe('sceneMenuIcon (issue #57 T3)', () => {
     expect(sceneMenuIcon(null, SCENE_PLACEHOLDER_LABELS[0])).toBe('bulb')
     expect(sceneMenuIcon(null, SCENE_PLACEHOLDER_LABELS[1])).toBe('candle')
     expect(sceneMenuIcon(null, SCENE_PLACEHOLDER_LABELS[2])).toBe('moon')
+  })
+})
+
+describe('lightMenuIcon (issue #57 T4)', () => {
+  it('maps HA floor-lamp icon families to the lamp tile icon', () => {
+    expect(lightMenuIcon('mdi:lamp-floor', 'X')).toBe('lamp')
+    expect(lightMenuIcon('mdi:floor-lamp', 'X')).toBe('lamp') // substring, any order
+  })
+
+  it('maps HA spot / ceiling / downlight icon families to the spot tile icon', () => {
+    expect(lightMenuIcon('mdi:spot', 'X')).toBe('spot')
+    expect(lightMenuIcon('mdi:ceiling-light', 'X')).toBe('spot')
+    expect(lightMenuIcon('mdi:wall-downlight', 'X')).toBe('spot')
+  })
+
+  it('maps HA pendant / hang icon families to the pendant tile icon', () => {
+    expect(lightMenuIcon('mdi:pendant', 'X')).toBe('pendant')
+    expect(lightMenuIcon('mdi:hanging-light', 'X')).toBe('pendant') // before 'light'
+  })
+
+  it('maps HA lightbulb / light icon families to the bulb tile icon (case-insensitive)', () => {
+    expect(lightMenuIcon('mdi:lightbulb', 'X')).toBe('bulb')
+    expect(lightMenuIcon('LIGHT', 'X')).toBe('bulb')
+  })
+
+  it('falls back to the curated label map when no HA icon is carried (null)', () => {
+    expect(lightMenuIcon(null, 'Esstisch')).toBe('pendant')
+    expect(lightMenuIcon(null, 'Stehlampen')).toBe('lamp')
+    expect(lightMenuIcon(null, 'Stehlampe Gold')).toBe('lamp') // starts-with form
+    expect(lightMenuIcon(null, 'Flurlicht')).toBe('spot')
+    expect(lightMenuIcon(null, 'Treppenspots')).toBe('spot')
+  })
+
+  it('applies the label fallback when the HA icon is an unrelated family', () => {
+    expect(lightMenuIcon('mdi:sofa', 'Esstisch')).toBe('pendant')
+    expect(lightMenuIcon('mdi:sofa', 'Treppenspots')).toBe('spot')
+    expect(lightMenuIcon('mdi:sofa', 'Deckenleuchte')).toBe('bulb') // unknown -> default
+  })
+
+  it('prefers the HA icon family over the label (icon first, label second)', () => {
+    expect(lightMenuIcon('mdi:lamp-floor', 'Esstisch')).toBe('lamp')
+    expect(lightMenuIcon('mdi:spot', 'Esstisch')).toBe('spot')
+  })
+
+  it('defaults to the bulb for an unknown icon AND an unknown label (incl. null)', () => {
+    expect(lightMenuIcon(null, 'Unbekannt')).toBe('bulb')
+    expect(lightMenuIcon('mdi:sofa', 'Unbekannt')).toBe('bulb')
+  })
+
+  it('maps every light placeholder label to its curated icon (no lights configured)', () => {
+    // LIGHT_PLACEHOLDERS = Esstisch / Flurlicht / Stehlampen / Treppenspots
+    for (const placeholder of LIGHT_PLACEHOLDERS) {
+      const expected: Record<string, 'pendant' | 'lamp' | 'spot'> = {
+        Esstisch: 'pendant',
+        Flurlicht: 'spot',
+        Stehlampen: 'lamp',
+        Treppenspots: 'spot',
+      }
+      expect(lightMenuIcon(null, placeholder.label)).toBe(expected[placeholder.label])
+    }
   })
 })

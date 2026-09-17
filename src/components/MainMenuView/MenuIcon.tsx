@@ -80,5 +80,37 @@ export function MenuIcon({ name, size = 24 }: MenuIconProps) {
           <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
         </svg>
       )
+    // issue #57 (T4): home-dashboard light tiles — same stroke conventions as
+    // the set above (24x24 viewBox, strokeWidth 2, round caps/joins, no fills)
+    case 'pendant':
+      return (
+        <svg {...common}>
+          {/* hanging lamp: ceiling line + cord + shade trapezoid + bulb dot */}
+          <path d="M6 3h12" />
+          <path d="M12 3v7" />
+          <path d="M8 10h8l2.5 6h-13L8 10" />
+          <circle cx="12" cy="19" r="1.5" />
+        </svg>
+      )
+    case 'lamp':
+      return (
+        <svg {...common}>
+          {/* floor lamp: shade trapezoid + stem + base */}
+          <path d="M9 3h6l1.5 6h-9L9 3" />
+          <path d="M12 9v10" />
+          <path d="M8 19.5h8" />
+        </svg>
+      )
+    case 'spot':
+      return (
+        <svg {...common}>
+          {/* ceiling downlight: ceiling line + can cup + downward light rays */}
+          <path d="M7 4h10" />
+          <path d="M9 4v3l1.5 2h3L15 7V4" />
+          <path d="M12 10.5v3.5" />
+          <path d="M8 10l-1.5 3" />
+          <path d="M16 10l1.5 3" />
+        </svg>
+      )
   }
 }
