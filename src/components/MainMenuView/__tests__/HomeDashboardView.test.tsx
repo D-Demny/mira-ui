@@ -472,3 +472,111 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
     }
   })
 })
+
+// issue #57 T1: touch-input dial focus behavior — a SHORT tap reports the
+// slot's LINEAR chain index (onSlotTapped; the parent re-roots the dial on it
+// WITHOUT confirming). A real finger scroll (content movement beyond ~10 px)
+// clears the dial focus exactly ONCE per touch (onTouchScroll), fed by two
+// independent movement signals — pointermove travel and the scroller's scrollTop
+// delta (on CR69 the browser takes over the pan early, fires pointercancel and
+// stops pointermove, but the scroll event keeps firing). A plain tap or
+// sub-slop jitter never fires it.
+describe('HomeDashboardView tap + touch-scroll focus (issue #57 T1)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const entities = [
+    scene('scene.abendstimmung', 'Abendstimmung'),
+    light('light.esstisch_lampe', 'Esstisch Lampe'),
+    cover('cover.wohnzimmer', 'Wohnzimmer Rollo'),
+  ]
+
+  it('reports the LINEAR chain index of every tapped slot (scenes → lights → covers)', () => {
+    const onSlotTapped = vi.fn()
+    const onTouchScroll = vi.fn()
+    const { container } = render(
+      <HomeDashboardView entities={entities} onSlotTapped={onSlotTapped} onTouchScroll={onTouchScroll} />,
+    )
+    // 3 scene slots (1 real + 2 placeholders) + 4 light tiles + 2 cover columns:
+    // chain indices scenes 0..2, lights 3..6, covers 7..8
+    fireEvent.click(screen.getByText('Abendstimmung'))
+    expect(onSlotTapped).toHaveBeenLastCalledWith(0)
+
+    fireEvent.click(screen.getByText('Esstisch Lampe'))
+    expect(onSlotTapped).toHaveBeenLastCalledWith(3)
+
+    const coverCol = container.querySelector('[data-entity-id="cover.wohnzimmer"]') as HTMLElement
+    const upBtn = coverCol.querySelector('[data-cover-action="up"]') as HTMLElement
+    fireEvent.click(upBtn)
+    expect(onSlotTapped).toHaveBeenLastCalledWith(7)
+
+    // a plain tap is never a scroll — the taps above must not clear the focus
+    expect(onTouchScroll).not.toHaveBeenCalled()
+  })
+
+  it('fires onTouchScroll ONCE per touch when the content moves beyond slop (scrollTop delta)', () => {
+    const onTouchScroll = vi.fn()
+    const { container } = render(
+      <HomeDashboardView entities={entities} onTouchScroll={onTouchScroll} />,
+    )
+    const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
+    // pointerdown starts the session at scrollTop 0 (jsdom's real value here)
+    fireEvent.pointerDown(scroller, { clientX: 100, clientY: 100 })
+    // jsdom does not compute scroll geometry — stub the content position to
+    // simulate a real pan. This is exactly the CR69 signal: the scroll event
+    // keeps firing even after pointercancel stopped the pointermove stream.
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => 60 })
+    fireEvent.scroll(scroller)
+    expect(onTouchScroll).toHaveBeenCalledTimes(1)
+    // a further step of the SAME touch stays silent (one fire per session)
+    fireEvent.scroll(scroller)
+    expect(onTouchScroll).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onTouchScroll when the finger travels beyond slop (pointermove signal)', () => {
+    const onTouchScroll = vi.fn()
+    const { container } = render(
+      <HomeDashboardView entities={entities} onTouchScroll={onTouchScroll} />,
+    )
+    const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
+    fireEvent.pointerDown(scroller, { clientX: 100, clientY: 100 })
+    // 40 px travel > slop — marks the session moved; the scroll event commits
+    fireEvent.pointerMove(scroller, { clientX: 100, clientY: 60 })
+    fireEvent.scroll(scroller)
+    expect(onTouchScroll).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire onTouchScroll for a plain tap or sub-slop jitter', () => {
+    const onTouchScroll = vi.fn()
+    const { container } = render(
+      <HomeDashboardView entities={entities} onTouchScroll={onTouchScroll} />,
+    )
+    const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
+    fireEvent.pointerDown(scroller, { clientX: 100, clientY: 100 })
+    // under the slop in BOTH signals (jsdom scrollTop stays 0 → delta 0)
+    fireEvent.pointerMove(scroller, { clientX: 103, clientY: 102 })
+    fireEvent.scroll(scroller)
+    fireEvent.pointerUp(scroller)
+    expect(onTouchScroll).not.toHaveBeenCalled()
+  })
+
+  it('ends an abandoned session after the idle window (pointercancel without pointerup)', () => {
+    vi.useFakeTimers()
+    const onTouchScroll = vi.fn()
+    const { container } = render(
+      <HomeDashboardView entities={entities} onTouchScroll={onTouchScroll} />,
+    )
+    const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
+    fireEvent.pointerDown(scroller, { clientX: 100, clientY: 100 })
+    Object.defineProperty(scroller, 'scrollTop', { configurable: true, get: () => 40 })
+    // fires and arms the idle expiry (module constant TOUCH_SCROLL_IDLE_MS = 400)
+    fireEvent.scroll(scroller)
+    expect(onTouchScroll).toHaveBeenCalledTimes(1)
+    act(() => {
+      vi.advanceTimersByTime(400)
+    })
+    fireEvent.scroll(scroller) // the session is gone — must not re-fire
+    expect(onTouchScroll).toHaveBeenCalledTimes(1)
+  })
+})

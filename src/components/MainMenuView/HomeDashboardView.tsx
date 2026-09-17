@@ -70,6 +70,19 @@ export interface HomeDashboardViewProps {
   // keeps plain W2-2 tap behavior.
   onLightHold?: (tile: LightTileModel) => void
   onCoverHold?: (column: CoverColumnModel) => void
+  // issue #57 T1: tap → dial focus handoff — a SHORT tap on any rendered slot
+  // (placeholder included) reports that slot's LINEAR chain index (scene i;
+  // light sceneRow.length + i; cover sceneRow.length + lightGrid.length + i),
+  // so the parent can re-root the dial on it and the next turn continues from
+  // the tapped slot. Optional — without it taps keep plain W2-2 behavior
+  // (actuate only, no focus move).
+  onSlotTapped?: (index: number) => void
+  // issue #57 T1: touch-scroll → focus reset — a REAL finger scroll of the
+  // scroller (content movement beyond ~10 px; a plain tap never triggers it)
+  // fires this ONCE per touch, so the parent can clear the dial focus
+  // (focusedIndex → undefined) until the next dial tick or slot tap. Optional
+  // — without it the component's internal tracking still runs but is a no-op.
+  onTouchScroll?: () => void
 }
 
 // auto-dismiss window for the placeholder toast (~2 s)
@@ -78,6 +91,21 @@ const PLACEHOLDER_TOAST_MS = 2000
 // ticket 9.6 W2-3a: pointer movement beyond this distance cancels the hold —
 // a drag/swipe is never a hold (same value as ContentCarousel's CARD_HOLD_SLOP_PX)
 const HOLD_SLOP_PX = 10
+
+// issue #57 T1: touch movement beyond this distance counts as a real scroll
+// rather than a tap — same scale as HOLD_SLOP_PX. Two independent signals feed
+// it: pointermove travel AND the scroller's scrollTop delta (measured against
+// the pointerdown position). The second one matters because on CR69 mobile
+// the browser takes over the pan early, fires pointercancel and stops
+// delivering pointermove — but the scroll event keeps firing, so the scrollTop
+// delta is the only reliable movement signal on that path.
+const TOUCH_SCROLL_SLOP_PX = 10
+
+// issue #57 T1: a touch session expires this long after the last scroll step
+// — a pointercancel may not be followed by a pointerup for that pointer, so an
+// abandoned session must die on its own (400 ms is well past a natural
+// finger-lift and well before any deliberate dial-driven scroll follows)
+const TOUCH_SCROLL_IDLE_MS = 400
 
 // fixed icon per zone — the entity data carries no icon attribute, so each
 // zone uses one existing MenuIcon name (placeholders reuse the same icon).
@@ -95,6 +123,8 @@ export function HomeDashboardView({
   onCoverAction,
   onLightHold,
   onCoverHold,
+  onSlotTapped,
+  onTouchScroll,
 }: HomeDashboardViewProps) {
   // the zone view models — issue #48: a zone renders ONLY when at least one
   // real entity is configured for it; with zero entities the builders'
@@ -288,20 +318,112 @@ export function HomeDashboardView({
     return false
   }
 
+  // issue #57 T1: touch-scroll → focus-reset tracking. One session per touch
+  // (pointerdown on the scroller → pointerup), with TWO independent movement
+  // signals feeding TOUCH_SCROLL_SLOP_PX:
+  //   (a) pointermove travel — works while the browser hasn't taken over the
+  //       pan yet;
+  //   (b) scroller scrollTop delta vs the pointerdown position — the ONLY
+  //       signal left on CR69 mobile, where an early pointercancel stops
+  //       pointermove but the scroll event keeps firing.
+  // Exactly ONE onTouchScroll per session (`fired`). pointercancel does NOT end
+  // the session deliberately (that is precisely when signal b takes over); an
+  // idle-expiry timer kills abandoned sessions after TOUCH_SCROLL_IDLE_MS.
+  const touchScrollRef = useRef<{
+    originTop: number
+    originX: number
+    originY: number
+    moved: boolean
+    fired: boolean
+    expireTimer: number | undefined
+  } | null>(null)
+
+  // end the current session (pointerup, expiry, or unmount): clear the idle
+  // timer and mark it consumed so no later step of that touch can re-fire
+  const endTouchScrollSession = useCallback(() => {
+    const s = touchScrollRef.current
+    if (!s) return
+    if (s.expireTimer !== undefined) {
+      window.clearTimeout(s.expireTimer)
+      s.expireTimer = undefined
+    }
+    s.moved = false
+    s.fired = true
+  }, [])
+
+  // an unmount mid-session must not leave the idle timer running
+  useEffect(() => () => endTouchScrollSession(), [endTouchScrollSession])
+
+  const handleScrollerPointerDown = (e: React.PointerEvent) => {
+    const scroller = gridRef.current
+    if (!scroller) return
+    endTouchScrollSession() // a fresh press always starts a FRESH session
+    touchScrollRef.current = {
+      originTop: scroller.scrollTop,
+      originX: e.clientX,
+      originY: e.clientY,
+      moved: false,
+      fired: false,
+      expireTimer: undefined,
+    }
+  }
+
+  const handleScrollerPointerMove = (e: React.PointerEvent) => {
+    const s = touchScrollRef.current
+    if (!s || s.moved) return
+    // signal (a): finger travel beyond the slop counts as a scroll attempt
+    if (
+      Math.abs(e.clientX - s.originX) > TOUCH_SCROLL_SLOP_PX ||
+      Math.abs(e.clientY - s.originY) > TOUCH_SCROLL_SLOP_PX
+    ) {
+      s.moved = true
+    }
+  }
+
+  const handleScrollerScroll = () => {
+    const s = touchScrollRef.current
+    const scroller = gridRef.current
+    if (!s || s.fired || !scroller) return
+    // signal (b): the content itself moved beyond the slop. Only an ACTIVE
+    // session qualifies — a dial-driven scrollIntoView has no pointerdown, so
+    // it never resets the focus (that is exactly what we want: the dial must
+    // keep its focus while it walks the chain).
+    if (s.moved || Math.abs(scroller.scrollTop - s.originTop) > TOUCH_SCROLL_SLOP_PX) {
+      s.fired = true
+      onTouchScroll?.()
+    } else {
+      return // sub-slop drift (e.g. a tap jitter): stay silent
+    }
+    // refresh the idle expiry — every scroll step extends the session window,
+    // and after TOUCH_SCROLL_IDLE_MS without further steps the session dies
+    if (s.expireTimer !== undefined) window.clearTimeout(s.expireTimer)
+    s.expireTimer = window.setTimeout(() => endTouchScrollSession(), TOUCH_SCROLL_IDLE_MS)
+  }
+
+  const handleScrollerPointerUp = () => {
+    endTouchScrollSession()
+  }
+
   // short-press routing: placeholder nodes toast FIRST, then the callback
   // fires for every press (the parent skips null entityIds); real nodes just
-  // pass their model through unchanged
-  const handleSceneTap = (slot: SceneSlotModel) => {
+  // pass their model through unchanged. issue #57 T1: a SHORT tap also reports
+  // the slot's LINEAR chain index via onSlotTapped so the parent can re-root
+  // the dial there — the index is computed by the caller (each zone knows its
+  // own offset in the chain).
+  const handleSceneTap = (slot: SceneSlotModel, index: number) => {
     if (slot.isPlaceholder) showPlaceholderToast(slot.label)
     onSceneTap?.(slot)
+    onSlotTapped?.(index)
   }
-  const handleLightTap = (tile: LightTileModel) => {
+  const handleLightTap = (tile: LightTileModel, index: number) => {
     if (tile.isPlaceholder) showPlaceholderToast(tile.label)
     onLightTap?.(tile)
+    onSlotTapped?.(index)
   }
-  const handleCoverAction = (column: CoverColumnModel, direction: 'up' | 'down') => {
+  const handleCoverAction = (column: CoverColumnModel, direction: 'up' | 'down', index: number) => {
     if (column.isPlaceholder) showPlaceholderToast(column.label)
     onCoverAction?.(column, direction)
+    onSlotTapped?.(index)
   }
 
   return (
@@ -316,7 +438,18 @@ export function HomeDashboardView({
       )}
       {/* issue #45: .scroller — the dashboard's own vertical scroll port.
           Wraps ONLY the three zones below; the toast stays pinned outside it */}
-      <div className={styles.scroller} data-home-scroller="true" ref={gridRef}>
+      {/* issue #57 T1: pointer+scroll tracking on the scroller itself — a real
+          finger scroll (beyond slop, one of the two signals above) resets the
+          dial focus via onTouchScroll; a tap and a dial scroll never do */}
+      <div
+        className={styles.scroller}
+        data-home-scroller="true"
+        ref={gridRef}
+        onPointerDown={handleScrollerPointerDown}
+        onPointerMove={handleScrollerPointerMove}
+        onPointerUp={handleScrollerPointerUp}
+        onScroll={handleScrollerScroll}
+      >
         {/* Z1 — scene row (issue #48: rendered only when real scenes exist) */}
         {sceneRow.length > 0 && (
           <div className={styles.sceneRow}>
@@ -332,7 +465,8 @@ export function HomeDashboardView({
                 // attribute is omitted (a press toasts instead, see above)
                 data-entity-id={slot.entityId}
                 data-dashboard-placeholder={slot.isPlaceholder ? 'true' : undefined}
-                onClick={() => handleSceneTap(slot)}
+                // issue #57 T1: scene slots occupy chain indices 0..sceneRow
+                onClick={() => handleSceneTap(slot, i)}
               >
                 <MenuIcon name={SCENE_ICON} size={20} />
                 <span className={styles.sceneLabel}>{slot.label}</span>
@@ -365,7 +499,8 @@ export function HomeDashboardView({
               onPointerCancel={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
               onClick={() => {
                 if (isHeldClick(`light-${i}`)) return // the hold already handled it
-                handleLightTap(tile)
+                // issue #57 T1: lights start after the scene row
+                handleLightTap(tile, sceneRow.length + i)
               }}
             >
               <span className={styles.tileIcon}>
@@ -442,7 +577,8 @@ export function HomeDashboardView({
                       onPointerCancel={() => releaseHold(`cover-${i}`)}
                       onClick={() => {
                         if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                        handleCoverAction(col, 'up')
+                        // issue #57 T1: covers start after scenes + lights
+                        handleCoverAction(col, 'up', sceneRow.length + lightGrid.length + i)
                       }}
                     >
                       ^
@@ -463,7 +599,8 @@ export function HomeDashboardView({
                       onPointerCancel={() => releaseHold(`cover-${i}`)}
                       onClick={() => {
                         if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                        handleCoverAction(col, 'down')
+                        // issue #57 T1: covers start after scenes + lights
+                        handleCoverAction(col, 'down', sceneRow.length + lightGrid.length + i)
                       }}
                     >
                       v
