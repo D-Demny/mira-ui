@@ -199,6 +199,40 @@ export function buildLightGrid(lights: readonly DashboardEntity[]): LightTileMod
   return out
 }
 
+// issue #57 T4: pick the tile icon for a light grid slot (HomeDashboardView
+// Z2). Priority — (a) the carried HA icon, matched against a small family
+// table (lowercased substring, in this order so e.g. 'ceiling-light' hits the
+// spot branch BEFORE the generic light/bulb branch):
+//   contains 'floor'                      -> lamp      (mdi:lamp-floor, ...)
+//   contains 'spot' | 'ceiling' |
+//                                            'downlight'     -> spot
+//   contains 'pendant' | 'hang'           -> pendant
+//   contains 'lightbulb' | 'light'        -> bulb
+// then (b) the curated label map (lowercased), which is the practical primary
+// path for placeholder tiles that carry no HA icon at all:
+//   contains 'esstisch'                   -> pendant
+//   contains 'stehlampen' | starts with
+//                                            'stehlampe'       -> lamp
+//   contains 'flurlicht'                  -> spot
+//   contains 'treppen' | 'spot'           -> spot
+// Anything unmatched (including null icon + unknown label) falls back to the
+// bulb default — the generic light, fitting most remaining fixtures.
+export function lightMenuIcon(icon: string | null, label: string): MenuIconName {
+  if (icon !== null) {
+    const i = icon.toLowerCase()
+    if (i.includes('floor')) return 'lamp'
+    if (i.includes('spot') || i.includes('ceiling') || i.includes('downlight')) return 'spot'
+    if (i.includes('pendant') || i.includes('hang')) return 'pendant'
+    if (i.includes('lightbulb') || i.includes('light')) return 'bulb'
+  }
+  const l = label.toLowerCase()
+  if (l.includes('esstisch')) return 'pendant'
+  if (l.includes('stehlampen') || l.startsWith('stehlampe')) return 'lamp'
+  if (l.includes('flurlicht')) return 'spot'
+  if (l.includes('treppen') || l.includes('spot')) return 'spot'
+  return 'bulb'
+}
+
 // ---------------------------------------------------------------- cover section
 
 // the mockup's bottom zone: one header ("Wohnzimmer und Esszimmer" / "Rollo

@@ -12,6 +12,11 @@ export type MenuIconName =
   | 'bulb'
   | 'candle'
   | 'moon'
+  // issue #57 (T4): home-dashboard light tiles — pendant (hanging lamp), floor
+  // lamp, ceiling spot; picked per tile by lightMenuIcon() in homeDashboard.ts
+  | 'pendant'
+  | 'lamp'
+  | 'spot'
 
 export type MenuCardKind = 'media' | 'action'
 
