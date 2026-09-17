@@ -112,5 +112,17 @@ export function MenuIcon({ name, size = 24 }: MenuIconProps) {
           <path d="M16 10l1.5 3" />
         </svg>
       )
+    // issue #57 (T5): home-dashboard cover columns — same stroke conventions
+    // as the set above (24x24 viewBox, strokeWidth 2, round caps/joins, no
+    // fills). Roller blind: outer frame + three horizontal slats.
+    case 'blinds':
+      return (
+        <svg {...common}>
+          <rect x="4" y="3.5" width="16" height="17" rx="1.5" />
+          <path d="M4 9h16" />
+          <path d="M4 13.5h16" />
+          <path d="M4 18h16" />
+        </svg>
+      )
   }
 }

@@ -326,10 +326,12 @@ $light-amber: #ffc14d;
 .coverColumn {
   flex: 1 1 0;
   min-width: 0;
-  // issue #53: explicit content height — padding $s-2 x2 (16) + label line
-  // $fs-md x1.4 (19.6) + gap $s-2 (8) + button stack (32 + 8 + 32) =
-  // 115.6 -> 116px; same belt-and-braces rationale as .sceneBtn min-height.
-  min-height: 116px;
+  // issue #53/#57 T5: explicit content height — padding $s-2 x2 (16) + label
+  // line $fs-md x1.4 (19.6) + gap $s-2 (8) + control row (button stack
+  // 32 + 8 + icon 20 + 8 + 32 = 100; the slider track is 96px, so the row is
+  // 100) + gap $s-2 (8) + footer line $fs-sm x1.4 (16.8) = 168.4 -> 169px;
+  // same belt-and-braces rationale as .sceneBtn min-height.
+  min-height: 169px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -360,12 +362,15 @@ $light-amber: #ffc14d;
   @include truncate(1);
 }
 
-// the ^ / v buttons of the mockup — W2 maps these to open/close/stop calls
+// the ^ / v buttons of the mockup — W2 maps these to open/close/stop calls.
+// issue #57 T5: the blinds zone icon sits BETWEEN the two buttons in this
+// stack (inherits the secondary tint, same as the arrows)
 .coverBtns {
   display: flex;
   flex-direction: column;
   @include flex-gap-y($s-2);
   width: 40px;
+  color: $text-secondary;
 }
 
 .coverBtn {
@@ -380,6 +385,76 @@ $light-amber: #ffc14d;
   font-size: $fs-md;
   line-height: 1;
   cursor: pointer;
+}
+
+// issue #57 T5: the control row — the ^ / v stack on the LEFT and the
+// vertical position slider on the RIGHT, both centered against each other.
+// FLEX container → margin-based gap mixin (raw flex `gap` is CR69-unsafe).
+.coverRow {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
+
+// issue #57 T5: the vertical position slider — track + scale labels.
+// `align-items: stretch` stretches the (content-height) label column to the
+// track's fixed height, so space-between aligns the first/last label with the
+// track ends. No interaction on purpose: this is a DISPLAY-ONLY indicator
+// (drag = follow-up ticket if ever requested).
+.coverSlider {
+  display: flex;
+  align-items: stretch;
+  @include flex-gap-x($s-1);
+}
+
+// thick rounded track — sized to roughly match the control stack height
+// (32 + 8 + icon 20 + 8 + 32 = 100px) so the row reads as one unit
+.coverTrack {
+  position: relative;
+  width: 10px;
+  height: 96px;
+  border-radius: $r-pill;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+// the amber thumb — only rendered for KNOWN positions (JS drives `top`:
+// top-offset = (100 - positionPct)%, i.e. open(100) at the TOP, closed(0)
+// at the BOTTOM — HA cover semantics + the spec's top-to-bottom motion).
+// Reuses the local $light-amber from the light zone; translate(-50%,-50%)
+// centers it on the computed offset (CR69-safe: fixed-size element).
+.coverThumb {
+  position: absolute;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  border-radius: $r-pill;
+  background: $light-amber;
+}
+
+// the static percentage scale — small secondary labels running top→bottom
+// (100% (Auf) ... 0% (Zu)), space-between aligned to the track ends
+.coverScale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: $fs-sm;
+  line-height: 1.2;
+  color: $text-secondary;
+
+  span {
+    @include truncate(1);
+  }
+}
+
+// issue #57 T5: the exact position readout under the control row —
+// '45% Position' for a known position, 'Position –' when the cover reports
+// none (placeholders always take the null path)
+.coverStatus {
+  max-width: 100%;
+  font-size: $fs-sm;
+  color: $text-secondary;
+  @include truncate(1);
 }
 
 // -------------------------------------------------- shared state markers
