@@ -56,5 +56,29 @@ export function MenuIcon({ name, size = 24 }: MenuIconProps) {
           <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
         </svg>
       )
+    // issue #57 (T3): home-dashboard scene tiles — same stroke conventions as
+    // the set above (24x24 viewBox, strokeWidth 2, round caps/joins, no fills)
+    case 'bulb':
+      return (
+        <svg {...common}>
+          <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+          <path d="M9 18h6" />
+          <path d="M10 22h4" />
+        </svg>
+      )
+    case 'candle':
+      return (
+        <svg {...common}>
+          <path d="M12 3c1.9 1.7 2.8 3.1 2.8 4.5a2.8 2.8 0 0 1-5.6 0C9.2 6.1 10.1 4.7 12 3z" />
+          <path d="M12 10.5v1.5" />
+          <rect x="8" y="12.5" width="8" height="8.5" rx="1.5" />
+        </svg>
+      )
+    case 'moon':
+      return (
+        <svg {...common}>
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </svg>
+      )
   }
 }

@@ -1,7 +1,17 @@
 // static mock data for the Nocturne main menu layout (ticket 8.4a)
 // replaced by real API endpoints in a later epic part
 
-export type MenuIconName = 'home' | 'play' | 'playlists' | 'recent' | 'settings'
+export type MenuIconName =
+  | 'home'
+  | 'play'
+  | 'playlists'
+  | 'recent'
+  | 'settings'
+  // issue #57 (T3): home-dashboard scene tiles — bulb / candle / crescent moon,
+  // picked per slot by sceneMenuIcon() in homeDashboard.ts
+  | 'bulb'
+  | 'candle'
+  | 'moon'
 
 export type MenuCardKind = 'media' | 'action'
 

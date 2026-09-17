@@ -39,7 +39,13 @@ import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import styles from './HomeDashboardView.module.scss'
 import type { MenuIconName } from './mockData'
 import { MenuIcon } from './MenuIcon'
-import { buildCoverSection, buildLightGrid, buildSceneRow, classifyEntities } from './homeDashboard'
+import {
+  buildCoverSection,
+  buildLightGrid,
+  buildSceneRow,
+  classifyEntities,
+  sceneMenuIcon,
+} from './homeDashboard'
 import type {
   CoverColumnModel,
   DashboardEntity,
@@ -107,12 +113,11 @@ const TOUCH_SCROLL_SLOP_PX = 10
 // finger-lift and well before any deliberate dial-driven scroll follows)
 const TOUCH_SCROLL_IDLE_MS = 400
 
-// fixed icon per zone — the entity data carries no icon attribute, so each
-// zone uses one existing MenuIcon name (placeholders reuse the same icon).
-// Covers deliberately get NO zone icon: their ^ / v buttons ARE the arrows in
-// the mockup. MenuIconName has no light/arrow names, these are the closest
-// existing fits (kept dumb + consistent — W2 may refine per entity later).
-const SCENE_ICON: MenuIconName = 'home'
+// issue #57 T3: scene slots get their icon CONTEXTUALLY — sceneMenuIcon()
+// (homeDashboard.ts) maps the slot's carried HA icon onto a tile icon, with a
+// curated per-label fallback (HA scene icons are usually generic). The light
+// grid keeps one fixed zone icon; covers deliberately get NO zone icon: their
+// ^ / v buttons ARE the arrows in the mockup.
 const LIGHT_ICON: MenuIconName = 'settings'
 
 export function HomeDashboardView({
@@ -468,7 +473,8 @@ export function HomeDashboardView({
                 // issue #57 T1: scene slots occupy chain indices 0..sceneRow
                 onClick={() => handleSceneTap(slot, i)}
               >
-                <MenuIcon name={SCENE_ICON} size={20} />
+                // issue #57 T3: per-slot icon (HA icon first, then label map)
+                <MenuIcon name={sceneMenuIcon(slot.icon, slot.label)} size={20} />
                 <span className={styles.sceneLabel}>{slot.label}</span>
               </div>
             ))}

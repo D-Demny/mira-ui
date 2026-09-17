@@ -14,6 +14,7 @@ import {
   buildSceneRow,
   classifyEntities,
   clampBrightnessPct,
+  sceneMenuIcon,
 } from '../homeDashboard'
 
 // minimal DashboardEntity factory (structurally = HomeEntityView, 9.3) — the
@@ -330,5 +331,47 @@ describe('icon + position propagation (issue #57 T2)', () => {
       entity({ entityId: 'cover.ess', domain: 'cover', label: 'Ess' }),
     ])
     expect(section.columns.map((column) => column.positionPct)).toEqual([42, null])
+  })
+})
+
+describe('sceneMenuIcon (issue #57 T3)', () => {
+  it('maps HA lightbulb / light family icons to the bulb tile icon', () => {
+    expect(sceneMenuIcon('mdi:lightbulb', 'Abendstimmung')).toBe('bulb')
+    expect(sceneMenuIcon('mdi:ceiling-light', 'Licht an')).toBe('bulb')
+    expect(sceneMenuIcon('LIGHT', 'X')).toBe('bulb') // case-insensitive match
+  })
+
+  it('maps candle HA icons to the candle tile icon', () => {
+    expect(sceneMenuIcon('mdi:candle', 'Abendstimmung')).toBe('candle')
+  })
+
+  it('maps moon / night HA icons to the moon tile icon', () => {
+    expect(sceneMenuIcon('mdi:moon', 'Abendstimmung')).toBe('moon')
+    expect(sceneMenuIcon('mdi:weather-night', 'Abendstimmung')).toBe('moon')
+  })
+
+  it('falls back to the curated label map when no HA icon is carried (null)', () => {
+    expect(sceneMenuIcon(null, 'Cosy time')).toBe('candle')
+    expect(sceneMenuIcon(null, 'Betti Zeit')).toBe('moon')
+    // anything else — including the plain placeholder label — takes the bulb default
+    expect(sceneMenuIcon(null, 'Normales Licht')).toBe('bulb')
+  })
+
+  it('applies the label fallback when the HA icon is an unrelated family', () => {
+    expect(sceneMenuIcon('mdi:sofa', 'Cosy time')).toBe('candle')
+    expect(sceneMenuIcon('mdi:sofa', 'Betti Zeit')).toBe('moon')
+    expect(sceneMenuIcon('mdi:sofa', 'Abendstimmung')).toBe('bulb') // unknown -> default
+  })
+
+  it('prefers the HA icon family over the label (icon first, label second)', () => {
+    expect(sceneMenuIcon('mdi:candle', 'Betti Zeit')).toBe('candle')
+    expect(sceneMenuIcon('mdi:lightbulb', 'Cosy time')).toBe('bulb')
+  })
+
+  it('maps every placeholder label to its curated icon (no scenes configured)', () => {
+    // SCENE_PLACEHOLDER_LABELS = ['Normales Licht', 'Cosy time', 'Betti Zeit']
+    expect(sceneMenuIcon(null, SCENE_PLACEHOLDER_LABELS[0])).toBe('bulb')
+    expect(sceneMenuIcon(null, SCENE_PLACEHOLDER_LABELS[1])).toBe('candle')
+    expect(sceneMenuIcon(null, SCENE_PLACEHOLDER_LABELS[2])).toBe('moon')
   })
 })
