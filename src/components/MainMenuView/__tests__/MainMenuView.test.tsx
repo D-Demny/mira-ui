@@ -2217,6 +2217,67 @@ describe('MainMenuView', () => {
         'true',
       )
     })
+
+    it('issue #56: keeps the track sub-menu open when the play request rejects', async () => {
+      // the daemon refused the play (mode A: unresolved liked-songs context) —
+      // the pane must NOT flip to the stale 'Läuft gerade' cards. The App toasts
+      // the failure; here we only assert the view stays put.
+      const onPlay = vi.fn().mockRejectedValue(new Error('POST /player/play: 500'))
+      render(<MainMenuView onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Liked Songs')
+      fireEvent.click(screen.getByText('Liked Songs'))
+      await screen.findByText('Faded')
+      fireEvent.click(screen.getByText('Faded'))
+
+      expect(onPlay).toHaveBeenCalledTimes(1)
+      expect(onPlay).toHaveBeenCalledWith('spotify:collection:tracks', {
+        position: 0,
+        uri: 'spotify:track:lk-1',
+      })
+      // flush the rejection through the view's catch
+      await act(async () => {})
+      // still in the track sub-menu: the liked tracks are on screen and
+      // 'Läuft gerade' is NOT the current pane
+      expect(screen.getByText('Faded')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Läuft gerade' })).not.toHaveAttribute(
+        'aria-current',
+        'true',
+      )
+    })
+
+    it('issue #56: switches to Now Playing only after the play request resolves', async () => {
+      // while the play is in flight the menu stays on the track sub-menu; the
+      // pane flips when (and only when) the request settles successfully
+      let release: (() => void) | null = null
+      const pending = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const onPlay = vi.fn(() => pending)
+      render(<MainMenuView onPlay={onPlay} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
+      await screen.findByText('Liked Songs')
+      fireEvent.click(screen.getByText('Liked Songs'))
+      await screen.findByText('Faded')
+      fireEvent.click(screen.getByText('Faded'))
+
+      expect(onPlay).toHaveBeenCalledTimes(1)
+      // still in flight: no pane switch yet
+      await act(async () => {})
+      expect(screen.queryByRole('button', { name: 'Läuft gerade' })).not.toHaveAttribute(
+        'aria-current',
+        'true',
+      )
+
+      release!()
+      await act(async () => {})
+      expect(screen.getByRole('button', { name: 'Läuft gerade' })).toHaveAttribute(
+        'aria-current',
+        'true',
+      )
+    })
   })
 
   describe('bug24: dynamic artwork-based ambient background', () => {
