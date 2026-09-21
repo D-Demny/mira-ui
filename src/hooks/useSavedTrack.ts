@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchSavedState, setSavedState } from '@/api/client'
+import { clearTracksCache } from './usePlaylistTracks'
 
 export interface UseSavedTrackResult {
   saved: boolean
@@ -47,12 +48,21 @@ export function useSavedTrack(
     const next = !before
     userActedRef.current = true
     setState({ uri, saved: next }) // optimistic
-    void setSavedState(uri, next).catch((err) => {
-      console.warn('saved-state update failed', err)
-      // revert
-      setState({ uri, saved: before })
-      onError?.(next ? "Couldn't add to Liked Songs" : "Couldn't remove from Liked Songs")
-    })
+    void setSavedState(uri, next)
+      .then(() => {
+        // issue #15: the liked songs list just changed — drop the cached track
+        // lists so the next open of the submenu fetches page 0 live (unliked
+        // tracks vanish, new likes land on top). The toggle lives in the
+        // player controls, outside any track-list component, so cache
+        // invalidation is the only path available from here.
+        clearTracksCache()
+      })
+      .catch((err) => {
+        console.warn('saved-state update failed', err)
+        // revert
+        setState({ uri, saved: before })
+        onError?.(next ? "Couldn't add to Liked Songs" : "Couldn't remove from Liked Songs")
+      })
   }, [current, onError, uri])
 
   return { saved: current ?? false, ready: current !== null, toggle }

@@ -260,7 +260,8 @@ export async function fetchUserPlaylists(
   try {
     const res = await fetch(
       `${API_BASE}/web-api/me/playlists?limit=${limit}&offset=${page * limit}`,
-      { signal },
+      // issue #15: the library changes out-of-band — never serve a stored copy
+      { signal, cache: 'no-store' },
     )
     if (!res.ok) throw new Error(`web-api/me/playlists ${res.status}`)
     const body: SpotifyPlaylistResponse = (await safeJson(res)) as SpotifyPlaylistResponse
@@ -310,7 +311,9 @@ export async function fetchSavedTracks(
 ): Promise<SpotifyPlaylistTracksResponse> {
   try {
     const res = await fetch(`${API_BASE}/web-api/me/tracks?limit=${limit}&offset=${offset}`, {
+      // issue #15: the library changes out-of-band — never serve a stored copy
       signal,
+      cache: 'no-store',
     })
     if (!res.ok) throw new Error(`web-api/me/tracks ${res.status}`)
     const body: SpotifyPlaylistTracksResponse = (await safeJson(

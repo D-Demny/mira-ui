@@ -347,6 +347,126 @@ describe('usePlaylistTracks', () => {
     expect(requests).toBe(2)
     secondUnmount()
   })
+
+  // issue #15: the liked library is edited from other devices while this
+  // session holds a warm cache — every open must revalidate page 0 live, and
+  // the fresh page 0 is authoritative for its own window. Normal playlists
+  // keep the bug7 TTL-hit + bug37 merge semantics untouched.
+  it('issue #15: a warm (<TTL) liked cache still revalidates page 0 on open; a warm normal cache does not', async () => {
+    let savedRequests = 0
+    let playlistRequests = 0
+    server.use(
+      http.get('*/web-api/me/tracks', ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        savedRequests++
+        return trackPage('liked', offset, 3) // complete (< PAGE): no lazy tail
+      }),
+      http.get('*/web-api/playlists/pl-1/tracks', ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        playlistRequests++
+        return trackPage('pl-1', offset, 2) // complete: no lazy tail
+      }),
+    )
+
+    // warm both caches
+    const { result: likedFirst, unmount: likedFirstUnmount } = renderHook(() =>
+      usePlaylistTracks(LIKED_SONGS_ID),
+    )
+    await waitFor(() => expect(likedFirst.current.loading).toBe(false))
+    likedFirstUnmount()
+    const { result: plFirst, unmount: plFirstUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
+    await waitFor(() => expect(plFirst.current.loading).toBe(false))
+    plFirstUnmount()
+    expect(savedRequests).toBe(1)
+    expect(playlistRequests).toBe(1)
+
+    // re-open within the TTL: the liked list fetches page 0 live (cached
+    // content renders first, no loading flash); the normal playlist is a pure
+    // cache hit, exactly as before
+    const { result: likedAgain, unmount: likedAgainUnmount } = renderHook(() =>
+      usePlaylistTracks(LIKED_SONGS_ID),
+    )
+    expect(likedAgain.current.loading).toBe(false)
+    await waitFor(() => expect(savedRequests).toBe(2))
+    expect(likedAgain.current.tracks).toHaveLength(3)
+    likedAgainUnmount()
+
+    const { result: plAgain, unmount: plAgainUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
+    expect(plAgain.current.loading).toBe(false)
+    await act(async () => {})
+    expect(playlistRequests).toBe(1)
+    expect(plAgain.current.tracks).toHaveLength(2)
+    plAgainUnmount()
+  })
+
+  it('issue #15: a fresh liked page 0 is authoritative — new likes on top, unliked tracks drop, deep tail survives', async () => {
+    // the "server" library changes between the two opens: N1 gets liked (new
+    // head), liked-2 gets unliked; everything else stays put (55 total)
+    const fullAfter = [
+      'N1',
+      'liked-0',
+      'liked-1',
+      ...Array.from({ length: 46 }, (_, i) => `liked-${i + 3}`), // liked-3..liked-48
+      ...Array.from({ length: 6 }, (_, i) => `liked-${i + 49}`), // liked-49..liked-54
+    ]
+    const pageAfter = (offset: number) => ({
+      items: fullAfter.slice(offset, offset + PAGE).map((id) => ({
+        is_local: false,
+        track: {
+          id,
+          name: `Track ${id}`,
+          uri: `spotify:track:${id}`,
+          artists: [{ name: 'Someone' }],
+        },
+      })),
+      total: fullAfter.length,
+      limit: PAGE,
+      offset,
+      next: null,
+    })
+    let mutated = false
+    let savedRequests = 0
+    server.use(
+      http.get('*/web-api/me/tracks', ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        savedRequests++
+        return mutated ? HttpResponse.json(pageAfter(offset)) : trackPage('liked', offset, 55)
+      }),
+    )
+
+    // first open: load the full list (page 0 + one more page)
+    const { result: firstResult, unmount: firstUnmount } = renderHook(() =>
+      usePlaylistTracks(LIKED_SONGS_ID),
+    )
+    await waitFor(() => expect(firstResult.current.loading).toBe(false))
+    act(() => {
+      firstResult.current.loadMore()
+    })
+    await waitFor(() => expect(firstResult.current.tracks).toHaveLength(55))
+    firstUnmount()
+
+    // the library changes; re-open within the TTL (the issue #15 bypass)
+    mutated = true
+    const { result: againResult, unmount: againUnmount } = renderHook(() =>
+      usePlaylistTracks(LIKED_SONGS_ID),
+    )
+    // cache-first: the old list renders instantly, no loading flash...
+    expect(againResult.current.loading).toBe(false)
+    expect(againResult.current.tracks).toHaveLength(55)
+
+    // ...then the live page 0 swap lands: N1 on top, liked-2 gone (it was in
+    // the previous page-0 window and is absent from the fresh data), deep
+    // tail liked-50..54 preserved in order; total met → no tail refetch
+    await waitFor(() => expect(againResult.current.tracks[0].id).toBe('N1'))
+    const ids = againResult.current.tracks.map((t) => t.id)
+    expect(ids).not.toContain('liked-2')
+    expect(ids.slice(-5)).toEqual(['liked-50', 'liked-51', 'liked-52', 'liked-53', 'liked-54'])
+    expect(againResult.current.tracks).toHaveLength(55)
+    expect(againResult.current.total).toBe(55)
+    // exactly one revalidation fetch — no multi-page storm (rate-limit bound)
+    expect(savedRequests).toBe(3)
+    againUnmount()
+  })
 })
 
 describe('usePlaylistTracks — bug45 option C cache bounds', () => {
@@ -404,26 +524,20 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
 
     // pl-2 and pl-33 are still cached: instant, no network (checked before
     // re-opening pl-1, whose cold-miss write would evict pl-2 in turn)
-    const { result: second, unmount: secondUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-2'),
-    )
+    const { result: second, unmount: secondUnmount } = renderHook(() => usePlaylistTracks('pl-2'))
     expect(second.current.loading).toBe(false)
     await act(async () => {})
     expect(requests['pl-2']).toBe(1)
     secondUnmount()
 
-    const { result: newest, unmount: newestUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-33'),
-    )
+    const { result: newest, unmount: newestUnmount } = renderHook(() => usePlaylistTracks('pl-33'))
     expect(newest.current.loading).toBe(false)
     await act(async () => {})
     expect(requests['pl-33']).toBe(1)
     newestUnmount()
 
     // pl-1 is gone: re-opening it is a cold miss
-    const { result: first, unmount: firstUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-1'),
-    )
+    const { result: first, unmount: firstUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(first.current.loading).toBe(true)
     await waitFor(() => expect(requests['pl-1']).toBe(2))
     firstUnmount()
@@ -453,9 +567,7 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
 
     // re-open pl-1 (fresh but partial): the lazy tail resume writes the entry
     // and bumps it to newest (order becomes pl-2..pl-32, pl-1)
-    const { result: p1again, unmount: p1AgainUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-1'),
-    )
+    const { result: p1again, unmount: p1AgainUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(p1again.current.loading).toBe(false) // cache-first: instant
     await waitFor(() => expect(p1again.current.tracks).toHaveLength(60))
     p1AgainUnmount()
@@ -468,9 +580,7 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     expect(__playlistTracksCacheStats().entries).toBe(MAX_CACHED_PLAYLISTS)
 
     // pl-1 and pl-33 survived (instant, no further network)
-    const { result: p1check, unmount: p1CheckUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-1'),
-    )
+    const { result: p1check, unmount: p1CheckUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(p1check.current.loading).toBe(false)
     await act(async () => {})
     expect(requests['pl-1']).toBe(2)
@@ -484,9 +594,7 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     p33CheckUnmount()
 
     // pl-2 was evicted: re-opening it is a cold miss
-    const { result: p2check, unmount: p2CheckUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-2'),
-    )
+    const { result: p2check, unmount: p2CheckUnmount } = renderHook(() => usePlaylistTracks('pl-2'))
     expect(p2check.current.loading).toBe(true)
     await waitFor(() => expect(requests['pl-2']).toBe(2))
     p2CheckUnmount()
@@ -516,9 +624,7 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     expect(__playlistTracksCacheStats().entries).toBe(1)
 
     // pl-1 is gone: re-opening it is a cold miss
-    const { result: r1again, unmount: r1AgainUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-1'),
-    )
+    const { result: r1again, unmount: r1AgainUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(r1again.current.loading).toBe(true)
     await waitFor(() => expect(requests['pl-1']).toBe(2))
     r1AgainUnmount()
@@ -570,9 +676,7 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     // both go stale; re-open pl-1
     now += 5 * 60 * 1000 + 1
     edited = true
-    const { result: r1again, unmount: r1AgainUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-1'),
-    )
+    const { result: r1again, unmount: r1AgainUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     // bug37: the stale entry renders instantly, no loading flash
     expect(r1again.current.loading).toBe(false)
     expect(r1again.current.tracks).toHaveLength(1)
@@ -585,17 +689,13 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     r1AgainUnmount()
 
     // pl-2 is gone: re-opening it is a cold miss
-    const { result: r2again, unmount: r2AgainUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-2'),
-    )
+    const { result: r2again, unmount: r2AgainUnmount } = renderHook(() => usePlaylistTracks('pl-2'))
     expect(r2again.current.loading).toBe(true)
     await waitFor(() => expect(requests['pl-2']).toBe(2))
     r2AgainUnmount()
 
     // pl-1 is fresh now: a re-open is an instant hit, no further network
-    const { result: r1fresh, unmount: r1FreshUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-1'),
-    )
+    const { result: r1fresh, unmount: r1FreshUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(r1fresh.current.loading).toBe(false)
     expect(r1fresh.current.tracks[0].name).toBe('Track 0 (edited)')
     await act(async () => {})
@@ -642,9 +742,7 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     // re-open within the TTL: the capped entry is served instantly (300
     // tracks, exact total) and the deep tail is re-fetched on demand — the
     // same cost class the 5-min TTL already imposes
-    const { result: again, unmount: againUnmount } = renderHook(() =>
-      usePlaylistTracks('pl-1'),
-    )
+    const { result: again, unmount: againUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(again.current.loading).toBe(false)
     expect(again.current.tracks).toHaveLength(300)
     expect(again.current.total).toBe(TOTAL)

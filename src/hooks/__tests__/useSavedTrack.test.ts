@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { useSavedTrack } from '../useSavedTrack'
+import {
+  LIKED_SONGS_ID,
+  __playlistTracksCacheStats,
+  clearTracksCache,
+  usePlaylistTracks,
+} from '../usePlaylistTracks'
 import { server } from '../../__tests__/msw-server'
 
 describe('useSavedTrack', () => {
@@ -89,5 +95,78 @@ describe('useSavedTrack', () => {
     expect(result.current.saved).toBe(false)
     expect(result.current.ready).toBe(false)
     expect(hits).toBe(0)
+  })
+
+  it('issue #15: a successful save toggle clears the track cache, so the next liked-list open refetches', async () => {
+    clearTracksCache()
+    let savedRequests = 0
+    const posts: Array<{ uri: string; saved: boolean }> = []
+    server.use(
+      http.get('*/web-api/me/tracks', ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        savedRequests++
+        return HttpResponse.json({
+          items: [
+            {
+              is_local: false,
+              track: {
+                id: 'liked-0',
+                name: 'T0',
+                uri: 'spotify:track:liked-0',
+                artists: [{ name: 'Someone' }],
+              },
+            },
+            {
+              is_local: false,
+              track: {
+                id: 'liked-1',
+                name: 'T1',
+                uri: 'spotify:track:liked-1',
+                artists: [{ name: 'Someone' }],
+              },
+            },
+          ],
+          total: 2,
+          limit: 50,
+          offset,
+          next: null,
+        })
+      }),
+      http.get('*/player/saved', () => HttpResponse.json({ saved: true })),
+      http.post('*/player/saved', async ({ request }) => {
+        posts.push((await request.json()) as { uri: string; saved: boolean })
+        return HttpResponse.json({ saved: false })
+      }),
+    )
+
+    // seed the liked list cache (2 < 50 → complete list, no lazy tail)
+    const { result: likedResult, unmount: likedUnmount } = renderHook(() =>
+      usePlaylistTracks(LIKED_SONGS_ID),
+    )
+    await waitFor(() => expect(likedResult.current.loading).toBe(false))
+    expect(savedRequests).toBe(1)
+    expect(__playlistTracksCacheStats().entries).toBe(1)
+    likedUnmount()
+
+    // unlike the currently playing track from the player controls
+    const { result: saved, unmount: savedUnmount } = renderHook(() =>
+      useSavedTrack('spotify:track:t1'),
+    )
+    await waitFor(() => expect(saved.current.ready).toBe(true))
+    act(() => saved.current.toggle())
+    await waitFor(() => expect(posts).toEqual([{ uri: 'spotify:track:t1', saved: false }]))
+    savedUnmount()
+
+    // the successful toggle invalidated the cached liked list...
+    await waitFor(() => expect(__playlistTracksCacheStats().entries).toBe(0))
+
+    // ...so the next open is a cold fetch again (proves invalidation even
+    // though the issue #15 bypass would also refetch a warm entry)
+    const { result: again, unmount: againUnmount } = renderHook(() =>
+      usePlaylistTracks(LIKED_SONGS_ID),
+    )
+    await waitFor(() => expect(again.current.loading).toBe(false))
+    expect(savedRequests).toBe(2)
+    againUnmount()
   })
 })
