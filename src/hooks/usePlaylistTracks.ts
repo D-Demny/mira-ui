@@ -251,28 +251,18 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
     const entry = cache.get(playlistId)
     // bug45 option C: the read path bounds the cache too — every other entry
     // older than the TTL is dropped now (the requested entry is excepted: it
-    // is either served or silently revalidated, which refreshes its fetchedAt)
+    // is served below and silently revalidated, which refreshes its fetchedAt)
     evictStale(playlistId)
-    // issue #15: the Liked Songs library is edited from any device at any
-    // time (likes, unlikes), so a warm <TTL entry would serve a stale list —
-    // the liked id revalidates page 0 on every open. Normal playlists keep
-    // the exact 5-minute cache-hit behavior (bug7).
-    const bypassTtl = playlistId === LIKED_SONGS_ID
-    const fresh = !bypassTtl && entry !== undefined && Date.now() - entry.fetchedAt < CACHE_TTL_MS
-    if (fresh) {
-      listRef.current = entry.tracks
-      totalRef.current = entry.total
-      setTracks(entry.tracks)
-      setTotal(entry.total)
-      setError(null)
-      // resume lazy loading if the cached list is incomplete
-      if (entry.total > 0 && entry.tracks.length < entry.total) {
-        void appendPage(playlistId, entry.tracks.length, false)
-      }
-      return
-    }
-    // bug37: cache-first on a STALE entry — the cached list renders instantly
-    // and page 0 is revalidated silently in the background
+    // issue #15 (liked only) → issue #56 (T14, generalized): every playlist —
+    // Liked Songs AND normal playlists alike — is edited out-of-band from any
+    // device at any time (likes, unlikes, tracks added or removed), so a warm
+    // <TTL entry would serve a stale list. EVERY open therefore revalidates
+    // page 0 live: the cached list renders instantly (no 'Lade…' flash) and
+    // the fresh page 0 merges back silently on arrival — the bug37
+    // keep-everything-else merge for normal playlists, replace semantics for
+    // liked. A failed revalidation keeps the stale list on screen, exactly as
+    // before. The 5-minute TTL still bounds how long fetched tails are KEPT
+    // in the cache (bug7); it no longer suppresses the per-open revalidation.
     if (entry && entry.tracks.length > 0) {
       listRef.current = entry.tracks
       totalRef.current = entry.total

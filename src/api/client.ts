@@ -283,7 +283,8 @@ export async function fetchPlaylistTracks(
   try {
     const res = await fetch(
       `${API_BASE}/web-api/playlists/${encodeURIComponent(playlistId)}/tracks?limit=${limit}&offset=${offset}`,
-      { signal },
+      // issue #15/#56: the library changes out-of-band — never serve a stored copy
+      { signal, cache: 'no-store' },
     )
     if (!res.ok) throw new Error(`web-api/playlists/${playlistId}/tracks ${res.status}`)
     const body: SpotifyPlaylistTracksResponse = (await safeJson(

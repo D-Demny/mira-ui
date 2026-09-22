@@ -116,7 +116,7 @@ describe('usePlaylistTracks', () => {
     expect(requests).toBe(2)
   })
 
-  it('serves a previously viewed playlist from the cache within 5 minutes (bug7)', async () => {
+  it('bug7+#56: re-opening a warm (<TTL) playlist renders the cache instantly and revalidates page 0 silently', async () => {
     let requests = 0
     server.use(
       http.get('*/web-api/playlists/pl-1/tracks', ({ request }) => {
@@ -134,12 +134,15 @@ describe('usePlaylistTracks', () => {
     expect(requests).toBe(1)
     firstUnmount()
 
-    // re-open the same playlist: instant, no network
+    // re-open the same playlist within the TTL: the cached list renders
+    // instantly (no loading flash) and page 0 is revalidated silently in the
+    // background — one extra live fetch, no cold reload (#56)
     const { result: secondResult, unmount: secondUnmount } = renderHook(() =>
       usePlaylistTracks('pl-1'),
     )
-    await waitFor(() => expect(secondResult.current.tracks).toHaveLength(2))
-    expect(requests).toBe(1)
+    expect(secondResult.current.loading).toBe(false)
+    expect(secondResult.current.tracks).toHaveLength(2)
+    await waitFor(() => expect(requests).toBe(2))
     secondUnmount()
   })
 
@@ -337,22 +340,24 @@ describe('usePlaylistTracks', () => {
     expect(firstResult.current.tracks).toHaveLength(50)
     firstUnmount()
 
-    // re-open within the TTL: the cached page arrives instantly, the missing
-    // tail is fetched in the background
+    // re-open within the TTL: the cached page arrives instantly, then the
+    // per-open page-0 revalidation (#56) lands and the missing tail resumes
     const { result: secondResult, unmount: secondUnmount } = renderHook(() =>
       usePlaylistTracks('pl-1'),
     )
     await waitFor(() => expect(secondResult.current.tracks).toHaveLength(50))
     await waitFor(() => expect(secondResult.current.tracks).toHaveLength(60))
-    expect(requests).toBe(2)
+    // 1st open + page-0 revalidation + lazy tail resume
+    expect(requests).toBe(3)
     secondUnmount()
   })
 
-  // issue #15: the liked library is edited from other devices while this
-  // session holds a warm cache — every open must revalidate page 0 live, and
-  // the fresh page 0 is authoritative for its own window. Normal playlists
-  // keep the bug7 TTL-hit + bug37 merge semantics untouched.
-  it('issue #15: a warm (<TTL) liked cache still revalidates page 0 on open; a warm normal cache does not', async () => {
+  // issue #15 → issue #56 (T14): the library (liked AND normal playlists) is
+  // edited from other devices while this session holds a warm cache — every
+  // open of EVERY playlist must revalidate page 0 live. The 5-minute TTL
+  // still bounds how long fetched tails are kept in the cache (bug7), but it
+  // no longer suppresses the per-open revalidation.
+  it('issue #15/#56: a warm (<TTL) cache revalidates page 0 on open for liked AND normal playlists', async () => {
     let savedRequests = 0
     let playlistRequests = 0
     server.use(
@@ -380,9 +385,9 @@ describe('usePlaylistTracks', () => {
     expect(savedRequests).toBe(1)
     expect(playlistRequests).toBe(1)
 
-    // re-open within the TTL: the liked list fetches page 0 live (cached
-    // content renders first, no loading flash); the normal playlist is a pure
-    // cache hit, exactly as before
+    // re-open within the TTL: BOTH lists fetch their page 0 live (cached
+    // content renders first, no loading flash) — liked via me/tracks, the
+    // normal playlist via playlists/<id>/tracks (#56)
     const { result: likedAgain, unmount: likedAgainUnmount } = renderHook(() =>
       usePlaylistTracks(LIKED_SONGS_ID),
     )
@@ -393,10 +398,73 @@ describe('usePlaylistTracks', () => {
 
     const { result: plAgain, unmount: plAgainUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(plAgain.current.loading).toBe(false)
-    await act(async () => {})
-    expect(playlistRequests).toBe(1)
+    await waitFor(() => expect(playlistRequests).toBe(2))
     expect(plAgain.current.tracks).toHaveLength(2)
     plAgainUnmount()
+  })
+
+  it('issue #56: a NON-liked playlist open triggers a fresh page-0 fetch within the TTL (bug37 merge applies)', async () => {
+    let requests = 0
+    let edited = false
+    server.use(
+      http.get('*/web-api/playlists/pl-9/tracks', ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        requests++
+        if (edited && offset === 0) {
+          // the playlist head was edited out-of-band: track 0 got a new name
+          return HttpResponse.json({
+            items: [
+              {
+                is_local: false,
+                track: {
+                  id: 'pl-9-0',
+                  name: 'Track 0 (new)',
+                  uri: 'spotify:track:pl-9-0',
+                  artists: [{ name: 'Someone' }],
+                },
+              },
+              {
+                is_local: false,
+                track: {
+                  id: 'pl-9-1',
+                  name: 'Track 1',
+                  uri: 'spotify:track:pl-9-1',
+                  artists: [{ name: 'Someone' }],
+                },
+              },
+            ],
+            total: 2,
+            limit: PAGE,
+            offset: 0,
+            next: null,
+          })
+        }
+        return trackPage('pl-9', offset, 2)
+      }),
+    )
+
+    const { result: firstResult, unmount: firstUnmount } = renderHook(() =>
+      usePlaylistTracks('pl-9'),
+    )
+    await waitFor(() => expect(firstResult.current.loading).toBe(false))
+    expect(requests).toBe(1)
+    firstUnmount()
+
+    // the playlist changes; re-open WITHIN the TTL — no expiry involved, so
+    // only the #56 per-open revalidation can pick up the new head
+    edited = true
+    const { result: againResult, unmount: againUnmount } = renderHook(() =>
+      usePlaylistTracks('pl-9'),
+    )
+    // cache-first: the old list renders instantly, no loading flash
+    expect(againResult.current.loading).toBe(false)
+    expect(againResult.current.tracks[0].name).toBe('Track 0')
+
+    // the live page-0 fetch lands and the bug37 merge updates the head
+    await waitFor(() => expect(againResult.current.tracks[0].name).toBe('Track 0 (new)'))
+    expect(againResult.current.tracks).toHaveLength(2)
+    expect(requests).toBe(2)
+    againUnmount()
   })
 
   it('issue #15: a fresh liked page 0 is authoritative — new likes on top, unliked tracks drop, deep tail survives', async () => {
@@ -522,18 +590,18 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     expect(stats.entries).toBe(MAX_CACHED_PLAYLISTS)
     expect(stats.tracks).toBe(MAX_CACHED_PLAYLISTS)
 
-    // pl-2 and pl-33 are still cached: instant, no network (checked before
-    // re-opening pl-1, whose cold-miss write would evict pl-2 in turn)
+    // pl-2 and pl-33 are still cached: instant render, no loading flash
+    // (checked before re-opening pl-1, whose cold-miss write would evict pl-2
+    // in turn); the per-open page-0 revalidation (#56) lands silently right
+    // after
     const { result: second, unmount: secondUnmount } = renderHook(() => usePlaylistTracks('pl-2'))
     expect(second.current.loading).toBe(false)
-    await act(async () => {})
-    expect(requests['pl-2']).toBe(1)
+    await waitFor(() => expect(requests['pl-2']).toBe(2))
     secondUnmount()
 
     const { result: newest, unmount: newestUnmount } = renderHook(() => usePlaylistTracks('pl-33'))
     expect(newest.current.loading).toBe(false)
-    await act(async () => {})
-    expect(requests['pl-33']).toBe(1)
+    await waitFor(() => expect(requests['pl-33']).toBe(2))
     newestUnmount()
 
     // pl-1 is gone: re-opening it is a cold miss
@@ -579,18 +647,17 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     p33Unmount()
     expect(__playlistTracksCacheStats().entries).toBe(MAX_CACHED_PLAYLISTS)
 
-    // pl-1 and pl-33 survived (instant, no further network)
+    // pl-1 and pl-33 survived (instant render; the per-open page-0
+    // revalidation, #56, bumps each counter once per open)
     const { result: p1check, unmount: p1CheckUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(p1check.current.loading).toBe(false)
-    await act(async () => {})
-    expect(requests['pl-1']).toBe(2)
+    await waitFor(() => expect(requests['pl-1']).toBe(4))
     p1CheckUnmount()
     const { result: p33check, unmount: p33CheckUnmount } = renderHook(() =>
       usePlaylistTracks('pl-33'),
     )
     expect(p33check.current.loading).toBe(false)
-    await act(async () => {})
-    expect(requests['pl-33']).toBe(1)
+    await waitFor(() => expect(requests['pl-33']).toBe(2))
     p33CheckUnmount()
 
     // pl-2 was evicted: re-opening it is a cold miss
@@ -694,12 +761,12 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     await waitFor(() => expect(requests['pl-2']).toBe(2))
     r2AgainUnmount()
 
-    // pl-1 is fresh now: a re-open is an instant hit, no further network
+    // pl-1 is fresh now: a re-open renders instantly and fires one more
+    // silent page-0 revalidation (#56), no cold reload
     const { result: r1fresh, unmount: r1FreshUnmount } = renderHook(() => usePlaylistTracks('pl-1'))
     expect(r1fresh.current.loading).toBe(false)
     expect(r1fresh.current.tracks[0].name).toBe('Track 0 (edited)')
-    await act(async () => {})
-    expect(requests['pl-1']).toBe(2)
+    await waitFor(() => expect(requests['pl-1']).toBe(3))
     r1FreshUnmount()
     nowSpy.mockRestore()
   })
