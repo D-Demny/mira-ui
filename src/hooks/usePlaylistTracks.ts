@@ -85,8 +85,7 @@ function evictOldest(): void {
 // MAX_TRACKS_PER_ENTRY tracks per entry (total stays exact), bumps the key to
 // newest, then enforces the TTL and the count bound.
 function storeInCache(id: string, tracks: SpotifyPlaylistTrack[], total: number): void {
-  const kept =
-    tracks.length > MAX_TRACKS_PER_ENTRY ? tracks.slice(0, MAX_TRACKS_PER_ENTRY) : tracks
+  const kept = tracks.length > MAX_TRACKS_PER_ENTRY ? tracks.slice(0, MAX_TRACKS_PER_ENTRY) : tracks
   cache.delete(id)
   cache.set(id, { tracks: kept, total, fetchedAt: Date.now() })
   evictStale(id)
@@ -125,55 +124,52 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
   const inFlightRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
 
-  const appendPage = useCallback(
-    async (id: string, offset: number, isInitial: boolean) => {
-      if (inFlightRef.current) return
-      inFlightRef.current = true
-      abortRef.current?.abort()
-      const controller = new AbortController()
-      abortRef.current = controller
-      if (isInitial) {
-        setLoading(true)
-        setError(null)
-      } else {
-        setLoadingMore(true)
+  const appendPage = useCallback(async (id: string, offset: number, isInitial: boolean) => {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    if (isInitial) {
+      setLoading(true)
+      setError(null)
+    } else {
+      setLoadingMore(true)
+    }
+    try {
+      // bug22: Liked Songs pages from me/tracks, everything else from playlists/<id>/tracks
+      const page =
+        id === LIKED_SONGS_ID
+          ? await fetchSavedTracks(offset, PAGE_SIZE, controller.signal)
+          : await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
+      if (controller.signal.aborted) return
+      const seen = new Set(listRef.current.map((track) => track.id))
+      const next = [...listRef.current]
+      for (const item of page.items) {
+        const track = item.track
+        if (!track || seen.has(track.id)) continue
+        seen.add(track.id)
+        next.push(track)
       }
-      try {
-        // bug22: Liked Songs pages from me/tracks, everything else from playlists/<id>/tracks
-        const page =
-          id === LIKED_SONGS_ID
-            ? await fetchSavedTracks(offset, PAGE_SIZE, controller.signal)
-            : await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
-        if (controller.signal.aborted) return
-        const seen = new Set(listRef.current.map((track) => track.id))
-        const next = [...listRef.current]
-        for (const item of page.items) {
-          const track = item.track
-          if (!track || seen.has(track.id)) continue
-          seen.add(track.id)
-          next.push(track)
-        }
-        listRef.current = next
-        totalRef.current = Math.max(page.total, next.length)
-        storeInCache(id, next, totalRef.current)
-        setTracks(next)
-        setTotal(totalRef.current)
-      } catch (err: unknown) {
-        if (!controller.signal.aborted) {
-          const message = err instanceof Error ? err.message : 'Failed to load playlist tracks'
-          console.warn('usePlaylistTracks error:', message)
-          setError(message)
-        }
-      } finally {
-        inFlightRef.current = false
-        if (!controller.signal.aborted) {
-          setLoading(false)
-          setLoadingMore(false)
-        }
+      listRef.current = next
+      totalRef.current = Math.max(page.total, next.length)
+      storeInCache(id, next, totalRef.current)
+      setTracks(next)
+      setTotal(totalRef.current)
+    } catch (err: unknown) {
+      if (!controller.signal.aborted) {
+        const message = err instanceof Error ? err.message : 'Failed to load playlist tracks'
+        console.warn('usePlaylistTracks error:', message)
+        setError(message)
       }
-    },
-    [],
-  )
+    } finally {
+      inFlightRef.current = false
+      if (!controller.signal.aborted) {
+        setLoading(false)
+        setLoadingMore(false)
+      }
+    }
+  }, [])
 
   // bug37: silent revalidation of a STALE cached list — fetches page 0 in the
   // background WITHOUT touching the loading flags (the stale list stays
@@ -202,7 +198,15 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
           seen.add(track.id)
           freshTracks.push(track)
         }
-        const tail = listRef.current.filter((track) => !seen.has(track.id))
+        // issue #15 (liked only): the fresh page 0 is authoritative for its
+        // own window — only tracks loaded BEYOND the previous first page may
+        // survive the merge, so unliked or bumped-out page-0 tracks drop out
+        // instead of resurfacing from the tail. Normal playlists keep the
+        // original keep-everything-else merge (bug37).
+        const tail =
+          id === LIKED_SONGS_ID
+            ? listRef.current.slice(PAGE_SIZE).filter((track) => !seen.has(track.id))
+            : listRef.current.filter((track) => !seen.has(track.id))
         const next = [...freshTracks, ...tail]
         listRef.current = next
         totalRef.current = Math.max(page.total, next.length)
@@ -247,23 +251,18 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
     const entry = cache.get(playlistId)
     // bug45 option C: the read path bounds the cache too — every other entry
     // older than the TTL is dropped now (the requested entry is excepted: it
-    // is either served or silently revalidated, which refreshes its fetchedAt)
+    // is served below and silently revalidated, which refreshes its fetchedAt)
     evictStale(playlistId)
-    const fresh = entry && Date.now() - entry.fetchedAt < CACHE_TTL_MS
-    if (fresh) {
-      listRef.current = entry.tracks
-      totalRef.current = entry.total
-      setTracks(entry.tracks)
-      setTotal(entry.total)
-      setError(null)
-      // resume lazy loading if the cached list is incomplete
-      if (entry.total > 0 && entry.tracks.length < entry.total) {
-        void appendPage(playlistId, entry.tracks.length, false)
-      }
-      return
-    }
-    // bug37: cache-first on a STALE entry — the cached list renders instantly
-    // and page 0 is revalidated silently in the background
+    // issue #15 (liked only) → issue #56 (T14, generalized): every playlist —
+    // Liked Songs AND normal playlists alike — is edited out-of-band from any
+    // device at any time (likes, unlikes, tracks added or removed), so a warm
+    // <TTL entry would serve a stale list. EVERY open therefore revalidates
+    // page 0 live: the cached list renders instantly (no 'Lade…' flash) and
+    // the fresh page 0 merges back silently on arrival — the bug37
+    // keep-everything-else merge for normal playlists, replace semantics for
+    // liked. A failed revalidation keeps the stale list on screen, exactly as
+    // before. The 5-minute TTL still bounds how long fetched tails are KEPT
+    // in the cache (bug7); it no longer suppresses the per-open revalidation.
     if (entry && entry.tracks.length > 0) {
       listRef.current = entry.tracks
       totalRef.current = entry.total

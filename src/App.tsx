@@ -619,12 +619,20 @@ function AppInner() {
     setUpdateCardOpen(false)
   }, [])
 
-  // start playback from the main menu → stay in the menu, it switches to 'Läuft gerade'
+  // start playback from the main menu → stay in the menu, it switches to
+  // 'Läuft gerade' once the play actually started (issue #56)
   const onPlayFromMenu = useCallback(
-    (uri: string, offset?: PlayOffset) => {
-      void Promise.resolve(playContext(uri, offset)).catch(() => {})
+    (uri: string, offset?: PlayOffset): Promise<void> => {
+      // issue #56: a refused/failed play used to die in a silent `.catch(() => {})`
+      // while the menu had already optimistically switched panes — old cards on
+      // screen, zero feedback. Toast like the preset buttons do, and keep the
+      // rejection so the menu can defer its pane switch until success.
+      return playContext(uri, offset).catch((error: unknown) => {
+        notify("Couldn't start playback", { variant: 'error' })
+        throw error
+      })
     },
-    [playContext],
+    [playContext, notify],
   )
   useEffect(() => {
     if (updateCardOpen && realStatus?.active === true) setUpdateCardOpen(false)

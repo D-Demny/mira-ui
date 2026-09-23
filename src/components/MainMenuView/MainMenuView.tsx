@@ -278,8 +278,9 @@ const PREDECODE_RADIUS = 20
 export interface MainMenuViewProps {
   // starts playback for a media card uri; an optional offset starts a context
   // at a specific track (playlist track sub-menu); the view stays open and
-  // switches to 'Läuft gerade'
-  onPlay?: (uri: string, offset?: PlayOffset) => void
+  // switches to 'Läuft gerade' — issue #56: only AFTER the play request
+  // resolves, so pass a promise (the App's onPlayFromMenu does)
+  onPlay?: (uri: string, offset?: PlayOffset) => void | Promise<void>
   // live player status so the 'Läuft gerade' pane can show current track + queue
   nowPlaying?: ObserverStatusActive | null
   // close the menu and return to the player (card 0 of the 'Läuft gerade'
@@ -807,6 +808,25 @@ export function MainMenuView({
     return true
   }
 
+  // issue #56: start playback and switch to the 'Läuft gerade' pane ONLY once
+  // the play request succeeded. The old code switched optimistically before
+  // the daemon confirmed, so a refused play (e.g. an unresolved Liked Songs
+  // context) left the previous queue's cards on screen — and the caller
+  // swallowed the rejection without user feedback. A failed play is toasted
+  // by the App's onPlayFromMenu; the no-op catch here is deliberate. A
+  // handler that returns nothing (no real play request in flight) keeps the
+  // old immediate switch.
+  const playAndSwitchToNowPlaying = (uri: string, offset?: PlayOffset) => {
+    // forward the offset only when present — a bare onPlay(uri) must stay a
+    // single-argument call for callers that inspect the arguments
+    const p = offset === undefined ? onPlay?.(uri) : onPlay?.(uri, offset)
+    if (p instanceof Promise) {
+      void p.then(() => setActiveCategoryId('now-playing')).catch(() => {})
+    } else {
+      setActiveCategoryId('now-playing')
+    }
+  }
+
   // dial press / tap on a card: start playback, open a track list, or action
   const handleCardAction = (card: MenuCard, index: number) => {
     // bug3: confirming the current track in 'Läuft gerade' returns to the
@@ -825,12 +845,17 @@ export function MainMenuView({
     // track directly, as before.
     if (confirmedCategory.id === 'now-playing' && index > 0 && card.id.startsWith('np-q-')) {
       if (!card.uri) return
-      setActiveCategoryId('now-playing')
+      // issue #56: same play-then-settle handling as the other paths; the pane
+      // is already 'now-playing' here, so the switch inside the helper is a
+      // no-op that also keeps the floating-promise check happy
       const contextUri = nowPlaying?.context_uri ?? ''
       if (contextUri && !contextUri.startsWith('spotify:track:')) {
-        onPlay?.(contextUri, { position: card.queuePosition ?? index, uri: card.uri })
+        playAndSwitchToNowPlaying(contextUri, {
+          position: card.queuePosition ?? index,
+          uri: card.uri,
+        })
       } else {
-        onPlay?.(card.uri)
+        playAndSwitchToNowPlaying(card.uri)
       }
       // bug41: the selected track becomes the new current track once the
       // observer status arrives, so the carousel focus goes back to index 0
@@ -859,14 +884,15 @@ export function MainMenuView({
         track?.position !== undefined
           ? { position: track.position, uri: card.uri }
           : { position: index, uri: card.uri }
-      setActiveCategoryId('now-playing')
-      onPlay?.(openTracklist.contextUri, offset)
+      // issue #56: no optimistic pre-switch — the pane follows a successful play
+      playAndSwitchToNowPlaying(openTracklist.contextUri, offset)
       return
     }
     if (card.kind === 'media' && card.uri) {
-      // start playback and land directly on the 'Läuft gerade' pane
-      setActiveCategoryId('now-playing')
-      onPlay?.(card.uri)
+      // start playback and land directly on the 'Läuft gerade' pane — issue
+      // #56: only once the play request succeeded (same gating as the track
+      // sub-menu above)
+      playAndSwitchToNowPlaying(card.uri)
     } else if (card.kind === 'action' && card.actionId?.startsWith('ha-act:')) {
       // ticket 9.3: per-entity action — the action id carries the entity id.
       // Keep focus inside the carousel — no view transition.
