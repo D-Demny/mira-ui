@@ -200,9 +200,10 @@
     transform: scale(0.97);
   }
 
+  // issue #59: no green outline — keyboard focus is the same brightness lift
+  // as the dial focus (.focused below).
   &:focus-visible {
-    outline: 2px solid $accent;
-    outline-offset: 2px;
+    background: rgba(255, 255, 255, 0.18);
   }
 }
 
@@ -211,7 +212,14 @@
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+// issue #59: no green border and no colored glow ring — focus is a plain
+// brightness lift (stronger than the hover-less base tint of 0.06).
 .focused {
-  border-color: $accent;
-  box-shadow: 0 0 0 2px rgba(76, 175, 255, 0.35);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+// the primary button starts brighter (0.12), so its focus lift is stronger
+// too to stay clearly readable on its own fill.
+.btnPrimary.focused {
+  background: rgba(255, 255, 255, 0.22);
 }

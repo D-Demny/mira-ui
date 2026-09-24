@@ -101,10 +101,10 @@ $key-gap: 6px;
     transform: scale(0.96);
   }
 
-  // bug31-style dial focus highlight (like the other overlays)
+  // bug31-style dial focus highlight (like the other overlays) — issue #59:
+  // no green border/tint, plain brightness lift above the base (0.06).
   &.focused {
-    border-color: $accent;
-    background: rgba(30, 215, 96, 0.16);
+    background: rgba(255, 255, 255, 0.16);
   }
 }
 

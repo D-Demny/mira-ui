@@ -109,11 +109,10 @@
   font-weight: $fw-semibold;
 }
 
-// dial focus (may differ from the selected item)
+// dial focus (may differ from the selected item) — issue #59: no outline
+// stroke of any color, just a brightness lift above the hover tint (0.05).
 .itemFocused {
-  background: rgba(255, 255, 255, 0.1);
-  outline: 2px solid rgba(255, 255, 255, 0.5);
-  outline-offset: -2px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .pill {

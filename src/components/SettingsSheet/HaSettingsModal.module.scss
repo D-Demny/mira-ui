@@ -152,17 +152,18 @@
   color: $text-primary;
   font-size: $fs-md;
   outline: none;
-  transition: border-color $dur-fast $ease-standard;
+  transition: background-color $dur-fast $ease-standard;
 
+  // issue #59: no green border — focus (keyboard or dial) is a plain
+  // brightness lift above the base (0.05).
   &:focus {
-    border-color: $accent;
+    background: rgba(255, 255, 255, 0.14);
   }
 
   // the dial focus highlight (same pattern as the PiServerModal fields —
   // pure CSS, no el.focus() per tick)
   &.focused {
-    border-color: $accent;
-    background: rgba(30, 215, 96, 0.12);
+    background: rgba(255, 255, 255, 0.14);
   }
 }
 

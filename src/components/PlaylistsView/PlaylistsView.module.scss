@@ -73,10 +73,10 @@
   }
 }
 
+// issue #59: no green outline — focus is a plain brightness lift, clearly
+// visible on its own (above the $surface-elev hover tint).
 .focused {
-  background: $accent-dim;
-  outline: 2px solid $accent;
-  outline-offset: -2px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .thumbnail {

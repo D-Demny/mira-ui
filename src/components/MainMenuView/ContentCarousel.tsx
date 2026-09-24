@@ -171,7 +171,8 @@ interface ContentCarouselProps {
   // (dimmable light → dim view, everything else like a tap). Must be STABLE:
   // the memoized cards keep the first closure they receive
   onCardHold?: (card: MenuCard, index: number) => void
-  // index of the dial-focused card (rendered with a focus outline + centered)
+  // index of the dial-focused card (rendered at full opacity, scaled up and
+  // centered — no outline box, bug2.2)
   focusedIndex?: number
   // bug58 T4: the index the BLUR set is derived from — deliberately decoupled
   // from focusedIndex. In MainMenuView the UI focus can sit in the SIDEBAR

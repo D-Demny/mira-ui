@@ -180,10 +180,10 @@
 }
 
 // dial-focus highlight (rows AND footer buttons, like HomeMenuView .focused)
+// issue #59: no green outline — focus is a plain brightness lift, clearly
+// visible on its own (above every hover tint in this modal).
 .focused {
-  background: $accent-dim;
-  outline: 2px solid $accent;
-  outline-offset: -2px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .iconTile {
@@ -298,11 +298,11 @@
 }
 
 // dial-focus highlight (CSS-only, like .focused on the rows — tuned for the
-// small button footprint)
+// small button footprint). issue #59: no green border-color — a plain
+// brightness lift above the hover tint (0.12) + full-strength text.
 .moveBtnFocused {
-  border-color: $accent;
-  background: $accent-dim;
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.18);
+  color: $text-primary;
 }
 
 .info {
@@ -379,4 +379,11 @@
   &:hover {
     background: #28e56e;
   }
+}
+
+// issue #59: the green primary fill keeps its identity on focus — it gets a
+// brightness lift of its own (the hover shade) instead of the shared white
+// wash, which would erase the primary color.
+.btnDone.focused {
+  background: #28e56e;
 }

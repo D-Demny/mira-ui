@@ -6,7 +6,8 @@ interface SidebarNavProps {
   categories: MenuCategory[]
   activeId: string
   onSelect: (id: string) => void
-  // index of the dial-focused item (rendered with a focus outline)
+  // index of the dial-focused item (rendered with a brighter background —
+  // issue #59: no outline stroke on focus)
   focusedIndex?: number
   // bug54: menu background variant — 'solid' (opaque, default), 'glass'
   // (semi-transparent panel — the app background shows through where no

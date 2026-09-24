@@ -191,10 +191,12 @@
   color: $text-primary;
   font-size: $fs-md;
   outline: none;
-  transition: border-color $dur-fast $ease-standard;
+  transition: background-color $dur-fast $ease-standard;
 
+  // issue #59: no green border — focus is a plain brightness lift above the
+  // base (0.05).
   &:focus {
-    border-color: $accent;
+    background: rgba(255, 255, 255, 0.14);
   }
 }
 
@@ -307,10 +309,20 @@
 }
 
 // the dial focus highlight (same style family as the keyboard keys and the
-// default-device rows)
+// default-device rows) — issue #59: no green border/tint, just a plain
+// brightness lift above every base tint here (inputs 0.05, profile rows 0.04).
 .focused {
-  border-color: $accent;
-  background: rgba(30, 215, 96, 0.12);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+// issue #59: filled action buttons keep their identity on focus — a
+// brightness lift of their own fill instead of the shared white wash.
+.btnPrimary.focused {
+  background: #28e56e;
+}
+
+.btnDanger.focused {
+  background: rgba(255, 107, 107, 0.26);
 }
 
 .profileActive {

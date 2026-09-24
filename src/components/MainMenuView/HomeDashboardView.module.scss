@@ -107,14 +107,10 @@
   color: $text-primary;
   cursor: pointer;
   user-select: none;
-  // issue #57 T1: box-shadow joins the transition so the .focused glow fades
-  // in/out instead of popping (tiles only — no other node here uses shadows)
-  transition:
-    background-color $dur-fast $ease-standard,
-    box-shadow $dur-fast $ease-standard;
+  transition: background-color $dur-fast $ease-standard;
 
   &:hover {
-    // stays below the .focused base (0.14) so focus still reads stronger
+    // stays below the .focused base (0.2) so focus still reads stronger
     background: rgba(255, 255, 255, 0.13);
   }
 }
@@ -149,11 +145,7 @@
   color: $text-primary;
   cursor: pointer;
   user-select: none;
-  // issue #57 T1: box-shadow joins the transition so the .focused glow fades
-  // in/out instead of popping (tiles only — no other node here uses shadows)
-  transition:
-    background-color $dur-fast $ease-standard,
-    box-shadow $dur-fast $ease-standard;
+  transition: background-color $dur-fast $ease-standard;
 
   &:hover {
     background: rgba(255, 255, 255, 0.11);
@@ -343,11 +335,7 @@ $light-amber: #ffc14d;
   background: rgba(255, 255, 255, 0.07);
   cursor: pointer;
   user-select: none;
-  // issue #57 T1: box-shadow joins the transition so the .focused glow fades
-  // in/out instead of popping (tiles only — no other node here uses shadows)
-  transition:
-    background-color $dur-fast $ease-standard,
-    box-shadow $dur-fast $ease-standard;
+  transition: background-color $dur-fast $ease-standard;
 
   &:hover {
     background: rgba(255, 255, 255, 0.11);
@@ -465,14 +453,13 @@ $light-amber: #ffc14d;
   border: 1px dashed rgba(255, 255, 255, 0.35);
 }
 
-// dial focus — issue #57 T1: a SUBTLE lift instead of the old harsh accent
-// wash + 2px outline (the class name stays .focused — tests and other code
-// key off it). The tile base brightens from rgba(255, 255, 255, 0.07) to
-// 0.14 — above the 0.11 hover tint, so focus reads stronger than hover —
-// and a thin low-alpha accent ring with a small blur glow marks the slot:
-// clearly visible on dark tiles, but no solid accent background and no hard
-// 2px outline. CR69-safe: rgba + box-shadow only.
+// dial focus — issue #57 T1, reworked in issue #59: the green accent ring
+// (1px box-shadow stroke + blur glow) is GONE. Focus is indicated SOLELY by
+// a background brightness lift, clearly visible on its own: the tile base
+// brightens to rgba(255, 255, 255, 0.2) — well above every tile base
+// (0.04–0.1) and the scene hover tint (0.13), so focus reads stronger than
+// hover with no border/outline of any color. The class name stays .focused
+// — tests and other code key off it. CR69-safe: plain rgba background only.
 .focused {
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 0 0 1px rgba($accent, 0.35), 0 0 8px 1px rgba($accent, 0.2);
+  background: rgba(255, 255, 255, 0.2);
 }
