@@ -490,58 +490,71 @@ export function HomeDashboardView({
             // shows the number; ON without one (level unknown) shows no number
             // at all. Non-dimmable tiles keep the plain rule (the level as
             // reported, null → nothing).
-            const pct = !tile.isOn && tile.dimmable ? '0%' : tile.brightnessPct !== null ? `${tile.brightnessPct}%` : null
+            const pct =
+              !tile.isOn && tile.dimmable
+                ? '0%'
+                : tile.brightnessPct !== null
+                  ? `${tile.brightnessPct}%`
+                  : null
             return (
-            <div
-              key={tile.entityId ?? `light-placeholder-${i}`}
-              // W2-4: focus-chain registry (lights start after the scene row)
-              ref={(el) => setSlotEl(sceneRow.length + i, el)}
-              className={`${styles.lightTile}${tile.isOn ? ` ${styles.tileIsOn}` : ` ${styles.tileIsOff}`}${tile.isPlaceholder ? ` ${styles.placeholder}` : ''}${
-                i === lightFocus ? ` ${styles.focused}` : ''
-              }`}
-              data-entity-id={tile.entityId}
-              data-dashboard-placeholder={tile.isPlaceholder ? 'true' : undefined}
-              // W2-3a: holdable ONLY when dimmable — placeholders are dimmable by
-              // design, so they hold too (the parent routes the null-entity model)
-              onPointerDown={
-                tile.dimmable
-                  ? (e) => startHold(`light-${i}`, e, () => onLightHold?.(tile))
-                  : undefined
-              }
-              onPointerMove={tile.dimmable ? (e) => moveHold(`light-${i}`, e) : undefined}
-              onPointerUp={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
-              onPointerCancel={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
-              onClick={() => {
-                if (isHeldClick(`light-${i}`)) return // the hold already handled it
-                // issue #57 T1: lights start after the scene row
-                handleLightTap(tile, sceneRow.length + i)
-              }}
-            >
-              <span className={styles.tileIcon}>
-                {/* issue #57 T4: per-tile icon (HA icon first, then label map) */}
-                <MenuIcon name={lightMenuIcon(tile.icon, tile.label)} size={20} />
-              </span>
-              <div className={styles.tileBody}>
-                <span className={styles.tileLabel}>{tile.label}</span>
-                <div className={styles.tileReadout}>
-                  <span className={styles.brightnessBar}>
-                    {tile.brightnessPct !== null && (
-                      <>
-                        <span
-                          className={styles.brightnessFill}
-                          style={{ width: `${tile.brightnessPct}%` }}
-                        />
-                        <span className={styles.knob} style={{ left: `${tile.brightnessPct}%` }} />
-                      </>
-                    )}
-                  </span>
-                  <span className={styles.stateCol}>
-                    {pct !== null && <span className={styles.pct}>{pct}</span>}
-                    <span className={styles.state}>{tile.isOn ? 'An' : 'Aus'}</span>
-                  </span>
+              <div
+                key={tile.entityId ?? `light-placeholder-${i}`}
+                // W2-4: focus-chain registry (lights start after the scene row)
+                ref={(el) => setSlotEl(sceneRow.length + i, el)}
+                className={`${styles.lightTile}${tile.isOn ? ` ${styles.tileIsOn}` : ` ${styles.tileIsOff}`}${tile.fadingOff ? ` ${styles.tileFadingOff}` : ''}${tile.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+                  i === lightFocus ? ` ${styles.focused}` : ''
+                }`}
+                data-entity-id={tile.entityId}
+                data-dashboard-placeholder={tile.isPlaceholder ? 'true' : undefined}
+                // W2-3a: holdable ONLY when dimmable — placeholders are dimmable by
+                // design, so they hold too (the parent routes the null-entity model)
+                onPointerDown={
+                  tile.dimmable
+                    ? (e) => startHold(`light-${i}`, e, () => onLightHold?.(tile))
+                    : undefined
+                }
+                onPointerMove={tile.dimmable ? (e) => moveHold(`light-${i}`, e) : undefined}
+                onPointerUp={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
+                onPointerCancel={tile.dimmable ? () => releaseHold(`light-${i}`) : undefined}
+                onClick={() => {
+                  if (isHeldClick(`light-${i}`)) return // the hold already handled it
+                  // issue #57 T1: lights start after the scene row
+                  handleLightTap(tile, sceneRow.length + i)
+                }}
+              >
+                <span className={styles.tileIcon}>
+                  {/* issue #57 T4: per-tile icon (HA icon first, then label map) */}
+                  <MenuIcon name={lightMenuIcon(tile.icon, tile.label)} size={20} />
+                </span>
+                <div className={styles.tileBody}>
+                  <span className={styles.tileLabel}>{tile.label}</span>
+                  <div className={styles.tileReadout}>
+                    <span className={styles.brightnessBar}>
+                      {/* issue #60: the fill stays mounted at its last level for
+                        the whole turn-off transition window (stale HA
+                        brightness until the fade settles) — the tile's
+                        .tileFadingOff class keeps that state on the warm
+                        amber accent, so the slider never flashes green */}
+                      {tile.brightnessPct !== null && (
+                        <>
+                          <span
+                            className={styles.brightnessFill}
+                            style={{ width: `${tile.brightnessPct}%` }}
+                          />
+                          <span
+                            className={styles.knob}
+                            style={{ left: `${tile.brightnessPct}%` }}
+                          />
+                        </>
+                      )}
+                    </span>
+                    <span className={styles.stateCol}>
+                      {pct !== null && <span className={styles.pct}>{pct}</span>}
+                      <span className={styles.state}>{tile.isOn ? 'An' : 'Aus'}</span>
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
             )
           })}
         </div>

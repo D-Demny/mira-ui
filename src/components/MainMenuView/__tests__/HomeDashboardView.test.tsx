@@ -477,6 +477,20 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
       expect(block(selector)).not.toMatch(/gap\s*:/)
     }
   })
+
+  it('keeps the light slider fill out of the green accent (issue #60)', () => {
+    // The turn-off transition window (an OFF tile still carrying its stale
+    // level for ~1–2 s) used to flash GREEN: the base fill was $accent and no
+    // .tileIsOff override existed. Pin: the base fill resolves to the local
+    // warm amber (green is not selectable in ANY state), and .tileFadingOff
+    // re-warms the track with the same tint .tileIsOn uses, so the slider
+    // stays yellow until the level unmounts.
+    // match the DECLARATION (the comment may still name $accent historically)
+    const fill = block('brightnessFill')
+    expect(fill).toContain('background: $light-amber;')
+    expect(fill).not.toMatch(/background:\s*\$accent/)
+    expect(block('tileFadingOff')).toContain('rgba($light-amber, 0.24)')
+  })
 })
 
 // issue #57 T1: touch-input dial focus behavior — a SHORT tap reports the
@@ -502,7 +516,11 @@ describe('HomeDashboardView tap + touch-scroll focus (issue #57 T1)', () => {
     const onSlotTapped = vi.fn()
     const onTouchScroll = vi.fn()
     const { container } = render(
-      <HomeDashboardView entities={entities} onSlotTapped={onSlotTapped} onTouchScroll={onTouchScroll} />,
+      <HomeDashboardView
+        entities={entities}
+        onSlotTapped={onSlotTapped}
+        onTouchScroll={onTouchScroll}
+      />,
     )
     // 3 scene slots (1 real + 2 placeholders) + 4 light tiles + 2 cover columns:
     // chain indices scenes 0..2, lights 3..6, covers 7..8
@@ -592,7 +610,8 @@ describe('HomeDashboardView tap + touch-scroll focus (issue #57 T1)', () => {
 // to be zero), the reported 'N%' for ON tiles with a KNOWN level, and no
 // number at all for ON tiles whose level is unknown (brightnessPct null).
 // Non-dimmable tiles keep the plain rule. Tiles carry .tileIsOn / .tileIsOff
-// so the SCSS can render the warm ON accent / muted OFF treatment.
+// so the SCSS can render the warm ON accent / muted OFF treatment; issue #60
+// adds .tileFadingOff for the turn-off transition window (OFF + level known).
 describe('HomeDashboardView light readout + state classes (issue #57 T4)', () => {
   function offDimmable(entityId: string, label: string): DashboardEntity {
     return { ...light(entityId, label), active: false, brightnessPct: null }
@@ -604,7 +623,9 @@ describe('HomeDashboardView light readout + state classes (issue #57 T4)', () =>
 
   it('shows 0% next to Aus for an OFF dimmable tile', () => {
     const { container } = render(
-      <HomeDashboardView entities={[offDimmable('light.sofa', 'Sofa'), light('light.tisch', 'Tisch')]} />,
+      <HomeDashboardView
+        entities={[offDimmable('light.sofa', 'Sofa'), light('light.tisch', 'Tisch')]}
+      />,
     )
     const tile = container.querySelector('[data-entity-id="light.sofa"]') as HTMLElement
     expect(tile.textContent).toContain('0%')
@@ -631,7 +652,13 @@ describe('HomeDashboardView light readout + state classes (issue #57 T4)', () =>
   it('keeps non-dimmable tiles on the plain rule (no number without a level)', () => {
     const { container } = render(
       <HomeDashboardView
-        entities={[{ ...light('light.lichtschalter', 'Lichtschalter'), dimmable: false, brightnessPct: null }]}
+        entities={[
+          {
+            ...light('light.lichtschalter', 'Lichtschalter'),
+            dimmable: false,
+            brightnessPct: null,
+          },
+        ]}
       />,
     )
     const tile = container.querySelector('[data-entity-id="light.lichtschalter"]') as HTMLElement
@@ -648,6 +675,41 @@ describe('HomeDashboardView light readout + state classes (issue #57 T4)', () =>
     expect(onTile.classList.contains('tileIsOff')).toBe(false)
     expect(offTile.classList.contains('tileIsOff')).toBe(true)
     expect(offTile.classList.contains('tileIsOn')).toBe(false)
+  })
+
+  it('keeps the last-level slider on its warm accent through the turn-off transition (issue #60)', () => {
+    // OFF dimmable tile that still carries its level = the turn-off window
+    // (the optimistic flip / HA went 'off' first, attributes.brightness lags)
+    const fading: DashboardEntity = {
+      ...light('light.dimm', 'Dimm'),
+      active: false,
+      state: 'off',
+      brightnessPct: 40,
+    }
+    const { container } = render(
+      <HomeDashboardView entities={[fading, offDimmable('light.aus', 'Aus')]} />,
+    )
+    const tile = container.querySelector('[data-entity-id="light.dimm"]') as HTMLElement
+    // still an OFF tile (dimmed icon + '0% Aus' readout)...
+    expect(tile.classList.contains('tileIsOff')).toBe(true)
+    expect(tile.classList.contains('tileIsOn')).toBe(false)
+    // ...but the transition marker is set — the warm accent state the SCSS keys on
+    expect(tile.classList.contains('tileFadingOff')).toBe(true)
+    // and the slider keeps its last level mounted (fill + knob at 40%)
+    const fill = tile.querySelector('.brightnessFill') as HTMLElement
+    expect(fill).not.toBeNull()
+    expect(fill.style.width).toBe('40%')
+    expect(tile.querySelector('.knob')).not.toBeNull()
+    // a settled OFF tile (level cleared) shows neither fill nor marker
+    const settled = container.querySelector('[data-entity-id="light.aus"]') as HTMLElement
+    expect(settled.classList.contains('tileFadingOff')).toBe(false)
+    expect(settled.querySelector('.brightnessFill')).toBeNull()
+  })
+
+  it('never carries the turn-off marker on ON tiles (issue #60)', () => {
+    const { container } = render(<HomeDashboardView entities={[light('light.an', 'An')]} />)
+    const tile = container.querySelector('[data-entity-id="light.an"]') as HTMLElement
+    expect(tile.classList.contains('tileFadingOff')).toBe(false)
   })
 })
 

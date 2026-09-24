@@ -138,6 +138,9 @@ describe('buildLightGrid (ticket9.6)', () => {
         label: expected.label,
         isOn: expected.isOn,
         brightnessPct: expected.brightnessPct,
+        // issue #60: placeholders are static mock content — the turn-off
+        // marker never applies (the Stehlampen mock keeps its muted bar)
+        fadingOff: false,
         dimmable: true,
         isPlaceholder: true,
         icon: null, // issue #57 (T2): placeholders carry no HA icon
@@ -164,6 +167,8 @@ describe('buildLightGrid (ticket9.6)', () => {
       label: 'Esstisch',
       isOn: true,
       brightnessPct: 20,
+      // issue #60: an ON tile never carries the turn-off marker
+      fadingOff: false,
       dimmable: true,
       isPlaceholder: false,
       icon: null, // issue #57 (T2): fixture entity carries no HA icon
@@ -216,6 +221,20 @@ describe('buildLightGrid (ticket9.6)', () => {
   it('treats an unknown (null) active state as off', () => {
     const grid = buildLightGrid([light('light.unknown', { active: null, state: null })])
     expect(grid[0].isOn).toBe(false)
+  })
+
+  it('flags the turn-off transition window as fadingOff (issue #60)', () => {
+    // OFF + known level = the stale attributes.brightness lingers while HA
+    // confirms 'off' (~1–2 s) — the slider must stay on its warm accent
+    const grid = buildLightGrid([
+      light('light.fading', { dimmable: true, active: false, state: 'off', brightnessPct: 40 }),
+      light('light.lit', { dimmable: true, active: true, state: 'on', brightnessPct: 40 }),
+      // settled OFF: HA cleared the level → no transition window
+      light('light.settled', { dimmable: true, active: false, state: 'off', brightnessPct: null }),
+    ])
+    expect(grid[0].fadingOff).toBe(true)
+    expect(grid[1].fadingOff).toBe(false)
+    expect(grid[2].fadingOff).toBe(false)
   })
 })
 

@@ -153,15 +153,18 @@
 }
 
 // issue #57 T4: state-aware tile accents. NO warm token exists in
-// _variables.scss ($accent is the Spotify green), so the amber ON accent is
+// _variables.scss ($accent is the Spotify green), so the amber accent is
 // LOCAL to this zone — a mid warm amber that reads as "lit" on the dark washes
-// above; OFF tiles get the muted treatment instead (see below). Both classes
-// sit at .lightTile specificity, defined after it, and before the shared
-// .focused (which must still win the background in the focused state).
+// above; OFF tiles get the muted treatment instead (see below). The three
+// state classes sit at .lightTile specificity, defined after it, and before
+// the shared .focused (which must still win the background in the focused
+// state). issue #60: the amber is now the DEFAULT fill color of the slider
+// itself (.brightnessFill) — the green accent must never reach a light tile.
 $light-amber: #ffc14d;
 
 .tileIsOn {
-  // lit tile: warm tint on the icon chip + warm track/fill (the slider below)
+  // lit tile: warm tint on the icon chip + warm track (the FILL is always the
+  // warm amber via the base .brightnessFill rule — issue #60, no override here)
   .tileIcon {
     background: rgba($light-amber, 0.16);
     color: $light-amber;
@@ -169,20 +172,33 @@ $light-amber: #ffc14d;
   .brightnessBar {
     background: rgba($light-amber, 0.24);
   }
-  .brightnessFill {
-    background: $light-amber;
-  }
 }
 
 .tileIsOff {
   // extinguished tile: darker muted gray wash + dimmed icon (opacity ~0.5);
-  // the track stays neutral and empty (the JS renders no fill/knob at all)
+  // the track stays neutral — settled-off tiles render no fill at all (the JS
+  // only renders one while a level is known, i.e. during the issue #60
+  // transition window below)
   background: rgba(255, 255, 255, 0.04);
   .tileIcon {
     opacity: 0.5;
   }
   .brightnessBar {
     background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+// issue #60: the turn-off transition window — the tile is already OFF (muted
+// icon via .tileIsOff) but HA has not cleared attributes.brightness yet, so
+// for ~1–2 s the slider still shows its last level. It keeps the warm LIT
+// track of .tileIsOn (the fill is amber from the base rule already) instead
+// of sitting in the muted OFF wash — and definitely NOT the green $accent,
+// which this exact state flashed before the fix. Defined AFTER .tileIsOff so
+// its track tint wins (equal specificity). When HA clears the level the fill
+// unmounts and the tile settles on .tileIsOff's neutral track.
+.tileFadingOff {
+  .brightnessBar {
+    background: rgba($light-amber, 0.24);
   }
 }
 
@@ -243,7 +259,13 @@ $light-amber: #ffc14d;
   bottom: 0;
   left: 0;
   border-radius: $r-pill;
-  background: $accent;
+  // issue #60: the light slider fill is ALWAYS the warm lit amber — never the
+  // green $accent. The base used to be $accent, and every state that renders
+  // a fill WITHOUT .tileIsOn (the turn-off transition window: an OFF tile
+  // still carrying its stale level for ~1–2 s) flashed green before the level
+  // unmounted. Both .tileIsOn and .tileFadingOff tiles resolve to this one
+  // color now; green is not selectable for the slider in any state.
+  background: $light-amber;
 }
 
 // knob centered on the fill edge — width/height live in the class, only

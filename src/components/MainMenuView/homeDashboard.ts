@@ -162,6 +162,14 @@ export interface LightTileModel {
   label: string
   isOn: boolean
   brightnessPct: number | null
+  // issue #60: true when the tile is OFF but still carries a known level —
+  // the turn-off transition window. The optimistic flip (and HA itself) goes
+  // 'off' first, but attributes.brightness only clears once the physical fade
+  // settles (~1–2 s), so for that window the slider keeps rendering its last
+  // level and must stay on the warm lit accent (.tileFadingOff), never the
+  // green default fill. When HA clears the level, brightnessPct → null and
+  // the bar empties into the neutral OFF track.
+  fadingOff: boolean
   dimmable: boolean
   isPlaceholder: boolean
   icon: string | null
@@ -174,11 +182,17 @@ export function buildLightGrid(lights: readonly DashboardEntity[]): LightTileMod
     const light = lights[i]
     if (light !== undefined) {
       // `active` is null while the state is unknown → render as off
+      const isOn = light.active === true
+      const brightnessPct = clampBrightnessPct(light.brightnessPct)
       out.push({
         entityId: light.entityId,
         label: light.label,
-        isOn: light.active === true,
-        brightnessPct: clampBrightnessPct(light.brightnessPct),
+        isOn,
+        brightnessPct,
+        // issue #60: off + level known = the turn-off transition window (the
+        // stale attributes.brightness lingers until HA confirms 'off') — the
+        // slider keeps its last level ON THE WARM ACCENT for that window
+        fadingOff: !isOn && brightnessPct !== null,
         dimmable: light.dimmable,
         isPlaceholder: false,
         icon: light.icon ?? null,
@@ -190,6 +204,10 @@ export function buildLightGrid(lights: readonly DashboardEntity[]): LightTileMod
         label: placeholder.label,
         isOn: placeholder.isOn,
         brightnessPct: placeholder.brightnessPct,
+        // issue #60: placeholders are static mock content — they never enter a
+        // turn-off transition, so the warm-accent marker stays off (the
+        // Stehlampen mock keeps its muted empty bar)
+        fadingOff: false,
         dimmable: true,
         isPlaceholder: true,
         icon: null,
