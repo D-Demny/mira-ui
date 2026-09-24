@@ -229,7 +229,11 @@ export function useMainMenuFocus({
     }
   }, [contentCount])
 
-  useEffect(() => {
+  // issue70: useLayoutEffect (not the passive useEffect) so the entry is on
+  // the focus stack synchronously with the DOM commit — the passive effect
+  // left a mount-gap window in which wheel ticks fell through to the volume
+  // path
+  useLayoutEffect(() => {
     ListFocusContext.setActive({
       onWheel: handleWheel,
       onConfirm: confirm,

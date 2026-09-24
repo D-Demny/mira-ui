@@ -110,7 +110,10 @@ export function useOverlayListFocus({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [focusedIndex])
 
-  useEffect(() => {
+  // issue70: useLayoutEffect (not the passive useEffect) so the entry is on
+  // the focus stack synchronously with the DOM commit — no gap between the
+  // overlay appearing and its entry being active
+  useLayoutEffect(() => {
     const pop = ListFocusContext.pushEntry({
       onWheel: handleWheel,
       onConfirm: confirm,
