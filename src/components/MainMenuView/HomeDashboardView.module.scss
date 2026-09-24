@@ -415,12 +415,12 @@ $light-amber: #ffc14d;
   @include flex-gap-x($s-4);
 }
 
-// issue #57 T5, reworked in issue #64: the vertical position slider — the
-// track (groove) + its amber thumb on the LEFT, the scale labels on the
-// RIGHT. `align-items: stretch` stretches the label column to the track's
-// fixed height so the marks can be pinned to exact track heights. No
-// interaction on purpose: this is a DISPLAY-ONLY indicator — issue #63 will
-// attach the drag/tap handlers to .coverTrack ([data-cover-track]).
+// issue #57 T5, reworked in issue #64, made interactive in issue #63: the
+// vertical position slider — the track (groove) + its amber thumb on the
+// LEFT, the scale labels on the RIGHT. `align-items: stretch` stretches the
+// label column to the track's fixed height so the marks can be pinned to
+// exact track heights. The drag/tap handlers for direct positioning live on
+// .coverTrack ([data-cover-track]) in HomeDashboardView.tsx (issue #63).
 .coverSlider {
   display: flex;
   align-items: stretch;
@@ -431,19 +431,27 @@ $light-amber: #ffc14d;
 // lengthened it (96 -> 120px): taller than the ^ / v button stack (48 + 12 +
 // 48 = 108px), it anchors the control row's height, gives the thumb room to
 // travel, and is wide enough to read from a distance. The amber thumb sits
-// inside it (absolute, centered on its computed top offset).
+// inside it (absolute, centered on its computed top offset). issue #63: the
+// groove IS the drag/tap target for direct positioning — `touch-action: none`
+// keeps a vertical drag from handing the gesture to the scroller (the browser
+// would otherwise pointercancel mid-drag) and `cursor: pointer` signals that
+// the track is interactive, not just an indicator.
 .coverTrack {
   position: relative;
   width: 14px;
   height: 120px;
   border-radius: $r-pill;
   background: rgba(255, 255, 255, 0.16);
+  touch-action: none;
+  cursor: pointer;
 }
 
 // the clearly defined THUMB handle — issue #64 enlarged it (18 -> 28px) so it
 // reads as a draggable knob. Only rendered for KNOWN positions; JS drives
-// `top`: top-offset = (100 - positionPct)% = % DOWN, i.e. open(100) at the
-// TOP (0%), closed(0) at the BOTTOM (100%). Reuses the local $light-amber
+// `top`: top: positionPct%, where positionPct ≡ HA's current_position
+// (0 = fully open / "Auf" at the TOP, 100 = fully closed / "Zu" at the
+// BOTTOM) — NO inversion, so the thumb sits exactly on its own scale mark
+// (issue #63). Reuses the local $light-amber
 // from the light zone; a dark edge border separates it from the track;
 // translate(-50%,-50%) centers it on the computed offset (CR69-safe:
 // fixed-size element).

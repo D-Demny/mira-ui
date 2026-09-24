@@ -445,6 +445,16 @@ export function MainMenuView({
       .find((e) => e.entityId === column.entityId)
       ?.coverActuate(direction === 'up' ? 'open' : 'close')
   }
+  // issue #63: direct positioning from the Home dashboard's position slider —
+  // a tap/drag on a cover track reports an exact 0–100 target (the % down
+  // from the track's top edge). Same routing as homeCoverAction: placeholder
+  // columns are ignored here (the dashboard toasts them), real covers go
+  // through the view model's coverSetPosition (cover.set_cover_position +
+  // post-settle resync — see setCoverPosition in useHomeEntities)
+  const homeCoverSetPosition = (column: CoverColumnModel, position: number) => {
+    if (column.entityId === null) return
+    selectedEntities.find((e) => e.entityId === column.entityId)?.coverSetPosition(position)
+  }
 
   // ticket 9.6 W2-3: shared HOLD routing for Home dashboard slots — ONE
   // helper used by BOTH input paths (the dial hold via onHoldContent below,
@@ -1475,6 +1485,8 @@ export function MainMenuView({
               onSceneTap={homeSceneTap}
               onLightTap={homeLightTap}
               onCoverAction={homeCoverAction}
+              // issue #63: direct positioning from the position slider (tap/drag)
+              onCoverSetPosition={homeCoverSetPosition}
               // ticket 9.6 W2-3: touch HOLD — the SAME shared routing as the
               // dial hold (homeHoldRoute), so both input paths stay in lockstep
               onLightHold={(tile) => homeHoldRoute(tile, null)}

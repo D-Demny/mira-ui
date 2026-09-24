@@ -38,6 +38,10 @@ export interface HomeEntityView {
   // ticket 9.6 W2: directional cover control (the Home dashboard's ^/v/stop
   // buttons) — covers cannot be toggled, the direction is explicit
   coverActuate: (action: 'open' | 'close' | 'stop') => void
+  // issue #63: direct positioning from the Home dashboard's vertical slider —
+  // sends cover.set_cover_position with an exact 0–100 target (the view model
+  // clamps + rounds; the caller already sends integers)
+  coverSetPosition: (position: number) => void
 }
 
 // ------------------------------------------------------------------ selection
@@ -598,12 +602,41 @@ export function actuateCover(entityId: string, action: 'open' | 'close' | 'stop'
       }
       entityStates.set(entityId, { ...stateOf(entityId), error: message })
     } finally {
-      // only the NEWEST actuation clears its own bookkeeping
+      // only the NEWEST actuation clears its bookkeeping
       if (actuationSeq(entityId) === mySeq) {
         pendingActuations.delete(entityId)
         // deliberately NO write-revision bump here — see actuateEntity's finally
         entityStates.set(entityId, { ...stateOf(entityId), actuating: false, loading: false })
       }
+      emit()
+    }
+  })()
+}
+
+// issue #63: direct cover positioning — the Home dashboard's vertical slider
+// sends an exact target via cover.set_cover_position (0 = fully open, 100 =
+// fully closed). Deliberately SIMPLER than actuateCover: there is no motion-
+// state gating (a position command retargets a cover that is already moving —
+// HA accepts it) and no optimistic flip (the attributes.current_position
+// readout is the truth; there is nothing to protect), so the seq/pending/
+// write-revision bookkeeping is skipped as well: overlapping commands are
+// legal, a "stale" state read landing mirrors real HA state, and a failed
+// command only surfaces its error in the store (the thumb keeps showing the
+// last known position). The post-settle resync lands the first updated
+// position quickly; the 3 s poll keeps mirroring the travel afterwards.
+export function setCoverPosition(entityId: string, position: number): void {
+  const target = Math.round(Math.min(100, Math.max(0, position)))
+  void (async () => {
+    try {
+      await callHaService('cover', 'set_cover_position', { entity_id: entityId, position: target })
+      // the position settles as the cover travels — sync the REAL state from
+      // the states endpoint right away (same pattern as actuateCover's
+      // resync); the poll keeps updating it while the motion continues
+      await refreshEntity(entityId, false)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to set cover position'
+      console.warn('useHomeEntities setCoverPosition error:', message)
+      entityStates.set(entityId, { ...stateOf(entityId), error: message })
       emit()
     }
   })()
@@ -764,7 +797,8 @@ export function useHomeSelectedEntities(pollActive: boolean = false): HomeEntity
       state: state.state ?? '',
       attributes: state.attributes ?? {},
     }
-    const caps = domain === 'light' ? lightCapabilities(rawState) : { dimmable: false, brightnessPct: null }
+    const caps =
+      domain === 'light' ? lightCapabilities(rawState) : { dimmable: false, brightnessPct: null }
     return {
       entityId,
       domain,
@@ -781,6 +815,9 @@ export function useHomeSelectedEntities(pollActive: boolean = false): HomeEntity
       positionPct: domain === 'cover' ? coverPositionPct(rawState) : null,
       actuate: () => void actuateEntity(entityId),
       coverActuate: (action: 'open' | 'close' | 'stop') => void actuateCover(entityId, action),
+      // issue #63: direct positioning from the dashboard slider (see
+      // setCoverPosition for the fire-and-resync semantics)
+      coverSetPosition: (position: number) => void setCoverPosition(entityId, position),
     }
   })
 }

@@ -402,31 +402,51 @@ describe('homeassistant api', () => {
           state: 'on',
           attributes: { icon: '' },
         },
-        'light.null_icon': { entity_id: 'light.null_icon', state: 'on', attributes: { icon: null } },
-        'light.weird_icon': { entity_id: 'light.weird_icon', state: 'on', attributes: { icon: 42 } },
+        'light.null_icon': {
+          entity_id: 'light.null_icon',
+          state: 'on',
+          attributes: { icon: null },
+        },
+        'light.weird_icon': {
+          entity_id: 'light.weird_icon',
+          state: 'on',
+          attributes: { icon: 42 },
+        },
       }
       const entries = toHomeEntityCatalog(raw)
       for (const entry of entries) expect(entry.icon).toBeUndefined()
     })
 
-    it('carries the cover positionPct clamped + rounded into 0–100, null when absent/null, and null for non-covers (issue #57 T2)', () => {
+    it('carries the cover positionPct (current_position) clamped + rounded into 0–100, null when absent/null, and null for non-covers (issue #57 T2)', () => {
       const raw: Record<string, HaEntityState> = {
         'cover.normal': {
           entity_id: 'cover.normal',
-          state: 'open',
-          attributes: { position: 42.6 },
+          state: 'closed',
+          attributes: { current_position: 42.6 },
         },
-        'cover.over': { entity_id: 'cover.over', state: 'open', attributes: { position: 130 } },
+        'cover.over': {
+          entity_id: 'cover.over',
+          state: 'open',
+          attributes: { current_position: 130 },
+        },
         'cover.under': {
           entity_id: 'cover.under',
           state: 'closed',
-          attributes: { position: -5 },
+          attributes: { current_position: -5 },
+        },
+        // issue #63: the LEGACY short `position` name is accepted as a fallback
+        // only — integrations that do not report current_position still render
+        // a thumb
+        'cover.legacy': {
+          entity_id: 'cover.legacy',
+          state: 'closed',
+          attributes: { position: 20 },
         },
         'cover.no_position': { entity_id: 'cover.no_position', state: 'open' },
         'cover.null_position': {
           entity_id: 'cover.null_position',
           state: 'open',
-          attributes: { position: null },
+          attributes: { current_position: null },
         },
         'light.position_attr': {
           entity_id: 'light.position_attr',
@@ -438,10 +458,25 @@ describe('homeassistant api', () => {
       expect(byId.get('cover.normal')?.positionPct).toBe(43) // rounded
       expect(byId.get('cover.over')?.positionPct).toBe(100) // clamped up
       expect(byId.get('cover.under')?.positionPct).toBe(0) // clamped down
+      expect(byId.get('cover.legacy')?.positionPct).toBe(20) // legacy fallback
       expect(byId.get('cover.no_position')?.positionPct).toBeNull() // attribute absent
       expect(byId.get('cover.null_position')?.positionPct).toBeNull() // null value
       // other domains never carry a position, even with the attribute present
       expect(byId.get('light.position_attr')?.positionPct).toBeNull()
+    })
+
+    it('prefers current_position over the legacy position attribute when both are present (issue #63)', () => {
+      const raw: Record<string, HaEntityState> = {
+        'cover.both': {
+          entity_id: 'cover.both',
+          state: 'closed',
+          attributes: { current_position: 10, position: 90 },
+        },
+      }
+      const byId = new Map(toHomeEntityCatalog(raw).map((e) => [e.entityId, e]))
+      // the standard attribute wins — and its semantics are "how far down":
+      // 0 = fully open (top of the slider scale), 100 = fully closed (bottom)
+      expect(byId.get('cover.both')?.positionPct).toBe(10)
     })
   })
 

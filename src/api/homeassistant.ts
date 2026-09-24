@@ -207,13 +207,18 @@ export function entityIcon(entity: HaEntityState): string | null {
   return typeof raw === 'string' && raw.length > 0 ? raw : null
 }
 
-// issue #57 (T2): HA cover's attributes.position is 0–100 (0 = fully closed,
-// 100 = fully open); it is absent for covers without position support and on
-// every non-cover domain → null. Rounded + clamped so a malformed value can
-// never reach the UI as a >100 % or negative readout (mirrors the clamp
-// discipline of lightCapabilities' brightness handling).
+// issue #57 (T2), fixed in issue #63: the HA standard attribute for a cover's
+// travel position is `current_position` — 0 = FULLY OPEN, 100 = FULLY CLOSED
+// ("how far down" the blind is; the Home dashboard's scale reads exactly that
+// top→bottom). A few integrations report the legacy short `position` name —
+// it is accepted as a fallback (the standard attribute wins when both are
+// present). Absent for covers without position support and on every non-cover
+// domain → null. Rounded + clamped so a malformed value can never reach the UI
+// as a >100 % or negative readout (mirrors the clamp discipline of
+// lightCapabilities' brightness handling).
 export function coverPositionPct(entity: HaEntityState): number | null {
-  const raw = (entity.attributes ?? {}).position
+  const attrs = entity.attributes ?? {}
+  const raw = attrs.current_position ?? attrs.position
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
   return Math.min(100, Math.max(0, Math.round(raw)))
 }
@@ -405,7 +410,10 @@ const SERVICE_SEGMENT = /^[a-z_]+$/
 export function callHaService(
   domain: string,
   service: string,
-  data: { entity_id: string },
+  // HA services carry service-SPECIFIC data beyond the target (issue #63:
+  // cover/set_cover_position sends `position`) — the index signature keeps
+  // the generic proxy honest for every domain/service pair
+  data: { entity_id: string; [key: string]: unknown },
   signal?: AbortSignal,
 ): Promise<HaEntityState[]> {
   if (!SERVICE_SEGMENT.test(domain) || !SERVICE_SEGMENT.test(service)) {

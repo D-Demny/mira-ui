@@ -267,9 +267,12 @@ export const COVER_PLACEHOLDER_LABELS: readonly string[] = ['Wohnzimmer', 'Esszi
 
 // one control column. `state` (e.g. 'open' / 'closed' / 'opening') stays as
 // the raw HA state string — W2 maps it to the up/down visual + stop handling.
-// `positionPct` is the clamped 0–100 cover position (issue #57 T2) — null for
-// placeholders and covers without position support; the restyling task (T3)
-// renders it.
+// `positionPct` is the clamped 0–100 cover position (issue #57 T2), carried
+// through UNCHANGED from HA's attributes.current_position: 0 = fully open
+// ("Auf", TOP of the slider track), 100 = fully closed ("Zu", BOTTOM) — the
+// thumb renders it at exactly `top: positionPct%`, so it always lines up with
+// its own scale mark (issue #63). Null for placeholders and covers without
+// position support (no thumb).
 export interface CoverColumnModel {
   entityId: string | null
   label: string

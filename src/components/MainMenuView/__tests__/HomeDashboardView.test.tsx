@@ -754,18 +754,19 @@ describe('HomeDashboardView light readout + state classes (issue #57 T4)', () =>
   })
 })
 
-// issue #57 T5, reworked in issues #61 + #64: cover column layout — label on
-// top, then the control row with THREE elements side by side: the stacked ^ /
-// v BUTTON TILES (LEFT), the vertical DISPLAY-ONLY position slider — visible
-// track (groove) + clearly defined thumb (MIDDLE) — and the static percentage
-// SCALE (RIGHT). NO zone icon between the buttons, NO position readout text
-// under the row. HA cover semantics: position 100 = fully OPEN → thumb at the
-// TOP of the track (top-offset = 100 - positionPct), 0 = fully closed → thumb
-// at the BOTTOM. The scale reads "how far down the blind is" top→bottom:
+// issue #57 T5, reworked in issues #61 + #64, made interactive in issue #63:
+// cover column layout — label on top, then the control row with THREE elements
+// side by side: the stacked ^ / v BUTTON TILES (LEFT), the vertical position
+// slider — visible track (groove) + clearly defined thumb (MIDDLE) — and the
+// static percentage SCALE (RIGHT). NO zone icon between the buttons, NO
+// position readout text under the row. HA cover semantics (issue #63):
+// current_position 0 = fully OPEN → thumb at the TOP of the track
+// (top: positionPct% — NO inversion anywhere), 100 = fully closed → thumb at
+// the BOTTOM. The scale reads "how far down the blind is" top→bottom:
 // '0% (Auf)' / '25%' / '50%' / '75%' / '100% (Zu)', each mark pinned to its
 // exact track height — and that value equals the thumb's top offset, so the
-// thumb always lines up with its own label. No drag interaction on purpose:
-// issue #63 attaches handlers to the [data-cover-track] element.
+// thumb always lines up with its own label. The track is the drag/tap target
+// for direct positioning ([data-cover-track], handlers wired in issue #63).
 describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)', () => {
   it('stacks ^ and v with NO zone icon between them in every column (issue #61)', () => {
     // one real cover → 1 real column + 1 placeholder column ('Esszimmer')
@@ -812,21 +813,22 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)
     const col = container.querySelector('.coverColumn') as HTMLElement
     const scale = col.querySelector('.coverScale') as HTMLElement
     // 5 static marks reading "how far down the blind is": 0% (Auf) at the TOP
-    // of the track ... 100% (Zu) at the BOTTOM (derived from HA's position:
-    // open = 100 → 0% down). Each mark carries an inline top matching its own
-    // label value, so 0%/50%/100% line up with the track top/middle/bottom.
+    // of the track ... 100% (Zu) at the BOTTOM — the same scale as HA's
+    // current_position (issue #63: 0 = fully open, 100 = fully closed). Each
+    // mark carries an inline top matching its own label value, so 0%/50%/100%
+    // line up with the track top/middle/bottom.
     const marks = Array.from(scale.querySelectorAll('span')) as HTMLElement[]
     expect(marks.map((m) => m.textContent)).toEqual(['0% (Auf)', '25%', '50%', '75%', '100% (Zu)'])
     expect(marks.map((m) => m.style.top)).toEqual(['0%', '25%', '50%', '75%', '100%'])
   })
 
-  it('renders the slider structure: track groove + thumb inside it, marked for #63 drag wiring (issue #64)', () => {
+  it('renders the slider structure: track groove + thumb inside it, marked as the drag/tap target (issues #64 + #63)', () => {
     const entities: DashboardEntity[] = [
       { ...cover('cover.kueche_rollo', 'Kueche Rollo'), positionPct: 45 },
     ]
     const { container } = render(<HomeDashboardView entities={entities} />)
     const col = container.querySelector('[data-entity-id="cover.kueche_rollo"]') as HTMLElement
-    // the track is the element issue #63 attaches its pointer handlers to
+    // the track is the element issue #63 wires its pointer handlers to
     const track = col.querySelector('.coverTrack[data-cover-track="true"]') as HTMLElement
     expect(track).not.toBeNull()
     // the thumb sits INSIDE the track (its position target), not beside it
@@ -834,18 +836,20 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)
     expect(thumb).not.toBeNull()
   })
 
-  it('shows the thumb at top 55% for a known position (no text readout, issue #61)', () => {
+  it('shows the thumb at exactly top: positionPct% for a known position — no inversion (issues #61 + #63)', () => {
     const entities: DashboardEntity[] = [
       { ...cover('cover.kueche_rollo', 'Kueche Rollo'), positionPct: 45 },
     ]
     const { container } = render(<HomeDashboardView entities={entities} />)
     const col = container.querySelector('[data-entity-id="cover.kueche_rollo"]') as HTMLElement
-    // thumb present; top-offset = 100 - 45 = 55% (HA: open → top). That offset
+    // thumb present; issue #63 semantics: positionPct ≡ HA's current_position
+    // (0 = fully open / "Auf" at the top, 100 = fully closed / "Zu" at the
+    // bottom) and is carried through UNCHANGED — 45% closed → top: 45%, which
     // is also the "how far down" percentage, so the thumb lines up with the
-    // ~55% area of the scale (issue #64)
+    // ~45% area of its own scale (issues #61 + #64)
     const thumb = col.querySelector('.coverThumb') as HTMLElement
     expect(thumb).not.toBeNull()
-    expect(thumb.style.top).toBe('55%')
+    expect(thumb.style.top).toBe('45%')
     // issue #61: the position is shown ONLY via the thumb — no text readout
     expect(col.querySelector('.coverStatus')).toBeNull()
   })
@@ -863,6 +867,159 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)
       expect(col.querySelector('.coverThumb')).toBeNull()
       expect(col.querySelector('.coverStatus')).toBeNull()
     }
+  })
+})
+
+// issue #63: direct positioning from the position slider — a tap/drag on
+// [data-cover-track] sends the pointer's % down from the track's top edge as
+// cover.set_cover_position (via onCoverSetPosition): exactly ONE send per
+// press for a tap, one send per INTEGER change while dragging, plus the final
+// value on release iff its integer differs. The thumb mapping test lives in
+// the layout describe above (top: positionPct%, no inversion).
+describe('HomeDashboardView cover slider direct positioning (issue #63)', () => {
+  // jsdom gives every element a zero-sized rect and no pointer capture, so
+  // the track's % down computation needs a stubbed geometry (same approach as
+  // MainMenuView.test.tsx's stubBar)
+  function stubTrack(el: HTMLElement, top = 100, height = 200): void {
+    el.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        width: 14,
+        right: 14,
+        top,
+        bottom: top + height,
+        height,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      }) as DOMRect
+    el.setPointerCapture = () => undefined
+    el.releasePointerCapture = () => undefined
+    el.hasPointerCapture = () => false
+  }
+
+  it('renders the thumb at exactly its scale mark for open / half / closed (no inversion)', () => {
+    const entities: DashboardEntity[] = [
+      { ...cover('cover.auf', 'Auf'), positionPct: 0 }, // fully open → TOP
+      { ...cover('cover.halb', 'Halb'), positionPct: 50 },
+      { ...cover('cover.zu', 'Zu'), positionPct: 100 }, // fully closed → BOTTOM
+    ]
+    const { container } = render(<HomeDashboardView entities={entities} />)
+    for (const [id, top] of [
+      ['cover.auf', '0%'],
+      ['cover.halb', '50%'],
+      ['cover.zu', '100%'],
+    ] as const) {
+      const col = container.querySelector(`[data-entity-id="${id}"]`) as HTMLElement
+      const thumb = col.querySelector('.coverThumb') as HTMLElement
+      expect(thumb).not.toBeNull()
+      // the thumb's top IS its position value — it sits on its own scale mark
+      expect(thumb.style.top).toBe(top)
+    }
+  })
+
+  it('tap on the track sends EXACTLY ONE command at the tapped position and re-roots the dial', () => {
+    // default fixture: unknown position (positionPct null) — a REAL cover is
+    // still fully operable (issue #63 decision); the thumb just stays hidden
+    const onCoverSetPosition = vi.fn()
+    const onSlotTapped = vi.fn()
+    const entities = [cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]
+    const { container } = render(
+      <HomeDashboardView
+        entities={entities}
+        onCoverSetPosition={onCoverSetPosition}
+        onSlotTapped={onSlotTapped}
+      />,
+    )
+    const col = container.querySelector('[data-entity-id="cover.wohnzimmer_rollo"]') as HTMLElement
+    expect(col.querySelector('.coverThumb')).toBeNull() // unknown position
+    const track = col.querySelector('.coverTrack[data-cover-track="true"]') as HTMLElement
+    stubTrack(track) // top 100, height 200 → clientY 200 == the middle == 50
+    fireEvent.pointerDown(track, { clientX: 7, clientY: 200 })
+    fireEvent.pointerUp(track, { clientX: 7, clientY: 200 }) // no travel → a tap
+    expect(onCoverSetPosition).toHaveBeenCalledTimes(1)
+    // the REAL column model + the integer target position
+    expect(onCoverSetPosition).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'cover.wohnzimmer_rollo' }),
+      50,
+    )
+    // a short tap re-roots the dial onto the column (chain: 4 light slots + i)
+    expect(onSlotTapped).toHaveBeenCalledTimes(1)
+    expect(onSlotTapped).toHaveBeenCalledWith(4)
+  })
+
+  it('drag sends only on INTEGER change and the final value on release; never re-roots the dial', () => {
+    const onCoverSetPosition = vi.fn()
+    const onSlotTapped = vi.fn()
+    const entities = [cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]
+    const { container } = render(
+      <HomeDashboardView
+        entities={entities}
+        onCoverSetPosition={onCoverSetPosition}
+        onSlotTapped={onSlotTapped}
+      />,
+    )
+    const col = container.querySelector('[data-entity-id="cover.wohnzimmer_rollo"]') as HTMLElement
+    const track = col.querySelector('.coverTrack[data-cover-track="true"]') as HTMLElement
+    stubTrack(track) // top 100, height 200 → pctDown = (clientY - 100) / 2
+    fireEvent.pointerDown(track, { clientX: 7, clientY: 100 }) // 0% — first send
+    fireEvent.pointerMove(track, { clientX: 7, clientY: 150 }) // 25% — integer change
+    fireEvent.pointerMove(track, { clientX: 7, clientY: 149.5 }) // 24.75 → 25 — NO send
+    fireEvent.pointerMove(track, { clientX: 7, clientY: 160 }) // 30% — integer change
+    fireEvent.pointerUp(track, { clientX: 7, clientY: 200 }) // release at 50% — final send
+    expect(onCoverSetPosition.mock.calls.map((c) => c[1])).toEqual([0, 25, 30, 50])
+    // a drag is never a tap — the dial focus does not move
+    expect(onSlotTapped).not.toHaveBeenCalled()
+  })
+
+  it('placeholder track shows the toast and sends nothing', () => {
+    const onCoverSetPosition = vi.fn()
+    const entities = [cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]
+    const { container } = render(
+      <HomeDashboardView entities={entities} onCoverSetPosition={onCoverSetPosition} />,
+    )
+    // one real cover → 1 real column + 1 placeholder column ('Esszimmer')
+    const tracks = Array.from(container.querySelectorAll('.coverTrack[data-cover-track="true"]'))
+    expect(tracks.length).toBe(2)
+    const placeholderTrack = tracks[1] as HTMLElement
+    expect(placeholderTrack.closest('[data-dashboard-placeholder="true"]')).not.toBeNull()
+    stubTrack(placeholderTrack)
+    fireEvent.pointerDown(placeholderTrack, { clientX: 7, clientY: 200 })
+    // W2-2 pattern: the component toasts the placeholder press (parent no-op)
+    const toast = container.querySelector('[role="status"]')
+    expect(toast).not.toBeNull()
+    expect(toast).toHaveTextContent('„Esszimmer" ist noch nicht zugewiesen')
+    expect(onCoverSetPosition).not.toHaveBeenCalled()
+    // no session was recorded — move/release on the placeholder stay silent
+    fireEvent.pointerMove(placeholderTrack, { clientX: 7, clientY: 120 })
+    fireEvent.pointerUp(placeholderTrack, { clientX: 7, clientY: 120 })
+    expect(onCoverSetPosition).not.toHaveBeenCalled()
+  })
+
+  it('stray pointermove without a pointerdown sends nothing', () => {
+    const onCoverSetPosition = vi.fn()
+    const entities = [cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]
+    const { container } = render(
+      <HomeDashboardView entities={entities} onCoverSetPosition={onCoverSetPosition} />,
+    )
+    const col = container.querySelector('[data-entity-id="cover.wohnzimmer_rollo"]') as HTMLElement
+    const track = col.querySelector('.coverTrack[data-cover-track="true"]') as HTMLElement
+    stubTrack(track)
+    fireEvent.pointerMove(track, { clientX: 7, clientY: 150 }) // no session → ignored
+    expect(onCoverSetPosition).not.toHaveBeenCalled()
+  })
+
+  it('pointerup without a pointerdown (foreign release) sends nothing', () => {
+    const onCoverSetPosition = vi.fn()
+    const entities = [cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]
+    const { container } = render(
+      <HomeDashboardView entities={entities} onCoverSetPosition={onCoverSetPosition} />,
+    )
+    const col = container.querySelector('[data-entity-id="cover.wohnzimmer_rollo"]') as HTMLElement
+    const track = col.querySelector('.coverTrack[data-cover-track="true"]') as HTMLElement
+    stubTrack(track)
+    fireEvent.pointerUp(track, { clientX: 7, clientY: 200 }) // no session → ignored
+    expect(onCoverSetPosition).not.toHaveBeenCalled()
   })
 })
 

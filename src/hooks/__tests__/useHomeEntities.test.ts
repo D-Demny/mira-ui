@@ -1351,4 +1351,99 @@ describe('useHomeEntities', () => {
       }
     })
   })
+
+  // issue #63: direct positioning from the Home dashboard's vertical slider —
+  // the view model sends cover.set_cover_position with an exact 0–100 target
+  // and resyncs the REAL state afterwards. Deliberately NO optimistic flip to
+  // protect (the readout is just a mirror of attributes.current_position), so
+  // the thumb keeps its last known value on failure and on flight
+  describe('cover set position (issue #63)', () => {
+    it('issues cover/set_cover_position with the clamped + rounded target and resyncs the real state', async () => {
+      seedSelection([COVER])
+      let served = { entity_id: COVER, state: 'open', attributes: { current_position: 0 } }
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () => HttpResponse.json(served)),
+        http.post('*/ha-api/services/cover/set_cover_position', async ({ request }) => {
+          bodies.push(await request.json())
+          // HA starts the travel toward the target — the post-settle resync
+          // read sees an already-updated current_position
+          served = { entity_id: COVER, state: 'opening', attributes: { current_position: 30 } }
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].positionPct).toBe(0))
+      act(() => {
+        result.current[0].coverSetPosition(42.6) // the view clamps + rounds to 43
+      })
+      await waitFor(() => expect(bodies.length).toBe(1))
+      expect(bodies).toEqual([{ entity_id: COVER, position: 43 }])
+      // no optimistic thumb nudge — the readout stays at the last KNOWN value
+      // (0) until the resync lands the real state from the states endpoint
+      await waitFor(() => expect(result.current[0].positionPct).toBe(30))
+      expect(result.current[0].error).toBeNull()
+    })
+
+    it('clamps out-of-range targets into 0–100 before sending', async () => {
+      seedSelection([COVER])
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: 'open' }),
+        ),
+        http.post('*/ha-api/services/cover/set_cover_position', async ({ request }) => {
+          bodies.push(await request.json())
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].loading).toBe(false))
+      act(() => {
+        result.current[0].coverSetPosition(-20)
+      })
+      act(() => {
+        result.current[0].coverSetPosition(150)
+      })
+      await waitFor(() => expect(bodies.length).toBe(2))
+      expect(bodies.map((b) => (b as { position: number }).position)).toEqual([0, 100])
+    })
+
+    it('surfaces the error in the store when set_cover_position fails (nothing to revert)', async () => {
+      seedSelection([COVER])
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({
+            entity_id: COVER,
+            state: 'closed',
+            attributes: { current_position: 100 },
+          }),
+        ),
+        http.post('*/ha-api/services/cover/set_cover_position', () =>
+          HttpResponse.json({ message: 'boom' }, { status: 500 }),
+        ),
+      )
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const { result } = renderHook(() => useHomeSelectedEntities())
+        await waitFor(() => expect(result.current[0].positionPct).toBe(100))
+        act(() => {
+          result.current[0].coverSetPosition(50)
+        })
+        await waitFor(() => expect(result.current[0].error).toMatch(/500/))
+        // the readout keeps its last KNOWN position — no optimistic flip ever
+        // happened, so there is nothing to revert either
+        expect(result.current[0].positionPct).toBe(100)
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('exposes coverSetPosition on every selected entity view', async () => {
+      seedSelection([COVER])
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].loading).toBe(false))
+      expect(typeof result.current[0].coverSetPosition).toBe('function')
+    })
+  })
 })

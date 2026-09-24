@@ -9,8 +9,9 @@
 //   Z3 cover section — header ("Wohnzimmer und Esszimmer" / "Rollo Steuerung
 //                    EG") above one column per cover: label + control row
 //                    (stacked ^ / v button tiles on the left, vertical
-//                    display-only position slider — track + thumb — in the
-//                    middle, static 0%→100% percentage scale on the right;
+//                    position slider — track + thumb — in the middle,
+//                    interactive for direct positioning via drag/tap since
+//                    issue #63; static 0%→100% percentage scale on the right;
 //                    issue #64)
 //                    (hidden w/o covers)
 //
@@ -72,6 +73,14 @@ export interface HomeDashboardViewProps {
   onSceneTap?: (slot: SceneSlotModel) => void
   onLightTap?: (tile: LightTileModel) => void
   onCoverAction?: (column: CoverColumnModel, direction: 'up' | 'down') => void
+  // issue #63: direct positioning from the position SLIDER — a tap/drag on
+  // [data-cover-track] reports the target position 0–100 (the % down from the
+  // track's top edge, already clamped + rounded to an integer; 0 = fully open
+  // at the top, 100 = fully closed at the bottom). The parent routes it to
+  // cover.set_cover_position. Placeholder columns (entityId === null) are
+  // passed through too — the component toasts them, the parent ignores them.
+  // Optional — without it the track stays display-only.
+  onCoverSetPosition?: (column: CoverColumnModel, position: number) => void
   // ticket 9.6 W2-3a: touch hold (pointer held ≥ CARD_HOLD_MS, pattern ported
   // from ContentCarousel). A light tile is holdable ONLY when dimmable
   // (placeholders are dimmable by design); BOTH ^ and v buttons of a cover
@@ -129,6 +138,7 @@ export function HomeDashboardView({
   onSceneTap,
   onLightTap,
   onCoverAction,
+  onCoverSetPosition,
   onLightHold,
   onCoverHold,
   onSlotTapped,
@@ -434,6 +444,111 @@ export function HomeDashboardView({
     onSlotTapped?.(index)
   }
 
+  // issue #63: direct positioning from the position SLIDER — pointer handlers
+  // on [data-cover-track] (the .coverTrack groove). One session per column,
+  // keyed `cover-track-${i}`: pointerdown records the press origin and sends
+  // the target position IMMEDIATELY (a tap is exactly one send), pointermove
+  // re-sends it ONLY when the integer changes (one command per crossed scale
+  // step, sub-integer drift stays silent), pointerup re-sends the final value
+  // iff its integer differs from the last send. The target is the % DOWN from
+  // the track's top edge, clamped + rounded to a whole percent — the SAME
+  // scale as the labels beside the track and the thumb's `top`, so there is
+  // NO inversion anywhere (0 = fully open / "Auf" at the top, 100 = fully
+  // closed / "Zu" at the bottom). A SHORT tap (pointer travel ≤ HOLD_SLOP_PX)
+  // additionally re-roots the dial onto the column via onSlotTapped — exactly
+  // like tapping one of its ^ / v buttons; a drag never does. Placeholder
+  // columns only toast: no session is recorded, so moves and release are
+  // ignored. REAL covers without a known position are fully operable too —
+  // the thumb just stays hidden until HA reports attributes.current_position
+  // (issue #63 decision).
+  const coverTrackStateRef = useRef<
+    Map<string, { pointerId: number; originY: number; lastSent: number | null; moved: boolean }>
+  >(new Map())
+
+  // the integer target position for a pointer at `clientY` — the % down from
+  // the track's top edge (0 = fully open / top, 100 = fully closed / bottom),
+  // clamped + rounded to a whole percent. A zero-height rect (first paint /
+  // jsdom) degrades to a full-range clamp at the pointer position — never NaN.
+  const coverTrackTargetAt = (track: HTMLElement, clientY: number): number => {
+    const rect = track.getBoundingClientRect()
+    const height = rect.height > 0 ? rect.height : 1
+    return Math.min(100, Math.max(0, Math.round(((clientY - rect.top) / height) * 100)))
+  }
+
+  const handleCoverTrackPointerDown = (
+    col: CoverColumnModel,
+    i: number,
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (col.isPlaceholder) {
+      // a placeholder column has no entity to position — toast only
+      showPlaceholderToast(col.label)
+      return
+    }
+    const track = e.currentTarget
+    // keep receiving moves even when the pointer drifts off the thin groove —
+    // guarded: jsdom (and some test envs) lack setPointerCapture on elements
+    if (typeof track.setPointerCapture === 'function') {
+      try {
+        track.setPointerCapture(e.pointerId)
+      } catch {
+        // ignore — capture is a nicety, positioning works without it
+      }
+    }
+    // the FIRST command of the press: a tap sends exactly this one value
+    const target = coverTrackTargetAt(track, e.clientY)
+    onCoverSetPosition?.(col, target)
+    coverTrackStateRef.current.set(`cover-track-${i}`, {
+      pointerId: e.pointerId,
+      originY: e.clientY,
+      lastSent: target,
+      moved: false,
+    })
+  }
+
+  const handleCoverTrackPointerMove = (
+    col: CoverColumnModel,
+    i: number,
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const s = coverTrackStateRef.current.get(`cover-track-${i}`)
+    if (!s || e.pointerId !== s.pointerId) return
+    // travel beyond the slop makes this a DRAG (never a tap) — the same
+    // HOLD_SLOP_PX scale as the hold handlers above
+    if (Math.abs(e.clientY - s.originY) > HOLD_SLOP_PX) s.moved = true
+    const target = coverTrackTargetAt(e.currentTarget, e.clientY)
+    // send ONLY on an integer change — thumb and scale both live on whole
+    // percents, so a sub-integer drift stays silent
+    if (target !== s.lastSent) {
+      onCoverSetPosition?.(col, target)
+      s.lastSent = target
+    }
+  }
+
+  const handleCoverTrackPointerUp = (
+    col: CoverColumnModel,
+    i: number,
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const key = `cover-track-${i}`
+    const s = coverTrackStateRef.current.get(key)
+    if (!s || e.pointerId !== s.pointerId) return
+    coverTrackStateRef.current.delete(key)
+    // release: send the final value iff its integer changed since the last send
+    const target = coverTrackTargetAt(e.currentTarget, e.clientY)
+    if (target !== s.lastSent) onCoverSetPosition?.(col, target)
+    // a SHORT tap (≤ slop travel) re-roots the dial onto this column — the
+    // same rule as the ^ / v buttons; a drag never does
+    if (!s.moved) {
+      onSlotTapped?.(sceneRow.length + lightGrid.length + i)
+    }
+  }
+
+  const handleCoverTrackPointerCancel = (i: number) => {
+    // a cancelled press sends nothing further — just drop the session
+    coverTrackStateRef.current.delete(`cover-track-${i}`)
+  }
+
   return (
     <div className={styles.root}>
       {/* ticket 9.6 W2: placeholder toast — absolute-positioned pill above the
@@ -640,23 +755,30 @@ export function HomeDashboardView({
                         v
                       </span>
                     </span>
-                    {/* issue #57 T5, reworked in issue #64: the vertical position
-                      slider — a visible track (groove) with an amber THUMB handle,
-                      DISPLAY-ONLY for now: issue #63 attaches the drag/tap handlers
-                      to the [data-cover-track] element below. The scale beside it
-                      reads 0% (Auf) at the TOP of the track down to 100% (Zu) at the
-                      BOTTOM — "how far down the blind is", derived from HA's
-                      current_position (open = 100 → 0% down, closed = 0 → 100% down).
-                      Each label is pinned to its exact track height (top: <value>%,
-                      vertically centered), and the amber thumb rides on that same
-                      scale: top-offset = (100 - positionPct)% = % down — fully open
-                      → thumb at the TOP, fully closed → BOTTOM. */}
+                    {/* issue #57 T5, reworked in issue #64, made interactive in
+                      issue #63: the vertical position slider — a visible track
+                      (groove) with an amber THUMB handle. The [data-cover-track]
+                      element below is the drag/tap TARGET for direct positioning
+                      (handlers above): a pointer's % down from the track's top edge
+                      IS the requested position, so there is NO inversion anywhere —
+                      the scale beside it reads 0% (Auf) at the TOP down to 100% (Zu)
+                      at the BOTTOM, each label pinned to its exact track height
+                      (top: <value>%, vertically centered), and the amber thumb rides
+                      that same scale: top: positionPct% ≡ HA's current_position —
+                      fully open (0) → thumb at the TOP, fully closed (100) → BOTTOM. */}
                     <div className={styles.coverSlider}>
-                      <div className={styles.coverTrack} data-cover-track="true">
+                      <div
+                        className={styles.coverTrack}
+                        data-cover-track="true"
+                        onPointerDown={(e) => handleCoverTrackPointerDown(col, i, e)}
+                        onPointerMove={(e) => handleCoverTrackPointerMove(col, i, e)}
+                        onPointerUp={(e) => handleCoverTrackPointerUp(col, i, e)}
+                        onPointerCancel={() => handleCoverTrackPointerCancel(i)}
+                      >
                         {col.positionPct !== null && (
                           <span
                             className={styles.coverThumb}
-                            style={{ top: `${100 - col.positionPct}%` }}
+                            style={{ top: `${col.positionPct}%` }}
                           />
                         )}
                       </div>
