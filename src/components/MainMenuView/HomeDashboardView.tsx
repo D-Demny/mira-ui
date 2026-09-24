@@ -8,9 +8,9 @@
 //                    (0 lights → the full placeholder tile set, by design)
 //   Z3 cover section — header ("Wohnzimmer und Esszimmer" / "Rollo Steuerung
 //                    EG") above one column per cover: label + control row
-//                    (^ / v buttons with the blinds icon between them, vertical
-//                    display-only position slider with 100%→0% scale) + exact
-//                    position readout (hidden w/o covers)
+//                    (stacked ^ / v buttons on the left, vertical display-only
+//                    position slider with 100%→0% scale on the right)
+//                    (hidden w/o covers)
 //
 // Rendering on top of the view models from ./homeDashboard (Task A). No
 // store access — all actuation flows through the optional short-press
@@ -584,9 +584,9 @@ export function HomeDashboardView({
                   data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
                 >
                   <span className={styles.coverLabel}>{col.label}</span>
-                  {/* issue #57 T5: control row — the ^ / v stack on the LEFT
-                    (the blinds icon sits between the two buttons) and the
-                    vertical position slider on the RIGHT */}
+                  {/* issue #57 T5 (icons removed in issue #61): control row —
+                    the stacked ^ / v buttons on the LEFT and the vertical
+                    position slider on the RIGHT */}
                   <div className={styles.coverRow}>
                     <span className={styles.coverBtns}>
                       {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
@@ -614,8 +614,6 @@ export function HomeDashboardView({
                       >
                         ^
                       </span>
-                      {/* issue #57 T5: the zone icon between the two buttons */}
-                      <MenuIcon name="blinds" size={20} />
                       <span
                         className={styles.coverBtn}
                         data-cover-action="down"
@@ -665,12 +663,6 @@ export function HomeDashboardView({
                       </span>
                     </div>
                   </div>
-                  {/* issue #57 T5: exact position readout — '45% Position' for a
-                    known position, 'Position –' when the cover reports none
-                    (placeholders always fall into the null path) */}
-                  <span className={styles.coverStatus}>
-                    {col.positionPct !== null ? `${col.positionPct}% Position` : 'Position –'}
-                  </span>
                 </div>
               ))}
             </div>

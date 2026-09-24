@@ -340,12 +340,12 @@ $light-amber: #ffc14d;
 .coverColumn {
   flex: 1 1 0;
   min-width: 0;
-  // issue #53/#57 T5: explicit content height — padding $s-2 x2 (16) + label
-  // line $fs-md x1.4 (19.6) + gap $s-2 (8) + control row (button stack
-  // 32 + 8 + icon 20 + 8 + 32 = 100; the slider track is 96px, so the row is
-  // 100) + gap $s-2 (8) + footer line $fs-sm x1.4 (16.8) = 168.4 -> 169px;
-  // same belt-and-braces rationale as .sceneBtn min-height.
-  min-height: 169px;
+  // issue #53/#57 T5, reworked in issue #61 (icon + footer readout removed):
+  // padding $s-2 x2 (16) + label line $fs-md x1.4 (19.6) + gap $s-2 (8) +
+  // control row (button stack 32 + 8 + 32 = 72; the slider track is 96px, so
+  // the row is 96) = 139.6 -> 140px; same belt-and-braces rationale as
+  // .sceneBtn min-height.
+  min-height: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -373,14 +373,14 @@ $light-amber: #ffc14d;
 }
 
 // the ^ / v buttons of the mockup — W2 maps these to open/close/stop calls.
-// issue #57 T5: the blinds zone icon sits BETWEEN the two buttons in this
-// stack (inherits the secondary tint, same as the arrows)
+// issue #61: the blinds zone icon that used to sit BETWEEN the two buttons is
+// gone, so this stack carries only the two stacked arrow buttons (each sets
+// its own secondary tint)
 .coverBtns {
   display: flex;
   flex-direction: column;
   @include flex-gap-y($s-2);
   width: 40px;
-  color: $text-secondary;
 }
 
 .coverBtn {
@@ -417,8 +417,9 @@ $light-amber: #ffc14d;
   @include flex-gap-x($s-1);
 }
 
-// thick rounded track — sized to roughly match the control stack height
-// (32 + 8 + icon 20 + 8 + 32 = 100px) so the row reads as one unit
+// thick rounded track — fixed at 96px (taller than the ^ / v button stack,
+// 32 + 8 + 32 = 72px) so it anchors the control row's height and the scale
+// labels have room to run top→bottom beside it
 .coverTrack {
   position: relative;
   width: 10px;
@@ -455,16 +456,6 @@ $light-amber: #ffc14d;
   span {
     @include truncate(1);
   }
-}
-
-// issue #57 T5: the exact position readout under the control row —
-// '45% Position' for a known position, 'Position –' when the cover reports
-// none (placeholders always take the null path)
-.coverStatus {
-  max-width: 100%;
-  font-size: $fs-sm;
-  color: $text-secondary;
-  @include truncate(1);
 }
 
 // -------------------------------------------------- shared state markers

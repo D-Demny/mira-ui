@@ -457,13 +457,22 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
     // .sceneBtn = padding $s-3 x2 (24) + icon 20px + gap $s-1 (4) + label line
     // $fs-sm x1.4 (16.8) = 64.8 -> 65px; .coverColumn = padding $s-2 x2 (16) +
     // label line $fs-md x1.4 (19.6) + gap $s-2 (8) + control row (button stack
-    // 32+8+icon 20+8+32 = 100; slider track 96px → row 100) + gap $s-2 (8) +
-    // footer line $fs-sm x1.4 (16.8) = 168.4 -> 169px (issue #57 T5 added the
-    // slider row + footer). Update both the SCSS and this pin together.
+    // 32+8+32 = 72; slider track 96px → row 96) = 139.6 -> 140px (issue #57
+    // T5 added the slider row, issue #61 removed the icon + footer readout).
+    // Update both the SCSS and this pin together.
     expect(block('sceneBtn')).toMatch(/min-height: 65px;/)
-    expect(block('coverColumn')).toMatch(/min-height: 169px;/)
+    expect(block('coverColumn')).toMatch(/min-height: 140px;/)
     // cover columns read as entity tiles — same tint as .lightTile / .sceneBtn
     expect(block('coverColumn')).toContain('background: rgba(255, 255, 255, 0.07);')
+  })
+
+  it('drops the .coverStatus rule and the icon-only tint from .coverBtns (issue #61)', () => {
+    // The bottom position readout ('45% Position' / 'Position –') and the
+    // blinds icon between the ^ / v buttons are gone — their SCSS must be too:
+    // no .coverStatus rule, and .coverBtns no longer sets a text color (that
+    // tint only existed for the now-removed icon; .coverBtn sets its own).
+    expect(scss.indexOf('.coverStatus {')).toBe(-1)
+    expect(block('coverBtns')).not.toMatch(/color:\s*\$text-secondary/)
   })
 
   it('introduces no raw flex gap (CR69: Chromium 69 ignores it)', () => {
@@ -713,16 +722,17 @@ describe('HomeDashboardView light readout + state classes (issue #57 T4)', () =>
   })
 })
 
-// issue #57 T5: cover column layout — label on top, then the control row
-// (^ / v stack with the blinds zone icon BETWEEN the buttons on the left,
-// vertical DISPLAY-ONLY position slider on the right), then the exact position
-// readout below. HA cover semantics: position 100 = fully OPEN → thumb at the
-// TOP of the track (top-offset = 100 - positionPct), 0 = fully closed → thumb
-// at the BOTTOM. Scale labels top→bottom: '100% (Auf)' / '75%' / '50%' /
-// '25%' / '0% (Zu)'. The slider has no drag interaction on purpose (a
-// draggable knob would be a follow-up ticket).
-describe('HomeDashboardView cover column layout (issue #57 T5)', () => {
-  it('renders the blinds zone icon between the ^ and v buttons in every column', () => {
+// issue #57 T5, reworked in issue #61: cover column layout — label on top,
+// then the control row (stacked ^ / v buttons on the LEFT — NO zone icon
+// between them anymore — and the vertical DISPLAY-ONLY position slider with
+// its static scale on the right). NO position readout text under the row.
+// HA cover semantics: position 100 = fully OPEN → thumb at the TOP of the
+// track (top-offset = 100 - positionPct), 0 = fully closed → thumb at the
+// BOTTOM. Scale labels top→bottom: '100% (Auf)' / '75%' / '50%' / '25%' /
+// '0% (Zu)'. The slider has no drag interaction on purpose (a draggable
+// knob would be a follow-up ticket).
+describe('HomeDashboardView cover column layout (issue #57 T5, issue #61)', () => {
+  it('stacks ^ and v with NO zone icon between them in every column (issue #61)', () => {
     // one real cover → 1 real column + 1 placeholder column ('Esszimmer')
     const { container } = render(
       <HomeDashboardView entities={[cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]} />,
@@ -730,11 +740,33 @@ describe('HomeDashboardView cover column layout (issue #57 T5)', () => {
     const cols = Array.from(container.querySelectorAll('.coverColumn'))
     expect(cols.length).toBe(2)
     for (const col of cols) {
-      // exactly one svg per column — the blinds MenuIcon between the buttons
-      expect(col.querySelectorAll('svg').length).toBe(1)
-      // the ^ / v wiring stays intact around it (same data-cover-action attrs)
-      expect(col.querySelector('[data-cover-action="up"]')).not.toBeNull()
-      expect(col.querySelector('[data-cover-action="down"]')).not.toBeNull()
+      // issue #61: no icon anywhere in the column — the blinds MenuIcon that
+      // used to sit between the two buttons is gone (no svg at all)
+      expect(col.querySelectorAll('svg').length).toBe(0)
+      // both arrow buttons stay stacked in .coverBtns, ^ ABOVE v, and keep
+      // their data-cover-action wiring (both actionable + holdable)
+      const btns = col.querySelector('.coverBtns') as HTMLElement
+      const arrows = Array.from(btns.querySelectorAll('[data-cover-action]')) as HTMLElement[]
+      expect(arrows.length).toBe(2)
+      expect(arrows[0].dataset.coverAction).toBe('up')
+      expect(arrows[0].textContent).toBe('^')
+      expect(arrows[1].dataset.coverAction).toBe('down')
+      expect(arrows[1].textContent).toBe('v')
+    }
+  })
+
+  it('renders NO position readout text under the control row (issue #61)', () => {
+    const entities: DashboardEntity[] = [
+      // known position → used to render '45% Position'; unknown → 'Position –'
+      { ...cover('cover.kueche_rollo', 'Kueche Rollo'), positionPct: 45 },
+      cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo'),
+    ]
+    const { container } = render(<HomeDashboardView entities={entities} />)
+    for (const col of Array.from(container.querySelectorAll('.coverColumn'))) {
+      // the removed .coverStatus element is gone entirely — neither the known
+      // '45% Position' text nor the 'Position –' dash path
+      expect(col.querySelector('.coverStatus')).toBeNull()
+      expect((col.textContent ?? '').includes('Position')).toBe(false)
     }
   })
 
@@ -750,32 +782,32 @@ describe('HomeDashboardView cover column layout (issue #57 T5)', () => {
     expect(labels).toEqual(['100% (Auf)', '75%', '50%', '25%', '0% (Zu)'])
   })
 
-  it('shows "45% Position" and the thumb at top 55% for a known position', () => {
+  it('shows the thumb at top 55% for a known position (no text readout, issue #61)', () => {
     const entities: DashboardEntity[] = [
       { ...cover('cover.kueche_rollo', 'Kueche Rollo'), positionPct: 45 },
     ]
     const { container } = render(<HomeDashboardView entities={entities} />)
     const col = container.querySelector('[data-entity-id="cover.kueche_rollo"]') as HTMLElement
-    // footer readout: the exact position
-    expect((col.querySelector('.coverStatus') as HTMLElement).textContent).toBe('45% Position')
     // thumb present; top-offset = 100 - 45 = 55% (HA: open → top)
     const thumb = col.querySelector('.coverThumb') as HTMLElement
     expect(thumb).not.toBeNull()
     expect(thumb.style.top).toBe('55%')
+    // issue #61: the position is shown ONLY via the thumb — no text readout
+    expect(col.querySelector('.coverStatus')).toBeNull()
   })
 
-  it('shows "Position –" and renders no thumb when the position is unknown', () => {
+  it('renders no thumb when the position is unknown (no readout either, issue #61)', () => {
     const { container } = render(
       <HomeDashboardView entities={[cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]} />,
     )
     // the fixture reports no position (positionPct null) — as do all
     // placeholder columns, so BOTH the real and the placeholder column take
-    // the null path (no thumb, dash readout)
+    // the null path (no thumb; issue #61 removed the dash readout too)
     const cols = Array.from(container.querySelectorAll('.coverColumn'))
     expect(cols.length).toBe(2)
     for (const col of cols) {
       expect(col.querySelector('.coverThumb')).toBeNull()
-      expect((col.querySelector('.coverStatus') as HTMLElement).textContent).toBe('Position –')
+      expect(col.querySelector('.coverStatus')).toBeNull()
     }
   })
 })
