@@ -38,6 +38,7 @@ import { TrackInfo } from '@/components/TrackInfo'
 import { UpdateCard } from '@/components/UpdateCard'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
 import { DebugScreen } from '@/components/DebugScreen'
+import { resolveRoute, type OfflineScreen } from '@/app/routes'
 import { useDevScreen } from '@/dev/devContext'
 import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
@@ -452,15 +453,7 @@ function AppInner() {
   const onOfflineSetup = offlineActive
 
   // which offline screen wins
-  let offlineScreen:
-    | 'checking'
-    | 'tethering'
-    | 'reconnecting'
-    | 'chooser'
-    | 'pc'
-    | 'bluetooth'
-    | 'tethering-onboarding'
-    | null = null
+  let offlineScreen: OfflineScreen | null = null
   if (offlineActive) {
     if (offlineChecking) {
       offlineScreen = 'checking'
@@ -1164,175 +1157,169 @@ function AppInner() {
     )
   }
 
+  const offlineScreenFor = (screen: OfflineScreen) => {
+    switch (screen) {
+      case 'checking':
+        return <ReconnectingScreen phase="checking" deviceName={topKnownDeviceName} />
+      case 'tethering':
+        return <NeedsNetwork />
+      case 'reconnecting':
+        return (
+          <ReconnectingScreen
+            phase="reconnecting"
+            deviceName={topKnownDeviceName}
+            carriers={carriers}
+            trouble={btTrouble}
+            onSetUpOther={() => setSetupOverride(true)}
+          />
+        )
+      case 'pc':
+        return <PcConnect />
+      case 'bluetooth':
+        return <NeedsNetwork />
+      case 'tethering-onboarding':
+        // ticket10-6C: the USB-tethering onboarding wizard — unmounts by
+        // itself as soon as the internet arrives (the offline condition
+        // clears with the tethering up), same as the chooser before it
+        return (
+          <TetheringWizard
+            onBack={() => setOfflineMethod('chooser')}
+            onOpenKeyboard={(field) => setPiKeyboardField(field)}
+            keyboardField={piKeyboardField}
+          />
+        )
+      default:
+        return (
+          <ConnectionChooser
+            onPickPc={() => setOfflineMethod('pc')}
+            onPickBluetooth={() => setOfflineMethod('bluetooth')}
+            // ticket10-6C: the third card opens the onboarding wizard
+            onPickUsbTethering={() => setOfflineMethod('tethering-onboarding')}
+          />
+        )
+    }
+  }
+
   if (!forced) {
-    if (offlineScreen !== null) {
-      let screen
-      switch (offlineScreen) {
-        case 'checking':
-          screen = <ReconnectingScreen phase="checking" deviceName={topKnownDeviceName} />
-          break
-        case 'tethering':
-          screen = <NeedsNetwork />
-          break
-        case 'reconnecting':
-          screen = (
-            <ReconnectingScreen
-              phase="reconnecting"
-              deviceName={topKnownDeviceName}
-              carriers={carriers}
-              trouble={btTrouble}
-              onSetUpOther={() => setSetupOverride(true)}
+    const route = resolveRoute({
+      offlineScreen,
+      auth,
+      status,
+      setupProgress,
+      loading,
+      online,
+      reconnecting,
+      playerStartingUp,
+      spotifyStuck,
+      splashOnlineStuck,
+      loadStuck,
+      showingLibrary,
+    })
+
+    switch (route.kind) {
+      case 'offline':
+        return (
+          <div className={styles.app}>
+            {offlineScreenFor(route.screen)}
+            {globalOverlays}
+          </div>
+        )
+      case 'auth':
+        return (
+          <>
+            <AuthScreen url={route.url} />
+            {globalOverlays}
+          </>
+        )
+
+      case 'spotify-unreachable':
+        return (
+          <div className={styles.app}>
+            <ReconnectingScreen phase="spotify-unreachable" />
+            {globalOverlays}
+          </div>
+        )
+      // hides the starting up screen on first boot after a successful bluetooth pairing with pan
+      case 'auth-pending':
+        return (
+          <>
+            <AuthScreen
+              hint={
+                route.stuck
+                  ? 'Still fetching from Spotify if this persists, try unplugging and replugging.'
+                  : undefined
+              }
             />
-          )
-          break
-        case 'pc':
-          screen = <PcConnect />
-          break
-        case 'bluetooth':
-          screen = <NeedsNetwork />
-          break
-        case 'tethering-onboarding':
-          // ticket10-6C: the USB-tethering onboarding wizard — unmounts by
-          // itself as soon as the internet arrives (the offline condition
-          // clears with the tethering up), same as the chooser before it
-          screen = (
-            <TetheringWizard
-              onBack={() => setOfflineMethod('chooser')}
-              onOpenKeyboard={(field) => setPiKeyboardField(field)}
-              keyboardField={piKeyboardField}
+            {globalOverlays}
+          </>
+        )
+      case 'booting':
+        return (
+          <div className={styles.app}>
+            <BootSplash
+              caption="starting up"
+              hint={
+                route.stuck
+                  ? 'Still connecting to Spotify if this persists for another minute, try unplugging and replugging.'
+                  : undefined
+              }
             />
-          )
-          break
-        default:
-          screen = (
-            <ConnectionChooser
-              onPickPc={() => setOfflineMethod('pc')}
-              onPickBluetooth={() => setOfflineMethod('bluetooth')}
-              // ticket10-6C: the third card opens the onboarding wizard
-              onPickUsbTethering={() => setOfflineMethod('tethering-onboarding')}
+            {globalOverlays}
+          </div>
+        )
+      case 'setting-up':
+        return (
+          <div className={styles.app}>
+            <BootSplash caption="setting things up" progress={route.progress} />
+            {globalOverlays}
+          </div>
+        )
+
+      // library navigation view (replaces idle/playing when in library mode)
+      case 'library':
+        return (
+          <div className={styles.app}>
+            <MainMenuView
+              onPlay={onPlayFromMenu}
+              nowPlaying={status && status.active ? status : null}
+              onExit={() => setShowingLibrary(false)}
+              // bug25: the settings list's link rows open the App-level panels
+              // (rendered by globalOverlays above the menu)
+              defaultDevice={
+                settings.defaultDeviceId
+                  ? connectDevices.find((d) => d.id === settings.defaultDeviceId)?.name
+                  : undefined
+              }
+              phoneVolume={status?.active === true && status.volume_disabled === true}
+              onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
+              onOpenDevices={() => setDeviceMenuOpen(true)}
+              onOpenBluetooth={() => setBtMenuOpen(true)}
+              // bug46: dimmable HA light cards open the control popup
+              onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
+              // ticket 9.5: the Einstellungen → Home row opens the entity picker
+              onOpenEntityPicker={() => setEntityPickerOpen(true)}
+              // epic10 task 4: the Raspberry Pi row opens the provisioning view
+              onOpenPiServer={() => setPiServerModalOpen(true)}
+              // ticket 9.4: the Home Assistant row opens the settings view
+              onOpenHaSettings={() => setHaSettingsOpen(true)}
             />
-          )
-      }
-      return (
-        <div className={styles.app}>
-          {screen}
-          {globalOverlays}
-        </div>
-      )
-    }
-
-    if (auth.required && auth.url) {
-      return (
-        <>
-          <AuthScreen url={auth.url} />
-          {globalOverlays}
-        </>
-      )
-    }
-
-    if (spotifyStuck && splashOnlineStuck && !reconnecting) {
-      return (
-        <div className={styles.app}>
-          <ReconnectingScreen phase="spotify-unreachable" />
-          {globalOverlays}
-        </div>
-      )
-    }
-
-    // used to hide the starting up screen on first boot after a sucessful bluetooth pairing with pan
-    if (
-      !reconnecting &&
-      online === true &&
-      auth.loading &&
-      !auth.url &&
-      (!status || !status.active)
-    ) {
-      const preAuthHint = loadStuck
-        ? 'Still fetching from Spotify if this persists, try unplugging and replugging.'
-        : undefined
-      return (
-        <>
-          <AuthScreen hint={preAuthHint} />
-          {globalOverlays}
-        </>
-      )
-    }
-
-    // the daemon reports "starting up" while the dealer is (re)connecting
-    if (
-      !reconnecting &&
-      ((loading && !status) || (auth.loading && (!status || !status.active)) || playerStartingUp)
-    ) {
-      const stuckHint =
-        loadStuck && online === true && !auth.url
-          ? 'Still connecting to Spotify if this persists for another minute, try unplugging and replugging.'
-          : undefined
-      return (
-        <div className={styles.app}>
-          <BootSplash caption="starting up" hint={stuckHint} />
-          {globalOverlays}
-        </div>
-      )
-    }
-
-    // "setting things up" during the FIRST-EVER boot to fetch a library catalog
-    if (!reconnecting && status?.setting_up) {
-      return (
-        <div className={styles.app}>
-          <BootSplash
-            caption="setting things up"
-            progress={setupProgress ? setupProgress.percent : null}
-          />
-          {globalOverlays}
-        </div>
-      )
-    }
-
-    // library navigation view (replaces idle/playing when in library mode)
-    if (showingLibrary) {
-      return (
-        <div className={styles.app}>
-          <MainMenuView
-            onPlay={onPlayFromMenu}
-            nowPlaying={status && status.active ? status : null}
-            onExit={() => setShowingLibrary(false)}
-            // bug25: the settings list's link rows open the App-level panels
-            // (rendered by globalOverlays above the menu)
-            defaultDevice={
-              settings.defaultDeviceId
-                ? connectDevices.find((d) => d.id === settings.defaultDeviceId)?.name
-                : undefined
-            }
-            phoneVolume={status?.active === true && status.volume_disabled === true}
-            onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
-            onOpenDevices={() => setDeviceMenuOpen(true)}
-            onOpenBluetooth={() => setBtMenuOpen(true)}
-            // bug46: dimmable HA light cards open the control popup
-            onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
-            // ticket 9.5: the Einstellungen → Home row opens the entity picker
-            onOpenEntityPicker={() => setEntityPickerOpen(true)}
-            // epic10 task 4: the Raspberry Pi row opens the provisioning view
-            onOpenPiServer={() => setPiServerModalOpen(true)}
-            // ticket 9.4: the Home Assistant row opens the settings view
-            onOpenHaSettings={() => setHaSettingsOpen(true)}
-          />
-          {globalOverlays}
-        </div>
-      )
-    }
-
-    if (!reconnecting && (!status || !status.active)) {
-      return (
-        <div className={styles.app}>
-          <IdleScreen
-            connected={connected}
-            devices={connectDevices}
-            onSelectDevice={onPickDevice}
-            defaultDeviceId={settings.defaultDeviceId}
-          />
-          {globalOverlays}
-        </div>
-      )
+            {globalOverlays}
+          </div>
+        )
+      case 'idle':
+        return (
+          <div className={styles.app}>
+            <IdleScreen
+              connected={connected}
+              devices={connectDevices}
+              onSelectDevice={onPickDevice}
+              defaultDeviceId={settings.defaultDeviceId}
+            />
+            {globalOverlays}
+          </div>
+        )
+      case 'player':
+        break
     }
   }
 
