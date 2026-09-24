@@ -456,12 +456,13 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
     // values are derived from the real scale (border-box, line-height 1.4):
     // .sceneBtn = padding $s-3 x2 (24) + icon 20px + gap $s-1 (4) + label line
     // $fs-sm x1.4 (16.8) = 64.8 -> 65px; .coverColumn = padding $s-2 x2 (16) +
-    // label line $fs-md x1.4 (19.6) + gap $s-2 (8) + control row (button stack
-    // 32+8+32 = 72; slider track 96px → row 96) = 139.6 -> 140px (issue #57
-    // T5 added the slider row, issue #61 removed the icon + footer readout).
-    // Update both the SCSS and this pin together.
+    // label line $fs-md x1.4 (19.6) + gap $s-2 (8) + control row (the slider
+    // track is 120px and anchors the row — the enlarged button stack
+    // 48+12+48 = 108 centers inside it) = 163.6 -> 164px (issue #57 T5 added
+    // the slider row, issue #61 removed the icon + footer readout, issue #64
+    // enlarged the track + buttons). Update both the SCSS and this pin together.
     expect(block('sceneBtn')).toMatch(/min-height: 65px;/)
-    expect(block('coverColumn')).toMatch(/min-height: 140px;/)
+    expect(block('coverColumn')).toMatch(/min-height: 164px;/)
     // cover columns read as entity tiles — same tint as .lightTile / .sceneBtn
     expect(block('coverColumn')).toContain('background: rgba(255, 255, 255, 0.07);')
   })
@@ -473,6 +474,37 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
     // tint only existed for the now-removed icon; .coverBtn sets its own).
     expect(scss.indexOf('.coverStatus {')).toBe(-1)
     expect(block('coverBtns')).not.toMatch(/color:\s*\$text-secondary/)
+  })
+
+  it('pins the issue #64 cover sizing: visible track groove, enlarged thumb, button tiles, wider gaps', () => {
+    // issue #64 restyled the control row into three clearly separated
+    // elements: a visible vertical track GROOVE (14 x 120px) with a clearly
+    // defined 28px amber THUMB inside it; the ^ / v controls became SEPARATE
+    // rounded button tiles (56 x 48px, $r-md radius) with comfortable touch
+    // hitboxes; and the gaps between buttons | slider | scale were expanded.
+    // All CR69-safe: fixed px sizes + margin-based gap mixins only.
+    const track = block('coverTrack')
+    expect(track).toContain('width: 14px;')
+    expect(track).toContain('height: 120px;')
+    // the thumb is a defined knob (bigger than the old 18px), still amber,
+    // still centered on its computed top offset (issue #63 builds on it)
+    const thumb = block('coverThumb')
+    expect(thumb).toContain('width: 28px;')
+    expect(thumb).toContain('height: 28px;')
+    expect(thumb).toContain('background: $light-amber;')
+    expect(thumb).toContain('translate(-50%, -50%)')
+    // the ^ / v controls are separate rounded button tiles, not flat icons
+    expect(block('coverBtn')).toContain('height: 48px;')
+    expect(block('coverBtn')).toContain('border-radius: $r-md;')
+    expect(block('coverBtns')).toContain('width: 56px;')
+    // expanded gaps: buttons|slider = $s-4, track|scale = $s-2
+    expect(block('coverRow')).toContain('@include flex-gap-x($s-4);')
+    expect(block('coverSlider')).toContain('@include flex-gap-x($s-2);')
+    // scale marks are pinned to EXACT track heights: absolute positioning +
+    // vertical centering, the inline top is driven in the component
+    const scale = block('coverScale')
+    expect(scale).toMatch(/span \{\s*position: absolute;/)
+    expect(scale).toContain('transform: translateY(-50%);')
   })
 
   it('introduces no raw flex gap (CR69: Chromium 69 ignores it)', () => {
@@ -722,16 +754,19 @@ describe('HomeDashboardView light readout + state classes (issue #57 T4)', () =>
   })
 })
 
-// issue #57 T5, reworked in issue #61: cover column layout — label on top,
-// then the control row (stacked ^ / v buttons on the LEFT — NO zone icon
-// between them anymore — and the vertical DISPLAY-ONLY position slider with
-// its static scale on the right). NO position readout text under the row.
-// HA cover semantics: position 100 = fully OPEN → thumb at the TOP of the
-// track (top-offset = 100 - positionPct), 0 = fully closed → thumb at the
-// BOTTOM. Scale labels top→bottom: '100% (Auf)' / '75%' / '50%' / '25%' /
-// '0% (Zu)'. The slider has no drag interaction on purpose (a draggable
-// knob would be a follow-up ticket).
-describe('HomeDashboardView cover column layout (issue #57 T5, issue #61)', () => {
+// issue #57 T5, reworked in issues #61 + #64: cover column layout — label on
+// top, then the control row with THREE elements side by side: the stacked ^ /
+// v BUTTON TILES (LEFT), the vertical DISPLAY-ONLY position slider — visible
+// track (groove) + clearly defined thumb (MIDDLE) — and the static percentage
+// SCALE (RIGHT). NO zone icon between the buttons, NO position readout text
+// under the row. HA cover semantics: position 100 = fully OPEN → thumb at the
+// TOP of the track (top-offset = 100 - positionPct), 0 = fully closed → thumb
+// at the BOTTOM. The scale reads "how far down the blind is" top→bottom:
+// '0% (Auf)' / '25%' / '50%' / '75%' / '100% (Zu)', each mark pinned to its
+// exact track height — and that value equals the thumb's top offset, so the
+// thumb always lines up with its own label. No drag interaction on purpose:
+// issue #63 attaches handlers to the [data-cover-track] element.
+describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)', () => {
   it('stacks ^ and v with NO zone icon between them in every column (issue #61)', () => {
     // one real cover → 1 real column + 1 placeholder column ('Esszimmer')
     const { container } = render(
@@ -770,16 +805,33 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issue #61)', () =
     }
   })
 
-  it('renders the static scale labels top→bottom: 100% (Auf) ... 0% (Zu)', () => {
+  it('renders the vertical scale 0% (Auf) at top → 100% (Zu) at bottom, pinned to track heights (issue #64)', () => {
     const { container } = render(
       <HomeDashboardView entities={[cover('cover.wohnzimmer_rollo', 'Wohnzimmer Rollo')]} />,
     )
     const col = container.querySelector('.coverColumn') as HTMLElement
     const scale = col.querySelector('.coverScale') as HTMLElement
-    // exactly 5 static labels, in the corrected HA order (open at the TOP —
-    // the issue body's numeric labels were inverted vs HA cover semantics)
-    const labels = Array.from(scale.querySelectorAll('span')).map((s) => s.textContent)
-    expect(labels).toEqual(['100% (Auf)', '75%', '50%', '25%', '0% (Zu)'])
+    // 5 static marks reading "how far down the blind is": 0% (Auf) at the TOP
+    // of the track ... 100% (Zu) at the BOTTOM (derived from HA's position:
+    // open = 100 → 0% down). Each mark carries an inline top matching its own
+    // label value, so 0%/50%/100% line up with the track top/middle/bottom.
+    const marks = Array.from(scale.querySelectorAll('span')) as HTMLElement[]
+    expect(marks.map((m) => m.textContent)).toEqual(['0% (Auf)', '25%', '50%', '75%', '100% (Zu)'])
+    expect(marks.map((m) => m.style.top)).toEqual(['0%', '25%', '50%', '75%', '100%'])
+  })
+
+  it('renders the slider structure: track groove + thumb inside it, marked for #63 drag wiring (issue #64)', () => {
+    const entities: DashboardEntity[] = [
+      { ...cover('cover.kueche_rollo', 'Kueche Rollo'), positionPct: 45 },
+    ]
+    const { container } = render(<HomeDashboardView entities={entities} />)
+    const col = container.querySelector('[data-entity-id="cover.kueche_rollo"]') as HTMLElement
+    // the track is the element issue #63 attaches its pointer handlers to
+    const track = col.querySelector('.coverTrack[data-cover-track="true"]') as HTMLElement
+    expect(track).not.toBeNull()
+    // the thumb sits INSIDE the track (its position target), not beside it
+    const thumb = track.querySelector('.coverThumb') as HTMLElement
+    expect(thumb).not.toBeNull()
   })
 
   it('shows the thumb at top 55% for a known position (no text readout, issue #61)', () => {
@@ -788,7 +840,9 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issue #61)', () =
     ]
     const { container } = render(<HomeDashboardView entities={entities} />)
     const col = container.querySelector('[data-entity-id="cover.kueche_rollo"]') as HTMLElement
-    // thumb present; top-offset = 100 - 45 = 55% (HA: open → top)
+    // thumb present; top-offset = 100 - 45 = 55% (HA: open → top). That offset
+    // is also the "how far down" percentage, so the thumb lines up with the
+    // ~55% area of the scale (issue #64)
     const thumb = col.querySelector('.coverThumb') as HTMLElement
     expect(thumb).not.toBeNull()
     expect(thumb.style.top).toBe('55%')

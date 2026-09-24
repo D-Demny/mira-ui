@@ -8,8 +8,10 @@
 //                    (0 lights → the full placeholder tile set, by design)
 //   Z3 cover section — header ("Wohnzimmer und Esszimmer" / "Rollo Steuerung
 //                    EG") above one column per cover: label + control row
-//                    (stacked ^ / v buttons on the left, vertical display-only
-//                    position slider with 100%→0% scale on the right)
+//                    (stacked ^ / v button tiles on the left, vertical
+//                    display-only position slider — track + thumb — in the
+//                    middle, static 0%→100% percentage scale on the right;
+//                    issue #64)
 //                    (hidden w/o covers)
 //
 // Rendering on top of the view models from ./homeDashboard (Task A). No
@@ -584,9 +586,10 @@ export function HomeDashboardView({
                   data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
                 >
                   <span className={styles.coverLabel}>{col.label}</span>
-                  {/* issue #57 T5 (icons removed in issue #61): control row —
-                    the stacked ^ / v buttons on the LEFT and the vertical
-                    position slider on the RIGHT */}
+                  {/* issue #57 T5, reworked in issue #64: control row — three
+                    elements side by side: the stacked ^ / v BUTTON TILES on
+                    the LEFT, the vertical position SLIDER (track + thumb) in
+                    the MIDDLE and the static percentage SCALE on the RIGHT */}
                   <div className={styles.coverRow}>
                     <span className={styles.coverBtns}>
                       {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
@@ -637,16 +640,19 @@ export function HomeDashboardView({
                         v
                       </span>
                     </span>
-                    {/* issue #57 T5: the vertical position slider — DISPLAY-ONLY,
-                      no drag interaction (a draggable knob would be a separate
-                      follow-up ticket, issue #57). HA cover semantics: position
-                      100 = fully OPEN ... 0 = fully CLOSED, and the spec's motion
-                      description puts the open state at the TOP — so the scale
-                      reads 100% (Auf) at the top down to 0% (Zu) at the bottom,
-                      and the amber thumb sits at top-offset (100 - positionPct)%:
-                      fully open → thumb at the TOP, fully closed → BOTTOM. */}
+                    {/* issue #57 T5, reworked in issue #64: the vertical position
+                      slider — a visible track (groove) with an amber THUMB handle,
+                      DISPLAY-ONLY for now: issue #63 attaches the drag/tap handlers
+                      to the [data-cover-track] element below. The scale beside it
+                      reads 0% (Auf) at the TOP of the track down to 100% (Zu) at the
+                      BOTTOM — "how far down the blind is", derived from HA's
+                      current_position (open = 100 → 0% down, closed = 0 → 100% down).
+                      Each label is pinned to its exact track height (top: <value>%,
+                      vertically centered), and the amber thumb rides on that same
+                      scale: top-offset = (100 - positionPct)% = % down — fully open
+                      → thumb at the TOP, fully closed → BOTTOM. */}
                     <div className={styles.coverSlider}>
-                      <div className={styles.coverTrack}>
+                      <div className={styles.coverTrack} data-cover-track="true">
                         {col.positionPct !== null && (
                           <span
                             className={styles.coverThumb}
@@ -655,11 +661,11 @@ export function HomeDashboardView({
                         )}
                       </div>
                       <span className={styles.coverScale}>
-                        <span>100% (Auf)</span>
-                        <span>75%</span>
-                        <span>50%</span>
-                        <span>25%</span>
-                        <span>0% (Zu)</span>
+                        {[0, 25, 50, 75, 100].map((mark) => (
+                          <span key={mark} style={{ top: `${mark}%` }}>
+                            {mark === 0 ? '0% (Auf)' : mark === 100 ? '100% (Zu)' : `${mark}%`}
+                          </span>
+                        ))}
                       </span>
                     </div>
                   </div>
