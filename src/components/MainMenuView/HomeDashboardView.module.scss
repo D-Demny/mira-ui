@@ -344,7 +344,8 @@ $light-amber: #ffc14d;
   // controls enlarged): padding $s-2 x2 (16) + label line $fs-md x1.4 (19.6)
   // + gap $s-2 (8) + control row (the slider track is 120px and anchors it —
   // the button stack 48 + 12 + 48 = 108 centers inside) = 163.6 -> 164px;
-  // same belt-and-braces rationale as .sceneBtn min-height.
+  // same belt-and-braces rationale as .sceneBtn min-height. issue #74's
+  // widening only touches WIDTHS (track height stays 120), so this holds.
   min-height: 164px;
   display: flex;
   flex-direction: column;
@@ -372,18 +373,20 @@ $light-amber: #ffc14d;
   @include truncate(1);
 }
 
-// the ^ / v buttons of the mockup — since issue #62 a TAP is a DIRECTION
+// the ▲ / ▼ buttons of the mockup — since issue #62 a TAP is a DIRECTION
 // press (toggle-to-stop & direction change, decided by the parent from the
 // live state — see coverToggleDirection in useHomeEntities) and a HOLD stops
 // the cover. issue #61 removed the zone icon that used to sit between them; issue #64
 // makes each arrow its own rounded BUTTON TILE (not a flat icon) with a
-// comfortable touch hitbox: 56 x 48px, $r-md radius, slightly lifted wash so
-// both tiles read against the column, generous gap between them.
+// comfortable touch hitbox; issue #74 widens the tiles 50% (56 -> 84px, height
+// stays 48): $r-md radius, slightly lifted wash so both tiles read against the
+// column, generous gap between them. The buttons stretch to this width.
 .coverBtns {
   display: flex;
   flex-direction: column;
   @include flex-gap-y($s-3);
-  width: 56px;
+  // issue #74: +50% width (56 -> 84px)
+  width: 84px;
 }
 
 .coverBtn {
@@ -425,13 +428,17 @@ $light-amber: #ffc14d;
 }
 
 // issue #57 T5, reworked in issue #64: the control row — three elements side
-// by side: the ^ / v button tiles (LEFT), the vertical slider (MIDDLE) and
+// by side: the ▲ / ▼ button tiles (LEFT), the vertical slider (MIDDLE) and
 // the percentage scale (RIGHT). Enlarged gaps keep the zones clearly
-// separated. FLEX container → margin-based gap mixin (raw `gap` is CR69-unsafe).
+// separated; issue #74 widens the gap on BOTH sides of the slider 50%
+// ($s-4/16px -> $s-6/24px to the buttons, $s-2/8px -> $s-3/12px to the scale
+// labels — existing spacing tokens). FLEX container → margin-based gap mixin
+// (raw `gap` is CR69-unsafe).
 .coverRow {
   display: flex;
   align-items: center;
-  @include flex-gap-x($s-4);
+  // issue #74: +50% side spacing (16px -> 24px = $s-6)
+  @include flex-gap-x($s-6);
 }
 
 // issue #57 T5, reworked in issue #64, made interactive in issue #63: the
@@ -443,12 +450,14 @@ $light-amber: #ffc14d;
 .coverSlider {
   display: flex;
   align-items: stretch;
-  @include flex-gap-x($s-2);
+  // issue #74: +50% side spacing between track and scale labels (8px -> 12px = $s-3)
+  @include flex-gap-x($s-3);
 }
 
 // the visible track GROOVE — issue #64 thickened it (10 -> 14px) and
-// lengthened it (96 -> 120px): taller than the ^ / v button stack (48 + 12 +
-// 48 = 108px), it anchors the control row's height, gives the thumb room to
+// lengthened it (96 -> 120px); issue #74 widens it another 50% (14 -> 21px,
+// height stays 120): taller than the ▲ / ▼ button stack (48 + 12 + 48 =
+// 108px), it anchors the control row's height, gives the thumb room to
 // travel, and is wide enough to read from a distance. The amber thumb sits
 // inside it (absolute, centered on its computed top offset). issue #63: the
 // groove IS the drag/tap target for direct positioning — `touch-action: none`
@@ -457,7 +466,8 @@ $light-amber: #ffc14d;
 // the track is interactive, not just an indicator.
 .coverTrack {
   position: relative;
-  width: 14px;
+  // issue #74: +50% width (14 -> 21px); height unchanged — the row's anchor
+  width: 21px;
   height: 120px;
   border-radius: $r-pill;
   background: rgba(255, 255, 255, 0.16);
@@ -465,8 +475,8 @@ $light-amber: #ffc14d;
   cursor: pointer;
 }
 
-// the clearly defined THUMB handle — issue #64 enlarged it (18 -> 28px) so it
-// reads as a draggable knob. Only rendered for KNOWN positions; JS drives
+// the clearly defined THUMB handle — issue #64 enlarged it (18 -> 28px),
+// issue #74 another 50% (28 -> 42px) so it reads as a draggable knob. Only rendered for KNOWN positions; JS drives
 // `top`: top: thumbTopPct% = 100 - positionPct (issue #76 — this device's
 // cover entity reports current_position opposite to the HA convention, so
 // physically open (raw 100) lands at the TOP and physically closed (raw 0) at
@@ -478,8 +488,10 @@ $light-amber: #ffc14d;
 .coverThumb {
   position: absolute;
   left: 50%;
-  width: 28px;
-  height: 28px;
+  // issue #74: +50% size (28 -> 42px) — still centered on the track via the
+  // translate below, still smaller than the 120px travel range
+  width: 42px;
+  height: 42px;
   transform: translate(-50%, -50%);
   border-radius: $r-pill;
   border: 2px solid rgba(0, 0, 0, 0.3);

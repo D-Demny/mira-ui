@@ -460,7 +460,9 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
     // track is 120px and anchors the row — the enlarged button stack
     // 48+12+48 = 108 centers inside it) = 163.6 -> 164px (issue #57 T5 added
     // the slider row, issue #61 removed the icon + footer readout, issue #64
-    // enlarged the track + buttons). Update both the SCSS and this pin together.
+    // enlarged the track + buttons; issue #74's +50% WIDTHS leave the row
+    // height at 120px, so this pin is unchanged). Update the SCSS and this
+    // pin together.
     expect(block('sceneBtn')).toMatch(/min-height: 65px;/)
     expect(block('coverColumn')).toMatch(/min-height: 164px;/)
     // cover columns read as entity tiles — same tint as .lightTile / .sceneBtn
@@ -476,30 +478,33 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
     expect(block('coverBtns')).not.toMatch(/color:\s*\$text-secondary/)
   })
 
-  it('pins the issue #64 cover sizing: visible track groove, enlarged thumb, button tiles, wider gaps', () => {
+  it('pins the cover sizing (issue #64, widened by issue #74): track groove, thumb, button tiles, side gaps', () => {
     // issue #64 restyled the control row into three clearly separated
-    // elements: a visible vertical track GROOVE (14 x 120px) with a clearly
-    // defined 28px amber THUMB inside it; the ^ / v controls became SEPARATE
-    // rounded button tiles (56 x 48px, $r-md radius) with comfortable touch
-    // hitboxes; and the gaps between buttons | slider | scale were expanded.
-    // All CR69-safe: fixed px sizes + margin-based gap mixins only.
+    // elements; issue #74 then widened everything 50%: a visible vertical
+    // track GROOVE (21 x 120px — width +50%, height unchanged) with a clearly
+    // defined 42px amber THUMB inside it (+50%); the ▲ / ▼ controls are
+    // SEPARATE rounded button tiles (84 x 48px — width +50%, $r-md radius);
+    // and issue #74 left 50% more space on BOTH sides of the slider:
+    // buttons|slider = $s-6 (24px, was $s-4/16px), track|scale = $s-3 (12px,
+    // was $s-2/8px) — existing spacing tokens for both targets. All CR69-safe:
+    // fixed px sizes + margin-based gap mixins only.
     const track = block('coverTrack')
-    expect(track).toContain('width: 14px;')
+    expect(track).toContain('width: 21px;')
     expect(track).toContain('height: 120px;')
-    // the thumb is a defined knob (bigger than the old 18px), still amber,
+    // the thumb is a defined knob (bigger than the old 18px/28px), still amber,
     // still centered on its computed top offset (issue #63 builds on it)
     const thumb = block('coverThumb')
-    expect(thumb).toContain('width: 28px;')
-    expect(thumb).toContain('height: 28px;')
+    expect(thumb).toContain('width: 42px;')
+    expect(thumb).toContain('height: 42px;')
     expect(thumb).toContain('background: $light-amber;')
     expect(thumb).toContain('translate(-50%, -50%)')
-    // the ^ / v controls are separate rounded button tiles, not flat icons
+    // the ▲ / ▼ controls are separate rounded button tiles, not flat icons
     expect(block('coverBtn')).toContain('height: 48px;')
     expect(block('coverBtn')).toContain('border-radius: $r-md;')
-    expect(block('coverBtns')).toContain('width: 56px;')
-    // expanded gaps: buttons|slider = $s-4, track|scale = $s-2
-    expect(block('coverRow')).toContain('@include flex-gap-x($s-4);')
-    expect(block('coverSlider')).toContain('@include flex-gap-x($s-2);')
+    expect(block('coverBtns')).toContain('width: 84px;')
+    // issue #74 side spacing: buttons|slider = $s-6 (24px), track|scale = $s-3 (12px)
+    expect(block('coverRow')).toContain('@include flex-gap-x($s-6);')
+    expect(block('coverSlider')).toContain('@include flex-gap-x($s-3);')
     // scale marks are pinned to EXACT track heights: absolute positioning +
     // vertical centering, the inline top is driven in the component
     const scale = block('coverScale')
