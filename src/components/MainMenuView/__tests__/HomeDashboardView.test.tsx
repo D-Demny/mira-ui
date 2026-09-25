@@ -796,15 +796,16 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)
       // issue #61: no icon anywhere in the column — the blinds MenuIcon that
       // used to sit between the two buttons is gone (no svg at all)
       expect(col.querySelectorAll('svg').length).toBe(0)
-      // both arrow buttons stay stacked in .coverBtns, ^ ABOVE v, and keep
-      // their data-cover-action wiring (both actionable + holdable)
+      // both arrow buttons stay stacked in .coverBtns, ▲ ABOVE ▼, and keep
+      // their data-cover-action wiring (both actionable + holdable). issue #75:
+      // the plain '^' / 'v' letters are real arrow glyphs now (U+25B2 / U+25BC)
       const btns = col.querySelector('.coverBtns') as HTMLElement
       const arrows = Array.from(btns.querySelectorAll('[data-cover-action]')) as HTMLElement[]
       expect(arrows.length).toBe(2)
       expect(arrows[0].dataset.coverAction).toBe('up')
-      expect(arrows[0].textContent).toBe('^')
+      expect(arrows[0].textContent).toBe('▲')
       expect(arrows[1].dataset.coverAction).toBe('down')
-      expect(arrows[1].textContent).toBe('v')
+      expect(arrows[1].textContent).toBe('▼')
     }
   })
 

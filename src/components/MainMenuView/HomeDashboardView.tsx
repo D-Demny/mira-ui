@@ -746,7 +746,7 @@ export function HomeDashboardView({
                             handleCoverAction(col, 'up', sceneRow.length + lightGrid.length + i)
                           }}
                         >
-                          ^
+                          {/* issue #75: real arrow glyph (was the plain '^' letter) */}▲
                         </span>
                         <span
                           className={`${styles.coverBtn}${activeDirection === 'down' ? ` ${styles.coverBtnActive}` : ''}`}
@@ -768,7 +768,7 @@ export function HomeDashboardView({
                             handleCoverAction(col, 'down', sceneRow.length + lightGrid.length + i)
                           }}
                         >
-                          v
+                          {/* issue #75: real arrow glyph (was the plain 'v' letter) */}▼
                         </span>
                       </span>
                       {/* issue #57 T5, reworked in issue #64, made interactive in
