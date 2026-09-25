@@ -281,6 +281,7 @@ describe('buildCoverSection (ticket9.6)', () => {
         state: null,
         isPlaceholder: true,
         positionPct: null, // issue #57 (T2): placeholders have no position
+        thumbTopPct: null, // issue #76: nothing to derive for placeholders
       })
     })
   })
@@ -297,6 +298,7 @@ describe('buildCoverSection (ticket9.6)', () => {
       state: 'open',
       isPlaceholder: false,
       positionPct: null, // issue #57 (T2): fixture cover reports no position
+      thumbTopPct: null, // issue #76: unknown raw position → no derived offset
     })
     expect(section.columns[1].isPlaceholder).toBe(true)
     expect(section.columns[1].label).toBe('Esszimmer')
@@ -351,6 +353,23 @@ describe('icon + position propagation (issue #57 T2)', () => {
       entity({ entityId: 'cover.ess', domain: 'cover', label: 'Ess' }),
     ])
     expect(section.columns.map((column) => column.positionPct)).toEqual([42, null])
+  })
+
+  it('keeps positionPct raw and derives thumbTopPct = 100 - positionPct (issue #76)', () => {
+    // device-verified inversion: the user's cover entity reports
+    // current_position opposite to the HA convention (verified on device
+    // 2026-09-25) — physically OPEN carries raw 100, physically CLOSED raw 0.
+    // The model keeps the raw value UNCHANGED; only the derived display field
+    // is inverted (null stays null).
+    const section = buildCoverSection([
+      entity({ entityId: 'cover.auf', domain: 'cover', label: 'Auf', positionPct: 100 }),
+      entity({ entityId: 'cover.halb', domain: 'cover', label: 'Halb', positionPct: 42 }),
+      entity({ entityId: 'cover.zu', domain: 'cover', label: 'Zu', positionPct: 0 }),
+      entity({ entityId: 'cover.na', domain: 'cover', label: 'Na' }),
+    ])
+    expect(section.columns.map((column) => column.positionPct)).toEqual([100, 42, 0, null])
+    // thumb at the TOP for an open cover (raw 100), BOTTOM when closed (raw 0)
+    expect(section.columns.map((column) => column.thumbTopPct)).toEqual([0, 58, 100, null])
   })
 })
 

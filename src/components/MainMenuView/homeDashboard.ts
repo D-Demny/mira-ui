@@ -268,17 +268,26 @@ export const COVER_PLACEHOLDER_LABELS: readonly string[] = ['Wohnzimmer', 'Esszi
 // one control column. `state` (e.g. 'open' / 'closed' / 'opening') stays as
 // the raw HA state string — W2 maps it to the up/down visual + stop handling.
 // `positionPct` is the clamped 0–100 cover position (issue #57 T2), carried
-// through UNCHANGED from HA's attributes.current_position: 0 = fully open
-// ("Auf", TOP of the slider track), 100 = fully closed ("Zu", BOTTOM) — the
-// thumb renders it at exactly `top: positionPct%`, so it always lines up with
-// its own scale mark (issue #63). Null for placeholders and covers without
-// position support (no thumb).
+// through UNCHANGED from HA's attributes.current_position.
+//
+// issue #76: THIS DEVICE's cover entity reports current_position opposite to
+// the HA convention — the thumb used to ride `top: positionPct%` and sat at
+// the BOTTOM while the cover was physically open (verified on device).
+// `thumbTopPct` is the single documented chokepoint for the display+control
+// inversion: the ONLY derived field, computed here so the readout (the thumb's
+// `top`) and the control (the value HomeDashboardView sends from a track
+// pointer, `100 - pctDown`, its exact inverse) can never diverge. Inversion
+// applied at display+control layer only; this model keeps the raw HA value.
 export interface CoverColumnModel {
   entityId: string | null
   label: string
   state: string | null
   isPlaceholder: boolean
   positionPct: number | null
+  // issue #76: thumb's top offset = 100 - positionPct (null iff positionPct
+  // is null) — raw 100 (physically open on this device) → thumb TOP, raw 0
+  // (physically closed) → BOTTOM. Never used for the value sent to HA.
+  thumbTopPct: number | null
 }
 
 // `isPlaceholder` on the SECTION itself: true = no cover is mapped at all, so
@@ -302,6 +311,11 @@ export function buildCoverSection(covers: readonly DashboardEntity[]): CoverSect
         state: cover.state,
         isPlaceholder: false,
         positionPct: cover.positionPct,
+        // issue #76 chokepoint — device-verified inversion (user's cover entity
+        // reports position opposite to HA convention; verified on device
+        // 2026-09-25). Inversion applied at display+control layer only; the
+        // model keeps the raw value.
+        thumbTopPct: cover.positionPct === null ? null : 100 - cover.positionPct,
       })
     } else {
       columns.push({
@@ -310,6 +324,7 @@ export function buildCoverSection(covers: readonly DashboardEntity[]): CoverSect
         state: null,
         isPlaceholder: true,
         positionPct: null,
+        thumbTopPct: null,
       })
     }
   }

@@ -771,19 +771,22 @@ describe('HomeDashboardView light readout + state classes (issue #57 T4)', () =>
   })
 })
 
-// issue #57 T5, reworked in issues #61 + #64, made interactive in issue #63:
-// cover column layout — label on top, then the control row with THREE elements
-// side by side: the stacked ^ / v BUTTON TILES (LEFT), the vertical position
-// slider — visible track (groove) + clearly defined thumb (MIDDLE) — and the
-// static percentage SCALE (RIGHT). NO zone icon between the buttons, NO
-// position readout text under the row. HA cover semantics (issue #63):
-// current_position 0 = fully OPEN → thumb at the TOP of the track
-// (top: positionPct% — NO inversion anywhere), 100 = fully closed → thumb at
-// the BOTTOM. The scale reads "how far down the blind is" top→bottom:
-// '0% (Auf)' / '25%' / '50%' / '75%' / '100% (Zu)', each mark pinned to its
-// exact track height — and that value equals the thumb's top offset, so the
-// thumb always lines up with its own label. The track is the drag/tap target
-// for direct positioning ([data-cover-track], handlers wired in issue #63).
+// issue #57 T5, reworked in issues #61 + #64, made interactive in issue #63,
+// inverted for this device in issue #76: cover column layout — label on top,
+// then the control row with THREE elements side by side: the stacked ▲ / ▼
+// BUTTON TILES (LEFT), the vertical position slider — visible track (groove) +
+// clearly defined thumb (MIDDLE) — and the static percentage SCALE (RIGHT). NO
+// zone icon between the buttons, NO position readout text under the row.
+// Device-verified semantics (issue #76): this cover entity reports
+// current_position OPPOSITE to the HA convention — physically OPEN carries raw
+// 100, physically CLOSED raw 0 — so the thumb rides thumbTopPct =
+// 100 - positionPct (derived in homeDashboard.ts, the one chokepoint): open →
+// thumb at the TOP of the track, closed → BOTTOM. The scale labels stay as-is:
+// '0% (Auf)' / '25%' / '50%' / '75%' / '100% (Zu)' top→bottom, each mark
+// pinned to its exact track height. The track is the drag/tap target for
+// direct positioning ([data-cover-track], handlers wired in issue #63); a
+// pointer's % DOWN sends HA value 100 - pctDown — the same single flip as the
+// readout, so display and control never diverge.
 describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)', () => {
   it('stacks ^ and v with NO zone icon between them in every column (issue #61)', () => {
     // one real cover → 1 real column + 1 placeholder column ('Esszimmer')
@@ -854,20 +857,21 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)
     expect(thumb).not.toBeNull()
   })
 
-  it('shows the thumb at exactly top: positionPct% for a known position — no inversion (issues #61 + #63)', () => {
+  it('shows the thumb at exactly top: (100 - positionPct)% for a known position (issue #76)', () => {
     const entities: DashboardEntity[] = [
+      // raw 45 as THIS device's entity reports it (opposite to HA convention —
+      // issue #76): the model keeps it unchanged, the thumb rides the inversion
       { ...cover('cover.kueche_rollo', 'Kueche Rollo'), positionPct: 45 },
     ]
     const { container } = render(<HomeDashboardView entities={entities} />)
     const col = container.querySelector('[data-entity-id="cover.kueche_rollo"]') as HTMLElement
-    // thumb present; issue #63 semantics: positionPct ≡ HA's current_position
-    // (0 = fully open / "Auf" at the top, 100 = fully closed / "Zu" at the
-    // bottom) and is carried through UNCHANGED — 45% closed → top: 45%, which
-    // is also the "how far down" percentage, so the thumb lines up with the
-    // ~45% area of its own scale (issues #61 + #64)
+    // thumb present; the thumb's top is thumbTopPct = 100 - positionPct (the
+    // chokepoint derived in homeDashboard.ts), NOT the raw value: raw 45 →
+    // top: 55% — open covers (raw 100) end at the TOP, closed ones (raw 0) at
+    // the BOTTOM (issue #76, verified on device)
     const thumb = col.querySelector('.coverThumb') as HTMLElement
     expect(thumb).not.toBeNull()
-    expect(thumb.style.top).toBe('45%')
+    expect(thumb.style.top).toBe('55%')
     // issue #61: the position is shown ONLY via the thumb — no text readout
     expect(col.querySelector('.coverStatus')).toBeNull()
   })
@@ -888,12 +892,15 @@ describe('HomeDashboardView cover column layout (issue #57 T5, issues #61 + #64)
   })
 })
 
-// issue #63: direct positioning from the position slider — a tap/drag on
-// [data-cover-track] sends the pointer's % down from the track's top edge as
+// issue #63, inverted for this device in issue #76: direct positioning from
+// the position slider — a tap/drag on [data-cover-track] sends the INVERSE of
+// the pointer's % down from the track's top edge (100 - pctDown) as
 // cover.set_cover_position (via onCoverSetPosition): exactly ONE send per
-// press for a tap, one send per INTEGER change while dragging, plus the final
-// value on release iff its integer differs. The thumb mapping test lives in
-// the layout describe above (top: positionPct%, no inversion).
+// press for a tap, one send per INTEGER change while dragging (the sent value
+// changes iff the integer % down does), plus the final value on release iff its
+// integer differs. The thumb mapping test lives in the layout describe above
+// (top: 100 - positionPct% — issue #76's single chokepoint keeps readout and
+// control in lockstep).
 describe('HomeDashboardView cover slider direct positioning (issue #63)', () => {
   // jsdom gives every element a zero-sized rect and no pointer capture, so
   // the track's % down computation needs a stubbed geometry (same approach as
@@ -916,11 +923,13 @@ describe('HomeDashboardView cover slider direct positioning (issue #63)', () => 
     el.hasPointerCapture = () => false
   }
 
-  it('renders the thumb at exactly its scale mark for open / half / closed (no inversion)', () => {
+  it('rides the inverted scale: physically open → thumb TOP, closed → BOTTOM (issue #76)', () => {
+    // issue #76: this device's entity reports current_position OPPOSITE to the
+    // HA convention — physically OPEN carries raw 100, physically CLOSED raw 0
     const entities: DashboardEntity[] = [
-      { ...cover('cover.auf', 'Auf'), positionPct: 0 }, // fully open → TOP
+      { ...cover('cover.auf', 'Auf'), positionPct: 100 }, // open → thumb TOP
       { ...cover('cover.halb', 'Halb'), positionPct: 50 },
-      { ...cover('cover.zu', 'Zu'), positionPct: 100 }, // fully closed → BOTTOM
+      { ...cover('cover.zu', 'Zu'), positionPct: 0 }, // closed → thumb BOTTOM
     ]
     const { container } = render(<HomeDashboardView entities={entities} />)
     for (const [id, top] of [
@@ -931,7 +940,9 @@ describe('HomeDashboardView cover slider direct positioning (issue #63)', () => 
       const col = container.querySelector(`[data-entity-id="${id}"]`) as HTMLElement
       const thumb = col.querySelector('.coverThumb') as HTMLElement
       expect(thumb).not.toBeNull()
-      // the thumb's top IS its position value — it sits on its own scale mark
+      // the thumb's top is 100 - positionPct (homeDashboard.ts chokepoint) —
+      // open (raw 100) at the TOP next to '0% (Auf)', closed (raw 0) at the
+      // BOTTOM next to '100% (Zu)'
       expect(thumb.style.top).toBe(top)
     }
   })
@@ -980,12 +991,13 @@ describe('HomeDashboardView cover slider direct positioning (issue #63)', () => 
     const col = container.querySelector('[data-entity-id="cover.wohnzimmer_rollo"]') as HTMLElement
     const track = col.querySelector('.coverTrack[data-cover-track="true"]') as HTMLElement
     stubTrack(track) // top 100, height 200 → pctDown = (clientY - 100) / 2
-    fireEvent.pointerDown(track, { clientX: 7, clientY: 100 }) // 0% — first send
-    fireEvent.pointerMove(track, { clientX: 7, clientY: 150 }) // 25% — integer change
+    // issue #76: the SENT values are the inverse of the % down (100 - pctDown)
+    fireEvent.pointerDown(track, { clientX: 7, clientY: 100 }) // 0% down — sends 100
+    fireEvent.pointerMove(track, { clientX: 7, clientY: 150 }) // 25% down — sends 75
     fireEvent.pointerMove(track, { clientX: 7, clientY: 149.5 }) // 24.75 → 25 — NO send
-    fireEvent.pointerMove(track, { clientX: 7, clientY: 160 }) // 30% — integer change
-    fireEvent.pointerUp(track, { clientX: 7, clientY: 200 }) // release at 50% — final send
-    expect(onCoverSetPosition.mock.calls.map((c) => c[1])).toEqual([0, 25, 30, 50])
+    fireEvent.pointerMove(track, { clientX: 7, clientY: 160 }) // 30% down — sends 70
+    fireEvent.pointerUp(track, { clientX: 7, clientY: 200 }) // release at 50% — sends 50
+    expect(onCoverSetPosition.mock.calls.map((c) => c[1])).toEqual([100, 75, 70, 50])
     // a drag is never a tap — the dial focus does not move
     expect(onSlotTapped).not.toHaveBeenCalled()
   })

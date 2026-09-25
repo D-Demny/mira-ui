@@ -452,31 +452,38 @@ export function HomeDashboardView({
     onSlotTapped?.(index)
   }
 
-  // issue #63: direct positioning from the position SLIDER — pointer handlers
-  // on [data-cover-track] (the .coverTrack groove). One session per column,
-  // keyed `cover-track-${i}`: pointerdown records the press origin and sends
-  // the target position IMMEDIATELY (a tap is exactly one send), pointermove
-  // re-sends it ONLY when the integer changes (one command per crossed scale
-  // step, sub-integer drift stays silent), pointerup re-sends the final value
-  // iff its integer differs from the last send. The target is the % DOWN from
-  // the track's top edge, clamped + rounded to a whole percent — the SAME
-  // scale as the labels beside the track and the thumb's `top`, so there is
-  // NO inversion anywhere (0 = fully open / "Auf" at the top, 100 = fully
-  // closed / "Zu" at the bottom). A SHORT tap (pointer travel ≤ HOLD_SLOP_PX)
-  // additionally re-roots the dial onto the column via onSlotTapped — exactly
-  // like tapping one of its ^ / v buttons; a drag never does. Placeholder
-  // columns only toast: no session is recorded, so moves and release are
-  // ignored. REAL covers without a known position are fully operable too —
-  // the thumb just stays hidden until HA reports attributes.current_position
-  // (issue #63 decision).
+  // issue #63, inverted for this device in issue #76: direct positioning from
+  // the position SLIDER — pointer handlers on [data-cover-track] (the
+  // .coverTrack groove). One session per column, keyed `cover-track-${i}`:
+  // pointerdown records the press origin and sends the target position
+  // IMMEDIATELY (a tap is exactly one send), pointermove re-sends it ONLY when
+  // the integer changes (one command per crossed scale step, sub-integer drift
+  // stays silent), pointerup re-sends the final value iff its integer differs
+  // from the last send. The POINTER's target is the % DOWN from the track's top
+  // edge, clamped + rounded to a whole percent — where the finger/thumb sits on
+  // the track, matching the scale labels beside it. ISSUE #76: the SENT HA
+  // value is the inverse of that, `100 - pctDown` — this device's cover entity
+  // reports current_position opposite to the HA convention, and the thumb rides
+  // thumbTopPct = 100 - positionPct (the ONE chokepoint, derived in
+  // homeDashboard.ts), so dragging toward the TOP sends high values and an
+  // open cover ends with its thumb on top. Readout and control share that same
+  // single flip and can never diverge. A SHORT tap (pointer travel ≤
+  // HOLD_SLOP_PX) additionally re-roots the dial onto the column via
+  // onSlotTapped — exactly like tapping one of its ▲ / ▼ buttons; a drag never
+  // does. Placeholder columns only toast: no session is recorded, so moves and
+  // release are ignored. REAL covers without a known position are fully
+  // operable too — the thumb just stays hidden until HA reports
+  // attributes.current_position (issue #63 decision).
   const coverTrackStateRef = useRef<
     Map<string, { pointerId: number; originY: number; lastSent: number | null; moved: boolean }>
   >(new Map())
 
-  // the integer target position for a pointer at `clientY` — the % down from
-  // the track's top edge (0 = fully open / top, 100 = fully closed / bottom),
-  // clamped + rounded to a whole percent. A zero-height rect (first paint /
-  // jsdom) degrades to a full-range clamp at the pointer position — never NaN.
+  // the integer % DOWN from the track's top edge for a pointer at `clientY`
+  // (0 = top, 100 = bottom), clamped + rounded to a whole percent — where the
+  // pointer's thumb position lands on the track (issue #76: the SENT HA value
+  // is its inverse, applied at each send site below). A zero-height rect
+  // (first paint / jsdom) degrades to a full-range clamp at the pointer
+  // position — never NaN.
   const coverTrackTargetAt = (track: HTMLElement, clientY: number): number => {
     const rect = track.getBoundingClientRect()
     const height = rect.height > 0 ? rect.height : 1
@@ -503,13 +510,16 @@ export function HomeDashboardView({
         // ignore — capture is a nicety, positioning works without it
       }
     }
-    // the FIRST command of the press: a tap sends exactly this one value
+    // the FIRST command of the press: a tap sends exactly this one value —
+    // issue #76: the sent HA position is the inverse of the % down (so a press
+    // at the TOP sends ~100 and lands an open cover's thumb on top)
     const target = coverTrackTargetAt(track, e.clientY)
-    onCoverSetPosition?.(col, target)
+    const position = 100 - target
+    onCoverSetPosition?.(col, position)
     coverTrackStateRef.current.set(`cover-track-${i}`, {
       pointerId: e.pointerId,
       originY: e.clientY,
-      lastSent: target,
+      lastSent: position,
       moved: false,
     })
   }
@@ -525,11 +535,13 @@ export function HomeDashboardView({
     // HOLD_SLOP_PX scale as the hold handlers above
     if (Math.abs(e.clientY - s.originY) > HOLD_SLOP_PX) s.moved = true
     const target = coverTrackTargetAt(e.currentTarget, e.clientY)
-    // send ONLY on an integer change — thumb and scale both live on whole
-    // percents, so a sub-integer drift stays silent
-    if (target !== s.lastSent) {
-      onCoverSetPosition?.(col, target)
-      s.lastSent = target
+    // issue #76: compare + send the inverse of the % down — the sent value
+    // changes iff the integer % down does, so "one send per integer change"
+    // (sub-integer drift stays silent) is preserved exactly
+    const position = 100 - target
+    if (position !== s.lastSent) {
+      onCoverSetPosition?.(col, position)
+      s.lastSent = position
     }
   }
 
@@ -543,10 +555,12 @@ export function HomeDashboardView({
     if (!s || e.pointerId !== s.pointerId) return
     coverTrackStateRef.current.delete(key)
     // release: send the final value iff its integer changed since the last send
+    // (issue #76: the sent value is again the inverse of the % down)
     const target = coverTrackTargetAt(e.currentTarget, e.clientY)
-    if (target !== s.lastSent) onCoverSetPosition?.(col, target)
+    const position = 100 - target
+    if (position !== s.lastSent) onCoverSetPosition?.(col, position)
     // a SHORT tap (≤ slop travel) re-roots the dial onto this column — the
-    // same rule as the ^ / v buttons; a drag never does
+    // same rule as the ▲ / ▼ buttons; a drag never does
     if (!s.moved) {
       onSlotTapped?.(sceneRow.length + lightGrid.length + i)
     }
@@ -772,16 +786,20 @@ export function HomeDashboardView({
                         </span>
                       </span>
                       {/* issue #57 T5, reworked in issue #64, made interactive in
-                      issue #63: the vertical position slider — a visible track
-                      (groove) with an amber THUMB handle. The [data-cover-track]
-                      element below is the drag/tap TARGET for direct positioning
-                      (handlers above): a pointer's % down from the track's top edge
-                      IS the requested position, so there is NO inversion anywhere —
-                      the scale beside it reads 0% (Auf) at the TOP down to 100% (Zu)
-                      at the BOTTOM, each label pinned to its exact track height
-                      (top: <value>%, vertically centered), and the amber thumb rides
-                      that same scale: top: positionPct% ≡ HA's current_position —
-                      fully open (0) → thumb at the TOP, fully closed (100) → BOTTOM. */}
+                      issue #63, inverted for this device in issue #76: the vertical
+                      position slider — a visible track (groove) with an amber THUMB
+                      handle. The [data-cover-track] element below is the drag/tap
+                      TARGET for direct positioning (handlers above): the pointer's %
+                      DOWN from the track's top edge is where the thumb lands, and the
+                      SENT HA value is its inverse (100 - pctDown), because this
+                      device's entity reports current_position opposite to the HA
+                      convention. The thumb rides thumbTopPct = 100 - positionPct —
+                      the ONE chokepoint derived in homeDashboard.ts, so readout and
+                      control share one flip: physically open (raw 100) → thumb TOP,
+                      physically closed (raw 0) → BOTTOM. The static scale beside it
+                      is UNCHANGED: '0% (Auf)' at the TOP down to '100% (Zu)' at the
+                      BOTTOM, each label pinned to its exact track height (top:
+                      <value>%, vertically centered). */}
                       <div className={styles.coverSlider}>
                         <div
                           className={styles.coverTrack}
@@ -791,10 +809,13 @@ export function HomeDashboardView({
                           onPointerUp={(e) => handleCoverTrackPointerUp(col, i, e)}
                           onPointerCancel={() => handleCoverTrackPointerCancel(i)}
                         >
-                          {col.positionPct !== null && (
+                          {/* issue #76: the thumb rides thumbTopPct = 100 - positionPct
+                                (the derived chokepoint in homeDashboard.ts), so this
+                                device's raw 100 (physically open) lands at the TOP */}
+                          {col.thumbTopPct !== null && (
                             <span
                               className={styles.coverThumb}
-                              style={{ top: `${col.positionPct}%` }}
+                              style={{ top: `${col.thumbTopPct}%` }}
                             />
                           )}
                         </div>

@@ -467,10 +467,11 @@ $light-amber: #ffc14d;
 
 // the clearly defined THUMB handle — issue #64 enlarged it (18 -> 28px) so it
 // reads as a draggable knob. Only rendered for KNOWN positions; JS drives
-// `top`: top: positionPct%, where positionPct ≡ HA's current_position
-// (0 = fully open / "Auf" at the TOP, 100 = fully closed / "Zu" at the
-// BOTTOM) — NO inversion, so the thumb sits exactly on its own scale mark
-// (issue #63). Reuses the local $light-amber
+// `top`: top: thumbTopPct% = 100 - positionPct (issue #76 — this device's
+// cover entity reports current_position opposite to the HA convention, so
+// physically open (raw 100) lands at the TOP and physically closed (raw 0) at
+// the BOTTOM; the raw value itself stays unchanged in the model — see
+// CoverColumnModel in homeDashboard.ts). Reuses the local $light-amber
 // from the light zone; a dark edge border separates it from the track;
 // translate(-50%,-50%) centers it on the computed offset (CR69-safe:
 // fixed-size element).
