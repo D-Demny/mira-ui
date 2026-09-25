@@ -532,6 +532,23 @@ describe('HomeDashboardView stylesheet pins (issue #53)', () => {
     expect(fill).not.toMatch(/background:\s*\$accent/)
     expect(block('tileFadingOff')).toContain('rgba($light-amber, 0.24)')
   })
+
+  it('lights the active direction button in amber, never green (issue #62)', () => {
+    // The ^/v button carrying .coverBtnActive (the moving direction: 'opening'
+    // lights ^, 'closing' lights v) gets an amber lift in the same family as
+    // .tileIsOn / the slider thumb — tinted wash, brighter border, amber glyph.
+    // It must be placed AFTER the base .coverBtn so it wins the cascade, and
+    // carry its OWN hover (.coverBtn:hover would otherwise win by specificity).
+    // No green accent anywhere on a cover control.
+    const active = block('coverBtnActive')
+    expect(active).toContain('background: rgba($light-amber, 0.18);')
+    expect(active).toContain('border-color: rgba($light-amber, 0.5);')
+    expect(active).toContain('color: $light-amber;')
+    expect(active).toMatch(/&:hover \{\s*background: rgba\(\$light-amber, 0\.26\);\s*\}/)
+    expect(active).not.toMatch(/background:\s*\$accent/)
+    // the active rule must come AFTER the base .coverBtn in the stylesheet
+    expect(scss.indexOf('.coverBtnActive {')).toBeGreaterThan(scss.indexOf('.coverBtn {'))
+  })
 })
 
 // issue #57 T1: touch-input dial focus behavior — a SHORT tap reports the
@@ -1043,5 +1060,76 @@ describe('HomeDashboardView scene slot markup (issue #57 T3 comment leak)', () =
     // the real slot's visible text is its label only
     const real = container.querySelector('[data-entity-id="scene.abendstimmung"]') as HTMLElement
     expect((real.textContent ?? '').trim()).toBe('Abendstimmung')
+  })
+})
+
+// issue #62: the ACTIVE direction button — while a cover is actually moving,
+// the ^/v button for that direction carries .coverBtnActive ('opening' lights
+// ^, 'closing' lights v); settled or unknown states light neither. The class
+// follows the LIVE store state on every render (the component stays pure — it
+// just mirrors col.state), so the highlight clears as soon as HA reports the
+// settled state.
+describe('HomeDashboardView cover active direction button (issue #62)', () => {
+  function columnButtons(
+    container: HTMLElement,
+    entityId: string,
+  ): Record<'up' | 'down', HTMLElement> {
+    const col = container.querySelector(`[data-entity-id="${entityId}"]`) as HTMLElement
+    expect(col).not.toBeNull()
+    return {
+      up: col.querySelector('[data-cover-action="up"]') as HTMLElement,
+      down: col.querySelector('[data-cover-action="down"]') as HTMLElement,
+    }
+  }
+
+  it('lights ^ while the cover is "opening" (v stays dark)', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[{ ...cover('cover.rollo', 'Rollo'), state: 'opening' }]} />,
+    )
+    const { up, down } = columnButtons(container, 'cover.rollo')
+    expect(up.classList.contains('coverBtnActive')).toBe(true)
+    expect(down.classList.contains('coverBtnActive')).toBe(false)
+  })
+
+  it('lights v while the cover is "closing" (^ stays dark)', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[{ ...cover('cover.rollo', 'Rollo'), state: 'closing' }]} />,
+    )
+    const { up, down } = columnButtons(container, 'cover.rollo')
+    expect(up.classList.contains('coverBtnActive')).toBe(false)
+    expect(down.classList.contains('coverBtnActive')).toBe(true)
+  })
+
+  it('lights neither button for settled states or unknown state', () => {
+    const { container } = render(
+      <HomeDashboardView
+        entities={[
+          { ...cover('cover.open', 'Offen'), state: 'open' },
+          cover('cover.closed', 'Zu'), // fixture default: 'closed'
+          { ...cover('cover.unknown', 'Unbekannt'), state: null },
+        ]}
+      />,
+    )
+    for (const id of ['cover.open', 'cover.closed', 'cover.unknown']) {
+      const { up, down } = columnButtons(container, id)
+      expect(up.classList.contains('coverBtnActive')).toBe(false)
+      expect(down.classList.contains('coverBtnActive')).toBe(false)
+    }
+  })
+
+  it('keeps every placeholder column dark (no live state to mirror)', () => {
+    const { container } = render(
+      <HomeDashboardView entities={[{ ...cover('cover.rollo', 'Rollo'), state: 'opening' }]} />,
+    )
+    const placeholders = container.querySelectorAll(
+      '.coverColumn[data-dashboard-placeholder="true"]',
+    )
+    expect(placeholders.length).toBeGreaterThan(0)
+    for (const ph of placeholders) {
+      expect(ph.querySelector('.coverBtnActive')).toBeNull()
+    }
+    // and the real column still shows its active ^ button
+    const { up } = columnButtons(container, 'cover.rollo')
+    expect(up.classList.contains('coverBtnActive')).toBe(true)
   })
 })

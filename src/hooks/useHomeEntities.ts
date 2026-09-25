@@ -35,9 +35,16 @@ export interface HomeEntityView {
   icon?: string
   positionPct: number | null
   actuate: () => void
-  // ticket 9.6 W2: directional cover control (the Home dashboard's ^/v/stop
-  // buttons) — covers cannot be toggled, the direction is explicit
+  // ticket 9.6 W2, issue #62: EXPLICIT motion commands (open / close / stop).
+  // The Home dashboard's ^/v TAPS no longer route here — they use
+  // coverToggleDirection below (toggle-to-stop & direction change); this stays
+  // the direct action for the hold (an explicit stop) and any other caller.
+  // Covers cannot be "toggled" onto: the direction is always explicit.
   coverActuate: (action: 'open' | 'close' | 'stop') => void
+  // issue #62: toggle-to-stop & direction change for the ^/v cover buttons —
+  // a press means "DIRECTION": moving that way → stop in place; otherwise
+  // start / resume / reverse into it (see coverToggleDirection)
+  coverToggleDirection: (direction: 'up' | 'down') => void
   // issue #63: direct positioning from the Home dashboard's vertical slider —
   // sends cover.set_cover_position with an exact 0–100 target (the view model
   // clamps + rounds; the caller already sends integers)
@@ -613,6 +620,51 @@ export function actuateCover(entityId: string, action: 'open' | 'close' | 'stop'
   })()
 }
 
+// issue #62: cover button "toggle-to-stop & direction change" — the state
+// machine behind the Home dashboard's ^/v TAPS. A tap is a DIRECTION press:
+//   - already moving that way      → stop in place
+//   - settled or not started yet   → start moving that way (lastDir recorded)
+//   - moving the OTHER way         → reverse (lastDir updated)
+// 'lastDir' is per-entity and survives stops — it records the resume target
+// for inspection; the decision itself derives purely from the current state +
+// the pressed direction (never reads lastDir back), so it cannot override a
+// real HA state. The HOLD on a cover column stays an explicit stop (MainMenu
+// route), untouched by this machine.
+const coverLastDirections = new Map<string, 'up' | 'down'>()
+
+/** issue #62: pure decision for a ^/v tap — 'stop', or the motion to start. */
+export function coverTapDecision(
+  state: string | null,
+  direction: 'up' | 'down',
+): 'open' | 'close' | 'stop' {
+  if (state === 'opening' && direction === 'up') return 'stop'
+  if (state === 'closing' && direction === 'down') return 'stop'
+  return direction === 'up' ? 'open' : 'close'
+}
+
+// issue #62: tap handler for the ^/v cover buttons — decides via the machine
+// above, then delegates to actuateCover so ALL seq / write-revision /
+// optimistic-flip / settle-resync discipline is inherited (in-flight re-presses
+// are rejected by the pending-actuation guard, as they were for W2). One
+// adjustment BEFORE delegating: drop any pending bug57 v3 transition hold — a
+// new motion command redefines "where we're going". With a stale hold in
+// place, a stop's resync (which reads a SETTLED state) would be filtered out
+// for up to TRANSITION_HOLD_MS, leaving the store 'opening'/'closing', and the
+// very next tap could decide against that stale state (a redundant stop
+// instead of the resume motion). A fresh start is unaffected — actuateCover
+// immediately sets its own hold for the new flip; stops and reverses simply
+// settle faster.
+export function coverToggleDirection(entityId: string, direction: 'up' | 'down'): void {
+  const decision = coverTapDecision(stateOf(entityId).state, direction)
+  if (decision !== 'stop') {
+    // the pressed direction is the resume target from now on — recorded for
+    // inspection/debugging, never read back by the decision
+    coverLastDirections.set(entityId, direction)
+  }
+  clearTransitionHold(entityId)
+  void actuateCover(entityId, decision)
+}
+
 // issue #63: direct cover positioning — the Home dashboard's vertical slider
 // sends an exact target via cover.set_cover_position (0 = fully open, 100 =
 // fully closed). Deliberately SIMPLER than actuateCover: there is no motion-
@@ -815,6 +867,10 @@ export function useHomeSelectedEntities(pollActive: boolean = false): HomeEntity
       positionPct: domain === 'cover' ? coverPositionPct(rawState) : null,
       actuate: () => void actuateEntity(entityId),
       coverActuate: (action: 'open' | 'close' | 'stop') => void actuateCover(entityId, action),
+      // issue #62: the ^/v TAP — toggle-to-stop & direction change state
+      // machine (see coverToggleDirection)
+      coverToggleDirection: (direction: 'up' | 'down') =>
+        void coverToggleDirection(entityId, direction),
       // issue #63: direct positioning from the dashboard slider (see
       // setCoverPosition for the fire-and-resync semantics)
       coverSetPosition: (position: number) => void setCoverPosition(entityId, position),
@@ -833,6 +889,8 @@ export function __resetHomeEntityStores() {
   writeRevisions.clear()
   pendingActuations.clear()
   actuationSeqs.clear()
+  // issue #62: per-entity resume-target memory of the ^/v taps
+  coverLastDirections.clear()
   // bug57 v3: transition holds + their confirming re-read timers
   for (const timer of confirmTimers.values()) clearTimeout(timer)
   confirmTimers.clear()

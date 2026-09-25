@@ -372,8 +372,10 @@ $light-amber: #ffc14d;
   @include truncate(1);
 }
 
-// the ^ / v buttons of the mockup — W2 maps these to open/close/stop calls.
-// issue #61 removed the zone icon that used to sit between them; issue #64
+// the ^ / v buttons of the mockup — since issue #62 a TAP is a DIRECTION
+// press (toggle-to-stop & direction change, decided by the parent from the
+// live state — see coverToggleDirection in useHomeEntities) and a HOLD stops
+// the cover. issue #61 removed the zone icon that used to sit between them; issue #64
 // makes each arrow its own rounded BUTTON TILE (not a flat icon) with a
 // comfortable touch hitbox: 56 x 48px, $r-md radius, slightly lifted wash so
 // both tiles read against the column, generous gap between them.
@@ -402,6 +404,23 @@ $light-amber: #ffc14d;
   &:hover {
     // stays below the column's .focused lift (0.2) so focus still reads stronger
     background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+// issue #62: the ACTIVE direction button — lit while the cover is actually
+// moving in that direction (state 'opening' lights ^, 'closing' lights v).
+// Amber lift in the same family as .tileIsOn / the slider thumb: tinted wash,
+// brighter border, amber glyph — "this one is driving it" without leaving the
+// column's neutral palette. Placed AFTER .coverBtn so it wins the cascade; its
+// own hover stays in the amber family (.coverBtn:hover would otherwise win by
+// specificity).
+.coverBtnActive {
+  background: rgba($light-amber, 0.18);
+  border-color: rgba($light-amber, 0.5);
+  color: $light-amber;
+
+  &:hover {
+    background: rgba($light-amber, 0.26);
   }
 }
 

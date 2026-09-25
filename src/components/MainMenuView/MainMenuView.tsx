@@ -424,13 +424,16 @@ export function MainMenuView({
     }
   }, [selectedEntities])
 
-  // ticket 9.6 W2: short-press actions on the Home dashboard (tap / dial
-  // confirm). Each callback receives the slot/tile/column model from
-  // HomeDashboardView; placeholder models (entityId === null) are ignored
+  // ticket 9.6 W2, issue #62: short-press actions on the Home dashboard
+  // (tap / dial confirm). Each callback receives the slot/tile/column model
+  // from HomeDashboardView; placeholder models (entityId === null) are ignored
   // here — the component shows its own inline toast for those presses. Real
   // slots route through the SAME actuation path as the carousel cards:
-  // scenes and lights run view.actuate(), covers use the directional
-  // coverActuate (covers cannot be toggled — the direction is explicit)
+  // scenes and lights run view.actuate(), covers use coverToggleDirection —
+  // a ^/v TAP is a DIRECTION press (toggle-to-stop & direction change: same
+  // way = stop, otherwise start / resume / reverse into it; see
+  // coverToggleDirection in useHomeEntities). The HOLD on a cover column stays
+  // the explicit stop (homeHoldRoute below).
   const homeSceneTap = (slot: SceneSlotModel) => {
     if (slot.entityId === null) return
     selectedEntities.find((e) => e.entityId === slot.entityId)?.actuate()
@@ -439,11 +442,13 @@ export function MainMenuView({
     if (tile.entityId === null) return
     selectedEntities.find((e) => e.entityId === tile.entityId)?.actuate()
   }
+  // issue #62: the ^/v tap is a DIRECTION press — toggle-to-stop & direction
+  // change (moving that way = stop, otherwise start / resume / reverse). The
+  // decision lives in useHomeEntities (coverToggleDirection) so it can read
+  // the live store state; this only routes the pressed column.
   const homeCoverAction = (column: CoverColumnModel, direction: 'up' | 'down') => {
     if (column.entityId === null) return
-    selectedEntities
-      .find((e) => e.entityId === column.entityId)
-      ?.coverActuate(direction === 'up' ? 'open' : 'close')
+    selectedEntities.find((e) => e.entityId === column.entityId)?.coverToggleDirection(direction)
   }
   // issue #63: direct positioning from the Home dashboard's position slider —
   // a tap/drag on a cover track reports an exact 0–100 target (the % down

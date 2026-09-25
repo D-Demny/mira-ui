@@ -8,7 +8,11 @@
 //                    (0 lights → the full placeholder tile set, by design)
 //   Z3 cover section — header ("Wohnzimmer und Esszimmer" / "Rollo Steuerung
 //                    EG") above one column per cover: label + control row
-//                    (stacked ^ / v button tiles on the left, vertical
+//                    (stacked ^ / v button tiles on the left — a TAP is a
+//                    DIRECTION press since issue #62 (toggle-to-stop &
+//                    direction change, decided by the parent from the live
+//                    state; the moving direction's button carries
+//                    .coverBtnActive while the cover travels) — vertical
 //                    position slider — track + thumb — in the middle,
 //                    interactive for direct positioning via drag/tap since
 //                    issue #63; static 0%→100% percentage scale on the right;
@@ -427,7 +431,11 @@ export function HomeDashboardView({
   // pass their model through unchanged. issue #57 T1: a SHORT tap also reports
   // the slot's LINEAR chain index via onSlotTapped so the parent can re-root
   // the dial there — the index is computed by the caller (each zone knows its
-  // own offset in the chain).
+  // own offset in the chain). issue #62: cover ^/v taps arrive as DIRECTION
+  // presses — the toggle-to-stop / reverse decision happens on the PARENT side
+  // (coverToggleDirection in useHomeEntities, which can read the live store
+  // state); this view only forwards the pressed direction and lights up the
+  // active-direction button from the column's stored state below.
   const handleSceneTap = (slot: SceneSlotModel, index: number) => {
     if (slot.isPlaceholder) showPlaceholderToast(slot.label)
     onSceneTap?.(slot)
@@ -689,73 +697,81 @@ export function HomeDashboardView({
               <span className={styles.coverSubtitle}>{coverSection.subtitle}</span>
             </div>
             <div className={styles.coverColumns}>
-              {coverSection.columns.map((col, i) => (
-                <div
-                  key={col.entityId ?? `cover-placeholder-${i}`}
-                  // W2-4: focus-chain registry (covers start after scenes + lights)
-                  ref={(el) => setSlotEl(sceneRow.length + lightGrid.length + i, el)}
-                  className={`${styles.coverColumn}${col.isPlaceholder ? ` ${styles.placeholder}` : ''}${
-                    i === coverFocus ? ` ${styles.focused}` : ''
-                  }`}
-                  data-entity-id={col.entityId}
-                  data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
-                >
-                  <span className={styles.coverLabel}>{col.label}</span>
-                  {/* issue #57 T5, reworked in issue #64: control row — three
+              {coverSection.columns.map((col, i) => {
+                // issue #62: which ^/v button is ACTIVE while the cover moves —
+                // 'opening' lights ^ (up), 'closing' lights v (down); settled
+                // or unknown states light neither. Read live from the store
+                // state on every render, so the highlight follows the real
+                // motion and clears as soon as HA reports the settled state.
+                const activeDirection =
+                  col.state === 'opening' ? 'up' : col.state === 'closing' ? 'down' : null
+                return (
+                  <div
+                    key={col.entityId ?? `cover-placeholder-${i}`}
+                    // W2-4: focus-chain registry (covers start after scenes + lights)
+                    ref={(el) => setSlotEl(sceneRow.length + lightGrid.length + i, el)}
+                    className={`${styles.coverColumn}${col.isPlaceholder ? ` ${styles.placeholder}` : ''}${
+                      i === coverFocus ? ` ${styles.focused}` : ''
+                    }`}
+                    data-entity-id={col.entityId}
+                    data-dashboard-placeholder={col.isPlaceholder ? 'true' : undefined}
+                  >
+                    <span className={styles.coverLabel}>{col.label}</span>
+                    {/* issue #57 T5, reworked in issue #64: control row — three
                     elements side by side: the stacked ^ / v BUTTON TILES on
                     the LEFT, the vertical position SLIDER (track + thumb) in
                     the MIDDLE and the static percentage SCALE on the RIGHT */}
-                  <div className={styles.coverRow}>
-                    <span className={styles.coverBtns}>
-                      {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
+                    <div className={styles.coverRow}>
+                      <span className={styles.coverBtns}>
+                        {/* W2-3a: BOTH ^ and v trigger the COLUMN hold (same key) — the
                         hold is per cover, not per button; a fired hold suppresses
                         the short-press of that same press on either button */}
-                      <span
-                        className={styles.coverBtn}
-                        data-cover-action="up"
-                        onPointerDown={(e) =>
-                          startHold(`cover-${i}`, e, () => {
-                            // W2-3: a placeholder column hold reuses the W2-2 toast
-                            // (the parent's onCoverHold is a no-op for these columns)
-                            if (col.isPlaceholder) showPlaceholderToast(col.label)
-                            onCoverHold?.(col)
-                          })
-                        }
-                        onPointerMove={(e) => moveHold(`cover-${i}`, e)}
-                        onPointerUp={() => releaseHold(`cover-${i}`)}
-                        onPointerCancel={() => releaseHold(`cover-${i}`)}
-                        onClick={() => {
-                          if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                          // issue #57 T1: covers start after scenes + lights
-                          handleCoverAction(col, 'up', sceneRow.length + lightGrid.length + i)
-                        }}
-                      >
-                        ^
+                        <span
+                          className={`${styles.coverBtn}${activeDirection === 'up' ? ` ${styles.coverBtnActive}` : ''}`}
+                          data-cover-action="up"
+                          onPointerDown={(e) =>
+                            startHold(`cover-${i}`, e, () => {
+                              // W2-3: a placeholder column hold reuses the W2-2 toast
+                              // (the parent's onCoverHold is a no-op for these columns)
+                              if (col.isPlaceholder) showPlaceholderToast(col.label)
+                              onCoverHold?.(col)
+                            })
+                          }
+                          onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                          onPointerUp={() => releaseHold(`cover-${i}`)}
+                          onPointerCancel={() => releaseHold(`cover-${i}`)}
+                          onClick={() => {
+                            if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                            // issue #57 T1: covers start after scenes + lights
+                            handleCoverAction(col, 'up', sceneRow.length + lightGrid.length + i)
+                          }}
+                        >
+                          ^
+                        </span>
+                        <span
+                          className={`${styles.coverBtn}${activeDirection === 'down' ? ` ${styles.coverBtnActive}` : ''}`}
+                          data-cover-action="down"
+                          onPointerDown={(e) =>
+                            startHold(`cover-${i}`, e, () => {
+                              // W2-3: a placeholder column hold reuses the W2-2 toast
+                              // (the parent's onCoverHold is a no-op for these columns)
+                              if (col.isPlaceholder) showPlaceholderToast(col.label)
+                              onCoverHold?.(col)
+                            })
+                          }
+                          onPointerMove={(e) => moveHold(`cover-${i}`, e)}
+                          onPointerUp={() => releaseHold(`cover-${i}`)}
+                          onPointerCancel={() => releaseHold(`cover-${i}`)}
+                          onClick={() => {
+                            if (isHeldClick(`cover-${i}`)) return // the hold already handled it
+                            // issue #57 T1: covers start after scenes + lights
+                            handleCoverAction(col, 'down', sceneRow.length + lightGrid.length + i)
+                          }}
+                        >
+                          v
+                        </span>
                       </span>
-                      <span
-                        className={styles.coverBtn}
-                        data-cover-action="down"
-                        onPointerDown={(e) =>
-                          startHold(`cover-${i}`, e, () => {
-                            // W2-3: a placeholder column hold reuses the W2-2 toast
-                            // (the parent's onCoverHold is a no-op for these columns)
-                            if (col.isPlaceholder) showPlaceholderToast(col.label)
-                            onCoverHold?.(col)
-                          })
-                        }
-                        onPointerMove={(e) => moveHold(`cover-${i}`, e)}
-                        onPointerUp={() => releaseHold(`cover-${i}`)}
-                        onPointerCancel={() => releaseHold(`cover-${i}`)}
-                        onClick={() => {
-                          if (isHeldClick(`cover-${i}`)) return // the hold already handled it
-                          // issue #57 T1: covers start after scenes + lights
-                          handleCoverAction(col, 'down', sceneRow.length + lightGrid.length + i)
-                        }}
-                      >
-                        v
-                      </span>
-                    </span>
-                    {/* issue #57 T5, reworked in issue #64, made interactive in
+                      {/* issue #57 T5, reworked in issue #64, made interactive in
                       issue #63: the vertical position slider — a visible track
                       (groove) with an amber THUMB handle. The [data-cover-track]
                       element below is the drag/tap TARGET for direct positioning
@@ -766,33 +782,34 @@ export function HomeDashboardView({
                       (top: <value>%, vertically centered), and the amber thumb rides
                       that same scale: top: positionPct% ≡ HA's current_position —
                       fully open (0) → thumb at the TOP, fully closed (100) → BOTTOM. */}
-                    <div className={styles.coverSlider}>
-                      <div
-                        className={styles.coverTrack}
-                        data-cover-track="true"
-                        onPointerDown={(e) => handleCoverTrackPointerDown(col, i, e)}
-                        onPointerMove={(e) => handleCoverTrackPointerMove(col, i, e)}
-                        onPointerUp={(e) => handleCoverTrackPointerUp(col, i, e)}
-                        onPointerCancel={() => handleCoverTrackPointerCancel(i)}
-                      >
-                        {col.positionPct !== null && (
-                          <span
-                            className={styles.coverThumb}
-                            style={{ top: `${col.positionPct}%` }}
-                          />
-                        )}
+                      <div className={styles.coverSlider}>
+                        <div
+                          className={styles.coverTrack}
+                          data-cover-track="true"
+                          onPointerDown={(e) => handleCoverTrackPointerDown(col, i, e)}
+                          onPointerMove={(e) => handleCoverTrackPointerMove(col, i, e)}
+                          onPointerUp={(e) => handleCoverTrackPointerUp(col, i, e)}
+                          onPointerCancel={() => handleCoverTrackPointerCancel(i)}
+                        >
+                          {col.positionPct !== null && (
+                            <span
+                              className={styles.coverThumb}
+                              style={{ top: `${col.positionPct}%` }}
+                            />
+                          )}
+                        </div>
+                        <span className={styles.coverScale}>
+                          {[0, 25, 50, 75, 100].map((mark) => (
+                            <span key={mark} style={{ top: `${mark}%` }}>
+                              {mark === 0 ? '0% (Auf)' : mark === 100 ? '100% (Zu)' : `${mark}%`}
+                            </span>
+                          ))}
+                        </span>
                       </div>
-                      <span className={styles.coverScale}>
-                        {[0, 25, 50, 75, 100].map((mark) => (
-                          <span key={mark} style={{ top: `${mark}%` }}>
-                            {mark === 0 ? '0% (Auf)' : mark === 100 ? '100% (Zu)' : `${mark}%`}
-                          </span>
-                        ))}
-                      </span>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </section>
         )}

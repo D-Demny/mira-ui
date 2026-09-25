@@ -6,6 +6,7 @@ import {
   SELECTION_LS_KEY,
   __homeEntityStoreStats,
   __resetHomeEntityStores,
+  coverTapDecision,
   useHomeEntityCatalog,
   useHomeEntitySelection,
   useHomeSelectedEntities,
@@ -1444,6 +1445,302 @@ describe('useHomeEntities', () => {
       const { result } = renderHook(() => useHomeSelectedEntities())
       await waitFor(() => expect(result.current[0].loading).toBe(false))
       expect(typeof result.current[0].coverSetPosition).toBe('function')
+    })
+  })
+
+  // issue #62: toggle-to-stop & direction change — a ^/v TAP is a DIRECTION
+  // press: moving that way stops in place, otherwise the cover starts /
+  // resumes / reverses into it. The decision lives next to the store state
+  // (coverToggleDirection in useHomeEntities), so these tests drive the full
+  // machine through the view — including the bug57 v3 transition-hold
+  // interplay: a new motion command must clear the stale hold before
+  // delegating, or a stop's resync would be filtered out and the next press
+  // could decide against a stale 'opening'/'closing' state.
+  describe('cover toggle-to-stop & direction change (issue #62)', () => {
+    const COVER2 = 'cover.wohnzimmer'
+
+    it('coverTapDecision: the pure state machine', () => {
+      // settled or unknown → start in the pressed direction
+      expect(coverTapDecision('open', 'down')).toBe('close')
+      expect(coverTapDecision('closed', 'up')).toBe('open')
+      expect(coverTapDecision(null, 'up')).toBe('open')
+      expect(coverTapDecision(null, 'down')).toBe('close')
+      // moving in the pressed direction → stop in place
+      expect(coverTapDecision('opening', 'up')).toBe('stop')
+      expect(coverTapDecision('closing', 'down')).toBe('stop')
+      // moving the other way → reverse
+      expect(coverTapDecision('closing', 'up')).toBe('open')
+      expect(coverTapDecision('opening', 'down')).toBe('close')
+    })
+
+    it('settled cover: pressing v issues close_cover and flips to "closing"', async () => {
+      seedSelection([COVER])
+      let served = 'open'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/close_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'closing'
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('open'))
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('closing') // optimistic flip
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('closing') // resynced
+      expect(result.current[0].error).toBeNull()
+    })
+
+    it('pressing v while "closing" issues stop_cover only (no flip, no close)', async () => {
+      seedSelection([COVER])
+      let served = 'closing'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        // explicit counter — the default services/* catch-all would swallow an accidental close
+        http.post('*/ha-api/services/cover/close_cover', () => {
+          bodies.push('unexpected-close')
+          return HttpResponse.json([])
+        }),
+        http.post('*/ha-api/services/cover/stop_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'open' // the motion settles after the stop
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('closing'))
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('closing') // NO optimistic flip (stop never flips)
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }]) // stop_cover only
+      expect(result.current[0].state).toBe('open') // resynced after the stop
+      expect(result.current[0].error).toBeNull()
+    })
+
+    it('down → stop → down again resumes with close_cover (the stale transition hold is cleared)', async () => {
+      seedSelection([COVER])
+      let served = 'open'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/close_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'closing'
+          return HttpResponse.json([])
+        }),
+        http.post('*/ha-api/services/cover/stop_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'open' // HA stops the travel — settled state for the resume
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('open'))
+      // leg 1: start closing (optimistic flip + a fresh transition hold)
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      // leg 2: same direction while moving → stop in place. This runs WITHIN
+      // leg 1's 1500 ms hold window (real timers, fast MSW): without clearing
+      // the stale hold here, the stop's resync ('open') would be filtered out,
+      // the store would stay 'closing', and leg 3 would send a redundant stop.
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(result.current[0].state).toBe('open') // the settled state landed
+      // leg 3: same direction again → RESUME the motion, do not re-stop
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([
+        { entity_id: COVER }, // close_cover
+        { entity_id: COVER }, // stop_cover
+        { entity_id: COVER }, // close_cover (the resume)
+      ])
+      expect(result.current[0].state).toBe('closing')
+      expect(result.current[0].error).toBeNull()
+    })
+
+    it('pressing ^ while "closing" reverses with open_cover (no optimistic flip)', async () => {
+      seedSelection([COVER])
+      let served = 'closing'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/open_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'opening'
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('closing'))
+      act(() => {
+        result.current[0].coverToggleDirection('up')
+      })
+      expect(result.current[0].actuating).toBe(true)
+      expect(result.current[0].state).toBe('closing') // no flip (previous not settled)
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('opening') // resynced
+    })
+
+    it('pressing ^ while "opening" issues stop_cover and resyncs the settled state', async () => {
+      seedSelection([COVER])
+      let served = 'opening'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/stop_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'closed' // the motion settles after the stop
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('opening'))
+      act(() => {
+        result.current[0].coverToggleDirection('up')
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('closed') // resynced after the stop
+    })
+
+    it('pressing v while "opening" reverses with close_cover', async () => {
+      seedSelection([COVER])
+      let served = 'opening'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: served }),
+        ),
+        http.post('*/ha-api/services/cover/close_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          served = 'closing'
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('opening'))
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      expect(bodies).toEqual([{ entity_id: COVER }])
+      expect(result.current[0].state).toBe('closing') // resynced
+    })
+
+    it('keeps the decision per column — two covers never interfere', async () => {
+      seedSelection([COVER, COVER2])
+      let servedA = 'open'
+      let servedB = 'closed'
+      const bodies: unknown[] = []
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: servedA }),
+        ),
+        http.get('*/ha-api/states/cover.wohnzimmer', () =>
+          HttpResponse.json({ entity_id: COVER2, state: servedB }),
+        ),
+        http.post('*/ha-api/services/cover/close_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          servedA = 'closing'
+          return HttpResponse.json([])
+        }),
+        http.post('*/ha-api/services/cover/open_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          servedB = 'opening'
+          return HttpResponse.json([])
+        }),
+        http.post('*/ha-api/services/cover/stop_cover', async ({ request }) => {
+          bodies.push(await request.json())
+          servedA = 'open' // the garage cover settles after its stop
+          return HttpResponse.json([])
+        }),
+      )
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].state).toBe('open'))
+      await waitFor(() => expect(result.current[1].state).toBe('closed'))
+      // start both covers, each in its own direction
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      act(() => {
+        result.current[1].coverToggleDirection('up')
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      await waitFor(() => expect(result.current[1].actuating).toBe(false))
+      // now stop the garage column — wohnzimmer must keep opening, untouched
+      act(() => {
+        result.current[0].coverToggleDirection('down')
+      })
+      await waitFor(() => expect(result.current[0].actuating).toBe(false))
+      // multiset check — the two leg-1 services race, only the per-column
+      // routing (and the leg-2 stop targeting the garage) is under test here
+      expect(bodies).toHaveLength(3)
+      expect(bodies).toEqual(
+        expect.arrayContaining([{ entity_id: COVER }, { entity_id: COVER }, { entity_id: COVER2 }]),
+      )
+      expect(result.current[0].state).toBe('open') // garage settled after the stop
+      expect(result.current[1].state).toBe('opening') // wohnzimmer still moving
+    })
+
+    it('surfaces the error in the store when close_cover fails (optimistic state reverted)', async () => {
+      seedSelection([COVER])
+      server.use(
+        http.get('*/ha-api/states/cover.garage', () =>
+          HttpResponse.json({ entity_id: COVER, state: 'open' }),
+        ),
+        http.post('*/ha-api/services/cover/close_cover', () =>
+          HttpResponse.json({ message: 'boom' }, { status: 500 }),
+        ),
+      )
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const { result } = renderHook(() => useHomeSelectedEntities())
+        await waitFor(() => expect(result.current[0].state).toBe('open'))
+        act(() => {
+          result.current[0].coverToggleDirection('down')
+        })
+        expect(result.current[0].state).toBe('closing') // optimistic
+        await waitFor(() => expect(result.current[0].actuating).toBe(false))
+        expect(result.current[0].state).toBe('open') // reverted
+        expect(result.current[0].error).toMatch(/500/)
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('exposes coverToggleDirection on every selected entity view', async () => {
+      seedSelection([COVER])
+      const { result } = renderHook(() => useHomeSelectedEntities())
+      await waitFor(() => expect(result.current[0].loading).toBe(false))
+      expect(typeof result.current[0].coverToggleDirection).toBe('function')
     })
   })
 })
