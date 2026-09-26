@@ -1,1 +1,0 @@
-export { UpdateCard } from './UpdateCard'

@@ -1,44 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlbumArt } from '@/components/AlbumArt'
 import { AuthScreen } from '@/components/AuthScreen'
-import { BluetoothMenu } from '@/components/BluetoothMenu'
 import { BootSplash } from '@/components/BootSplash'
 import { ConnectionChooser, TetheringWizard } from '@/components/ConnectionChooser'
 import { Controls } from '@/components/Controls'
-import { DevicePicker } from '@/components/DevicePicker'
 import { HomeMenuView } from '@/components/HomeMenuView'
 import { IdleScreen } from '@/components/IdleScreen'
 import { LibraryView } from '@/components/LibraryView'
-import { MainMenuView } from '@/components/MainMenuView'
-import { HALightControlModal } from '@/components/MainMenuView/HALightControlModal'
-import { HomeEntityPickerModal } from '@/components/MainMenuView/HomeEntityPickerModal'
 import { Lyrics } from '@/components/Lyrics'
+import { MainMenuView } from '@/components/MainMenuView'
 import { Menu } from '@/components/Menu'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
 import { NoLyricsView } from '@/components/NoLyricsView'
-import { PairingDialog } from '@/components/PairingDialog'
-import { PlaylistsView } from '@/components/PlaylistsView'
 import { ReportDialog } from '@/components/ReportDialog'
 import { PcConnect } from '@/components/PcConnect'
-import { PowerMenu } from '@/components/PowerMenu'
+import { PlaylistsView } from '@/components/PlaylistsView'
 import { ProgressBar } from '@/components/ProgressBar'
 import { ReconnectBanner, type ReconnectReason } from '@/components/ReconnectBanner'
 import { ReconnectingScreen } from '@/components/ReconnectingScreen'
 import { Screensaver } from '@/components/Screensaver'
+import { TrackInfo } from '@/components/TrackInfo'
+import { HALightControlModal } from '@/components/MainMenuView/HALightControlModal'
+import { HomeEntityPickerModal } from '@/components/MainMenuView/HomeEntityPickerModal'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
 import { HaSettingsModal } from '@/components/SettingsSheet/HaSettingsModal'
-import {
-  PiKeyboardOverlay,
-  type PiKeyboardField,
-} from '@/components/SettingsSheet/PiKeyboardOverlay'
+import { PiKeyboardOverlay, type PiKeyboardField } from '@/components/SettingsSheet/PiKeyboardOverlay'
 import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
-import { SettingsSheet } from '@/components/SettingsSheet'
-import { TransferPrompt } from '@/components/TransferPrompt'
-import { TrackInfo } from '@/components/TrackInfo'
-import { UpdateCard } from '@/components/UpdateCard'
-import { VolumeOverlay } from '@/components/VolumeOverlay'
 import { DebugScreen } from '@/components/DebugScreen'
-import { resolveRoute, type OfflineScreen } from '@/app/routes'
+import { resolveRoute } from '@/app/routes'
 import { useDevScreen } from '@/dev/devContext'
 import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
@@ -46,39 +35,85 @@ import { useConnectDevices } from '@/hooks/useConnectDevices'
 import { useConnectivity } from '@/hooks/useConnectivity'
 import { useControls } from '@/hooks/useControls'
 import { useDelayedFlag } from '@/hooks/useDelayedFlag'
+import { useDiscoverableWhilePairing } from '@/hooks/useDiscoverableWhilePairing'
+import { useDeviceSwitch } from '@/hooks/useDeviceSwitch'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
+import { useIdleScreensaver } from '@/hooks/useIdleScreensaver'
+import { useLastArtUrl } from '@/hooks/useLastArtUrl'
 import { useLyrics } from '@/hooks/useLyrics'
-import { useNavigation } from '@/navigation/navigationContext'
 import { useNotify } from '@/notify/notifyContext'
 import { useObserver } from '@/hooks/useObserver'
 import { useOfflineScreen } from '@/hooks/useOfflineScreen'
+import { useOverlays, type OverlayId } from '@/hooks/useOverlays'
+import { OverlayContext, useOverlayState } from '@/overlays/overlayContext'
+import { OverlayHost } from '@/overlays/OverlayHost'
+import { AuthPage } from '@/pages/Auth/AuthPage'
+import { BootPage } from '@/pages/Boot/BootPage'
+import { OfflinePage } from '@/pages/Offline/OfflinePage'
 import { usePlayerControls } from '@/hooks/usePlayerControls'
 import { usePrefetch } from '@/hooks/usePrefetch'
 import { resolveDropReason, useHeldStatus } from '@/hooks/useReconnect'
 import { useSavedTrack } from '@/hooks/useSavedTrack'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
-import { resumeLastDevice, transferToDevice } from '@/api/client'
-import type { ConnectDevice, ObserverStatusActive, PlayOffset } from '@/api/types'
+import { useUtcOffset } from '@/hooks/useUtcOffset'
+import { useNavigation } from '@/navigation/navigationContext'
+import { resumeLastDevice } from '@/api/client'
+import type { ObserverStatusActive, PlayOffset } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
 import { artSizeFor, heroArtSizeFor, registerUiScaleTarget, usePlayerViewport } from '@/uiScale'
 import styles from './App.module.scss'
 
-const LAST_ART_KEY = 'mira.lastArtUrl'
-const UTC_OFFSET_KEY = 'mira.utcOffsetMin'
-const UPDATE_REMIND_MS = 24 * 60 * 60 * 1000
-const SKIPPED_VERSION_KEY = 'mira.skippedVersion'
-// bug40: firmware updates are flashed manually, so the "update available"
-// overlay must never appear (also for mandatory releases). The daemon still
-// reports update_available in its status — the UI just ignores it. Flip this
-// back to true to re-enable the nag.
-const UPDATE_POPUP_ENABLED = false
-const TRANSFER_DISMISS_KEY = 'mira.transferDismissedAt'
-const TRANSFER_DISMISS_MS = 2 * 60 * 60 * 1000
+/**
+ * Owns the overlay stack so every screen below can reach it, and nothing else.
+ * The dev-screen override lives here because it is what `useOverlays` needs to
+ * treat a forced menu as open.
+ */
+export default function App() {
+  const { forced, setForced } = useDevScreen()
 
-function AppInner() {
+  // a forced screen shows its overlay without touching the real state
+  const forcedOpen = useMemo(
+    () => ({
+      menu: forced === 'menu' || undefined,
+      powerMenu: forced === 'power-menu' || undefined,
+      btMenu: forced === 'bluetooth-menu' || undefined,
+      settings: forced === 'settings' || undefined,
+    }),
+    [forced],
+  )
+  // closing a forced menu has to drop the override too, or it springs back
+  const onOverlayClosed = useCallback(
+    (id: OverlayId) => {
+      if ((id === 'menu' && forced === 'menu') || (id === 'powerMenu' && forced === 'power-menu')) {
+        setForced('playing-lyrics')
+      }
+    },
+    [forced, setForced],
+  )
+  const overlays = useOverlays({ forcedOpen, onClosed: onOverlayClosed })
+
+  return (
+    <OverlayContext.Provider value={overlays}>
+      <AppContent />
+    </OverlayContext.Provider>
+  )
+}
+
+function AppContent() {
   const auth = useAuth()
-  const { status: realStatus, loading, connected, setupProgress } = useObserver()
+  const {
+    status: realStatus,
+    loading,
+    connected,
+    setupProgress,
+  } = useObserver()
   const notify = useNotify()
+  const { forced, setForced } = useDevScreen()
+  const overlays = useOverlayState()
+  // `overlays` itself is a new object on every open and close; these three are
+  // not, so anything that ends up in a dep array is built from them
+  const { open: openOverlay, close: closeOverlay, openScreensaver } = overlays
+
   const { play, pause, next, prev, seek, playContext, setVolume, setShuffle, setRepeat } =
     useControls()
   const handleSeek = useCallback(
@@ -100,35 +135,13 @@ function AppInner() {
     wasOnline,
   } = useConnectivity()
   const connectDevices = useConnectDevices()
-  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false)
 
-  // notification for the playback device changes
-  const prevDeviceRef = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    if (realStatus == null) return
-    const curId = realStatus.active ? realStatus.device_id : ''
-    const prev = prevDeviceRef.current
-    if (prev !== undefined && prev !== curId) {
-      if (realStatus.active) {
-        notify(`Now playing on ${realStatus.device_name}`, { variant: 'info' })
-      } else {
-        notify('Nothing is playing. Pick a device or start Spotify', { variant: 'info' })
-      }
-    }
-    prevDeviceRef.current = curId
-  }, [realStatus, notify])
-
-  const onPickDevice = useCallback(
-    (d: ConnectDevice) => {
-      setDeviceMenuOpen(false)
-      notify(`Switching to ${d.name}...`, { variant: 'info' })
-      void transferToDevice(d.id).catch((err) => {
-        console.warn('transfer failed', err)
-        notify(`Couldn't switch to ${d.name}`, { variant: 'error' })
-      })
-    },
-    [notify],
-  )
+  const closeDeviceMenu = useCallback(() => overlays.close('deviceMenu'), [overlays])
+  const onPickDevice = useDeviceSwitch({
+    status: realStatus,
+    notify,
+    onPicked: closeDeviceMenu,
+  })
 
   const settings = useSettings()
   const showLyricsReal = settings.showLyrics
@@ -137,9 +150,9 @@ function AppInner() {
   // bug38: the display size zooms only the now-playing screen — the logical viewport +
   // zoom the player wrapper below renders (and registers as the scale target)
   const playerViewport = usePlayerViewport()
-  const [menuOpenReal, setMenuOpen] = useState(false)
-  const [powerMenuOpenReal, setPowerMenuOpen] = useState(false)
-  const [settingsOpenReal, setSettingsOpen] = useState(false)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+
+  // fork app-level panels for the library / main menu (rendered by globalOverlays)
   const [defaultDeviceModalOpen, setDefaultDeviceModalOpen] = useState(false)
   // epic10 task 4: the Raspberry Pi provisioning/connection view
   const [piServerModalOpen, setPiServerModalOpen] = useState(false)
@@ -153,22 +166,11 @@ function AppInner() {
   const [lightControl, setLightControl] = useState<{ entityId: string; label: string } | null>(null)
   // ticket 9.3: the home carousel entity picker overlay
   const [entityPickerOpen, setEntityPickerOpen] = useState(false)
-  const [btMenuOpenReal, setBtMenuOpen] = useState(false)
-  const [debugOpen, setDebugOpen] = useState(false)
-  const [transferPromptActive, setTransferPromptActive] = useState(false)
-
   // navigation stack for library menu system
   const navigation = useNavigation()
+  // library navigation mode (fork route /settings/library): replaces
+  // idle/playing until the user exits it or presses back again
   const [showingLibrary, setShowingLibrary] = useState(false)
-  const [transferPromptAction, setTransferPromptAction] = useState<(() => void) | null>(null)
-  // support report id dialog
-  const [reportId, setReportId] = useState<string | null>(null)
-
-  const [screensaverOpen, setScreensaverOpen] = useState(false)
-  // 'auto' = opened by the idle timer
-  const [screensaverBy, setScreensaverBy] = useState<'manual' | 'auto'>('manual')
-
-  const stageRef = useRef<HTMLDivElement | null>(null)
 
   const toggleLyrics = useCallback(() => {
     updateSettings({ showLyrics: !getSettings().showLyrics })
@@ -180,62 +182,6 @@ function AppInner() {
 
   const toggleVoiceMic = useCallback(() => {
     updateSettings({ voiceMic: !getSettings().voiceMic })
-  }, [])
-
-  const defaultDeviceId = settings.defaultDeviceId
-  const [dismissedAt, setDismissedAt] = useState<number | null>(() => {
-    try {
-      const raw = localStorage.getItem(TRANSFER_DISMISS_KEY)
-      return raw ? Number(raw) : null
-    } catch {
-      return null
-    }
-  })
-  const transferDismissed = dismissedAt != null && Date.now() - dismissedAt < TRANSFER_DISMISS_MS
-  const needsTransfer =
-    defaultDeviceId != null &&
-    defaultDeviceId !== '' &&
-    realStatus?.active === true &&
-    realStatus.device_id !== defaultDeviceId &&
-    !transferDismissed
-  const needsTransferRef = useRef(needsTransfer)
-  needsTransferRef.current = needsTransfer
-
-  const wrapActionWithTransfer = useCallback((action: () => void) => {
-    if (!needsTransferRef.current) {
-      action()
-      return
-    }
-    setTransferPromptAction(() => action)
-    setTransferPromptActive(true)
-  }, [])
-
-  const handleTransferConfirm = useCallback(() => {
-    if (defaultDeviceId == null) return
-    void transferToDevice(defaultDeviceId)
-      .then(() => {
-        transferPromptAction?.()
-      })
-      .catch((err) => {
-        console.warn('transfer failed', err)
-        notify("Couldn't transfer to " + defaultDeviceId, { variant: 'error' })
-      })
-      .finally(() => {
-        setTransferPromptActive(false)
-        setTransferPromptAction(null)
-      })
-  }, [defaultDeviceId, transferPromptAction, notify])
-
-  const handleTransferDismiss = useCallback(() => {
-    const now = Date.now()
-    try {
-      localStorage.setItem(TRANSFER_DISMISS_KEY, String(now))
-    } catch {
-      // ignore
-    }
-    setDismissedAt(now)
-    setTransferPromptActive(false)
-    setTransferPromptAction(null)
   }, [])
 
   // get settings from the daemon
@@ -253,8 +199,6 @@ function AppInner() {
   // TODO: maybe not needed at this point since some further changes while developing the bluetooth flow showed this was not an issue as i thought
   const LOAD_STUCK_MS = 30000
   const loadStuck = useDelayedFlag(true, LOAD_STUCK_MS)
-
-  const { forced, setForced } = useDevScreen()
 
   const mockStatus = useMemo<ObserverStatusActive>(() => makeMockStatus(), [])
 
@@ -319,8 +263,8 @@ function AppInner() {
   )
 
   const showLyrics = forced === 'playing-no-lyrics' ? false : showLyricsReal
-  // live status when active otherwise the last playing (computed before the lyrics
-  // hook below so both read the same status)
+  // live status when active otherwise the last playing — hoisted above every early
+  // return so hook order stays stable across screens (useLyrics below is a hook)
   const playerStatus = status && status.active ? status : reconnecting ? heldStatus : null
   // bug52: the split-view vs. standard-layout decision needs the real lyrics state,
   // so the fetch is hoisted from the Lyrics component into its layout owner (App).
@@ -343,213 +287,53 @@ function AppInner() {
   const hasLyrics =
     lyricsState.error === null && lyricsState.lyrics !== null && lyricsState.lyrics.lines.length > 0
   const renderLyricsLayout = showLyrics && hasLyrics && !lyricsState.loading
-  const menuOpen = forced === 'menu' ? true : menuOpenReal
-  const powerMenuOpen = forced === 'power-menu' ? true : powerMenuOpenReal
-  const btMenuOpen = forced === 'bluetooth-menu' ? true : btMenuOpenReal
-  const settingsOpen = forced === 'settings' ? true : settingsOpenReal
   const pairing =
     forced === 'pairing' ? { address: 'AB:CD:EF:01:23:45', passkey: '123456' } : realPairing
 
-  // update notifier
-  const [updateCardOpen, setUpdateCardOpen] = useState(false)
-  const updateRemindAtRef = useRef(0)
+  // an overlay owns the screen, or something that is not an overlay does
+  const overlayBusy = overlays.busy || !!forced || auth.required || reconnecting || !!pairing
 
-  // auto screensaver: opens immediately when playback stops (nothing playing),
-  // acting as a clock screensaver. any user input wakes it up. Not a setting on purpose.
-  const SCREENSAVER_DELAY_MS = 3000
-  const screensaverAutoEligible =
-    !screensaverOpen &&
-    !forced &&
-    !loading &&
-    !auth.required &&
-    !reconnecting &&
-    realStatus != null &&
-    realStatus.active !== true &&
-    realStatus.setting_up !== true &&
-    !menuOpen &&
-    !powerMenuOpen &&
-    !btMenuOpen &&
-    !settingsOpen &&
-    !deviceMenuOpen &&
-    !defaultDeviceModalOpen &&
-    !piServerModalOpen &&
-    !haSettingsOpen &&
-    !piKeyboardField &&
-    !debugOpen &&
-    !updateCardOpen &&
-    !reportId &&
-    !pairing
-  useEffect(() => {
-    if (!screensaverAutoEligible) return
-    const open = () => {
-      setScreensaverBy('auto')
-      setScreensaverOpen(true)
-    }
-    const t = window.setTimeout(open, SCREENSAVER_DELAY_MS)
-    return () => window.clearTimeout(t)
-  }, [screensaverAutoEligible, SCREENSAVER_DELAY_MS])
+  const openScreensaverAuto = useCallback(() => openScreensaver('auto'), [openScreensaver])
+  const closeScreensaver = useCallback(() => closeOverlay('screensaver'), [closeOverlay])
 
-  // an auto-opened saver yields to real playback; a manual one stays (desk
-  // mode) and cross-fades its art instead
-  useEffect(() => {
-    if (screensaverOpen && screensaverBy === 'auto' && realStatus?.active === true) {
-      setScreensaverOpen(false)
-    }
-  }, [screensaverOpen, screensaverBy, realStatus])
+  useIdleScreensaver({
+    open: overlays.isOpen('screensaver'),
+    openedBy: overlays.screensaverBy,
+    busy: overlayBusy,
+    consentOpen: false, // fork: no consent overlay (excluded)
+    updateCardOpen: false, // fork: no update card (excluded)
+    loading,
+    status: realStatus,
+    onOpen: openScreensaverAuto,
+    onClose: closeScreensaver,
+  })
 
   // discoverable while the Bluetooth pairing screen is up
   const pairingScreenShown = forced === 'needs-network' || offlineScreen === 'bluetooth'
-  useEffect(() => {
-    if (btMenuOpen) return
-    if (!pairingScreenShown) {
-      void setDiscoverable(false).catch(() => {})
-      return
-    }
-    let cancelled = false
-    const assertOn = () => {
-      if (!cancelled) void setDiscoverable(true).catch(() => {})
-    }
-    assertOn()
-    const id = window.setInterval(assertOn, 3000)
-    return () => {
-      cancelled = true
-      window.clearInterval(id)
-    }
-  }, [pairingScreenShown, btMenuOpen, setDiscoverable])
+  useDiscoverableWhilePairing({
+    pairingScreenShown,
+    btMenuOpen: overlays.isOpen('btMenu'),
+    setDiscoverable,
+  })
 
-  const closeMenu = useCallback(() => {
-    setMenuOpen(false)
-    if (forced === 'menu') setForced('playing-lyrics')
-  }, [forced, setForced])
-
-  const closePowerMenu = useCallback(() => {
-    setPowerMenuOpen(false)
-    if (forced === 'power-menu') setForced('playing-lyrics')
-  }, [forced, setForced])
+  const closeMenu = useCallback(() => overlays.close('menu'), [overlays])
+  const closePowerMenu = useCallback(() => overlays.close('powerMenu'), [overlays])
 
   const onOpenScreensaver = useCallback(() => {
     closePowerMenu()
-    setScreensaverBy('manual')
-    setScreensaverOpen(true)
-  }, [closePowerMenu])
+    overlays.openScreensaver('manual')
+  }, [closePowerMenu, overlays])
 
-  const handleScreensaverClose = useCallback(() => {
-    setScreensaverOpen(false)
-    if (defaultDeviceId && defaultDeviceId !== '') {
-      void transferToDevice(defaultDeviceId).catch((err) => {
-        console.warn('transfer failed', err)
-        notify("Couldn't switch to default device", { variant: 'error' })
-      })
-    }
-  }, [defaultDeviceId, notify])
+  // remembered across boots: the screensaver needs both on a cold start
+  const lastArtUrl = useLastArtUrl(realStatus)
+  const utcOffsetMin = useUtcOffset(realStatus)
 
-  // remember the last album art for the screensavers ambient background
-  useEffect(() => {
-    if (realStatus?.active !== true || !realStatus.track_image) return
-    try {
-      window.localStorage.setItem(LAST_ART_KEY, realStatus.track_image)
-    } catch {
-      // ignore
-    }
-  }, [realStatus])
-
-  const [utcOffsetMin, setUtcOffsetMin] = useState<number | null>(() => {
-    try {
-      const v = window.localStorage.getItem(UTC_OFFSET_KEY)
-      return v == null ? null : Number(v)
-    } catch {
-      return null
-    }
-  })
-  useEffect(() => {
-    const v = realStatus?.utc_offset_min
-    if (typeof v !== 'number') return
-    setUtcOffsetMin(v)
-    try {
-      window.localStorage.setItem(UTC_OFFSET_KEY, String(v))
-    } catch {
-      // ignore
-    }
-  }, [realStatus])
-
-  const [latestVersion, setLatestVersion] = useState('')
-  const [latestHighlights, setLatestHighlights] = useState<string[]>([])
-  const [updateAvailable, setUpdateAvailable] = useState(false)
-  const [updateMandatory, setUpdateMandatory] = useState(false)
-  useEffect(() => {
-    if (realStatus == null) return
-    if (typeof realStatus.update_available === 'boolean')
-      setUpdateAvailable(realStatus.update_available)
-    if (realStatus.latest_version) setLatestVersion(realStatus.latest_version)
-    if (realStatus.latest_highlights?.length) setLatestHighlights(realStatus.latest_highlights)
-    if (typeof realStatus.update_mandatory === 'boolean')
-      setUpdateMandatory(realStatus.update_mandatory)
-  }, [realStatus])
-
-  // a skipped version stays skipped until a newer one ships
-  const [skippedVersion, setSkippedVersion] = useState(() => {
-    try {
-      return window.localStorage.getItem(SKIPPED_VERSION_KEY) ?? ''
-    } catch {
-      return ''
-    }
-  })
-  const skipVersion = useCallback(() => {
-    setSkippedVersion(latestVersion)
-    try {
-      window.localStorage.setItem(SKIPPED_VERSION_KEY, latestVersion)
-    } catch {
-      // storage broken
-    }
-    setUpdateCardOpen(false)
-  }, [latestVersion])
-
-  // update card — bug40: UPDATE_POPUP_ENABLED pins the overlay off; the state
-  // above keeps updating from the daemon status so re-enabling is a one-line
-  // change (the timer below simply never arms while the flag is false)
-  const updateCardEligible =
-    UPDATE_POPUP_ENABLED &&
-    updateAvailable &&
-    (updateMandatory || latestVersion !== skippedVersion) &&
-    !updateCardOpen &&
-    !screensaverOpen &&
-    !forced &&
-    !loading &&
-    !auth.required &&
-    !reconnecting &&
-    realStatus != null &&
-    realStatus.active !== true &&
-    realStatus.setting_up !== true &&
-    !menuOpen &&
-    !powerMenuOpen &&
-    !btMenuOpen &&
-    !settingsOpen &&
-    !deviceMenuOpen &&
-    !defaultDeviceModalOpen &&
-    !piServerModalOpen &&
-    !haSettingsOpen &&
-    !debugOpen &&
-    !reportId &&
-    !pairing
-  useEffect(() => {
-    if (!updateCardEligible) return
-    const delay = Math.max(1500, updateRemindAtRef.current - Date.now())
-    const t = window.setTimeout(() => setUpdateCardOpen(true), delay)
-    return () => window.clearTimeout(t)
-  }, [updateCardEligible])
-  const remindLater = useCallback(() => {
-    updateRemindAtRef.current = Date.now() + UPDATE_REMIND_MS
-    setUpdateCardOpen(false)
-  }, [])
-
-  // start playback from the main menu → stay in the menu, it switches to
-  // 'Läuft gerade' once the play actually started (issue #56)
+  // issue #56: a refused/failed play used to die in a silent `.catch(() => {})`
+  // while the menu had already optimistically switched panes — old cards on
+  // screen, zero feedback. Toast like the preset buttons do, and keep the
+  // rejection so the menu can defer its pane switch until success.
   const onPlayFromMenu = useCallback(
     (uri: string, offset?: PlayOffset): Promise<void> => {
-      // issue #56: a refused/failed play used to die in a silent `.catch(() => {})`
-      // while the menu had already optimistically switched panes — old cards on
-      // screen, zero feedback. Toast like the preset buttons do, and keep the
-      // rejection so the menu can defer its pane switch until success.
       return playContext(uri, offset).catch((error: unknown) => {
         notify("Couldn't start playback", { variant: 'error' })
         throw error
@@ -557,51 +341,27 @@ function AppInner() {
     },
     [playContext, notify],
   )
-  useEffect(() => {
-    if (updateCardOpen && realStatus?.active === true) setUpdateCardOpen(false)
-  }, [updateCardOpen, realStatus])
 
   const statusActive = status?.active === true
 
   // hardware back button
   const goBack = useCallback(() => {
-    if (screensaverOpen) {
-      setScreensaverOpen(false)
-      return
-    }
-    if (updateCardOpen) {
-      remindLater()
-      return
-    }
-    if (reportId) {
-      setReportId(null)
-      return
-    }
-    if (debugOpen) {
-      setDebugOpen(false)
-      return
-    }
-    if (deviceMenuOpen) {
-      setDeviceMenuOpen(false)
-      return
-    }
+    if (overlays.goBack()) return
     if (defaultDeviceModalOpen) {
       setDefaultDeviceModalOpen(false)
       return
     }
-    // ticket10-2: back hierarchy — the open keyboard is closed FIRST (its own
-    // ListFocusContext entry normally already consumes the press; this is the
-    // App-level fallback), a second back then closes the Pi menu
+    // ticket10-2: the open keyboard is closed FIRST (its own ListFocusContext entry
+    // normally already consumes the press; App-level fallback), a second back then
+    // closes the Pi menu
     if (piKeyboardField) {
       setPiKeyboardField(null)
       return
     }
-    // ticket10-6C: the tethering onboarding wizard — after its keyboard (the
-    // check above) closed, a back press returns to the connection chooser
-    // (the wizard itself also routes its own ListFocus entry's Back here)
+    // ticket10-6C: tethering wizard — after its keyboard closed, back returns to the chooser
     if (
       forced === 'tethering-onboarding' ||
-      (!forced && offlineScreen === 'tethering-onboarding')
+      (!forced && offline.method === 'tethering-onboarding')
     ) {
       if (forced === 'tethering-onboarding') setForced('connection-chooser')
       else offline.setMethod('chooser')
@@ -612,30 +372,12 @@ function AppInner() {
       setPiServerModalOpen(false)
       return
     }
-    // ticket 9.4: the HA settings modal (its ListFocus entry normally
-    // consumes the press; this is the App-level fallback)
+    // ticket 9.4: HA settings modal (App-level fallback)
     if (haSettingsOpen) {
       setHaSettingsOpen(false)
       return
     }
-    if (btMenuOpen) {
-      setBtMenuOpen(false)
-      return
-    }
-    if (settingsOpen) {
-      setSettingsOpen(false)
-      return
-    }
-    if (powerMenuOpen) {
-      closePowerMenu()
-      return
-    }
-    if (menuOpen) {
-      closeMenu()
-      return
-    }
-
-    // library navigation: back from playing → open library (use lastBrowseRoute if available)
+    // library navigation: back from playing → open library
     if (statusActive && !showingLibrary) {
       setShowingLibrary(true)
       navigation.resetStack()
@@ -643,18 +385,15 @@ function AppInner() {
       navigation.setCurrentRoute(targetRoute)
       return
     }
-
     // library navigation: within library, pop stack or return to playing
     if (showingLibrary) {
       const popped = navigation.popRoute()
       if (popped == null) {
-        // at root of library, go back to playing
         setShowingLibrary(false)
         return
       }
       return
     }
-
     if (offline.active && offline.method !== 'chooser') {
       offline.setMethod('chooser')
       return
@@ -665,29 +404,7 @@ function AppInner() {
       return
     }
     // nothing to go back to
-  }, [
-    screensaverOpen,
-    updateCardOpen,
-    remindLater,
-    reportId,
-    debugOpen,
-    deviceMenuOpen,
-    piKeyboardField,
-    forced,
-    setForced,
-    piServerModalOpen,
-    haSettingsOpen,
-    btMenuOpen,
-    settingsOpen,
-    powerMenuOpen,
-    closePowerMenu,
-    menuOpen,
-    closeMenu,
-    statusActive,
-    navigation,
-    showingLibrary,
-    offline,
-  ])
+  }, [overlays, offline, defaultDeviceModalOpen, piKeyboardField, forced, setForced, piServerModalOpen, haSettingsOpen, statusActive, navigation, showingLibrary])
 
   const controls = usePlayerControls({
     status: status && status.active ? status : null,
@@ -699,7 +416,6 @@ function AppInner() {
     setShuffle,
     setRepeat,
     onCommandError: (message) => notify(message, { variant: 'error' }),
-    wrapActionWithTransfer,
   })
 
   const savableStatus = status && status.active ? status : reconnecting ? heldStatus : null
@@ -720,9 +436,7 @@ function AppInner() {
     else resumeLast()
   }, [statusActive, onPlayPauseActive, resumeLast])
 
-  // stable ref so the preset/chord effect isn't torn down on every re-render
-  // (an unstable handler would clear the 1+4 chord timer before it fires)
-  const openDebug = useCallback(() => setDebugOpen(true), [])
+  const openDebug = useCallback(() => openOverlay('debug'), [openOverlay])
 
   const hardware = useHardwareButtons({
     status: status && status.active ? status : null,
@@ -731,29 +445,25 @@ function AppInner() {
     playContext,
     onBack: goBack,
     onTogglePowerMenu: () => {
-      if (screensaverOpen) {
-        setScreensaverOpen(false)
+      if (overlays.isOpen('screensaver')) {
+        overlays.close('screensaver')
         return
       }
-      setPowerMenuOpen((v) => !v)
+      overlays.toggle('powerMenu')
     },
     onScreensaver: onOpenScreensaver,
     onOpenDebug: openDebug,
     notify,
-    wrapActionWithTransfer,
   })
 
   // touch gestures
   const swipeEnabled =
     status?.active === true &&
-    !menuOpen &&
-    !powerMenuOpen &&
-    !deviceMenuOpen &&
-    !defaultDeviceModalOpen &&
-    !piServerModalOpen &&
-    !haSettingsOpen &&
-    !btMenuOpen &&
-    !settingsOpen &&
+    !overlays.isOpen('menu') &&
+    !overlays.isOpen('powerMenu') &&
+    !overlays.isOpen('deviceMenu') &&
+    !overlays.isOpen('btMenu') &&
+    !overlays.isOpen('settings') &&
     !pairing
   useSwipeGestures(stageRef, {
     onNext: controls.onNext,
@@ -764,57 +474,37 @@ function AppInner() {
 
   // ambient screensaver background
   let screensaverArt: string | null = null
-  if (screensaverOpen || forced === 'screensaver') {
-    let storedArt: string | null = null
-    try {
-      storedArt = window.localStorage.getItem(LAST_ART_KEY)
-    } catch {
-      // ignore
-    }
+  if (overlays.isOpen('screensaver') || forced === 'screensaver') {
     screensaverArt =
-      (status?.active === true ? status.track_image : '') || heldStatus?.track_image || storedArt
+      (status?.active === true ? status.track_image : '') || heldStatus?.track_image || lastArtUrl
   }
 
   const globalOverlays = (
     <>
-      <VolumeOverlay state={hardware.volumeOverlay} />
-      {transferPromptActive && realStatus ? (
-        <TransferPrompt
-          active={transferPromptActive}
-          deviceName={
-            connectDevices.find((d) => d.id === defaultDeviceId)?.name ?? defaultDeviceId ?? ''
-          }
-          onTransfer={handleTransferConfirm}
-          onDismiss={handleTransferDismiss}
-        />
-      ) : null}
-      <PowerMenu open={powerMenuOpen} onClose={closePowerMenu} />
-      <SettingsSheet
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+      <OverlayHost
+        volumeOverlay={hardware.volumeOverlay}
         phoneVolume={status !== null && status.active === true && status.volume_disabled === true}
-        devices={connectDevices}
-        onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
+        online={online}
+        connectDevices={connectDevices}
+        onPickDevice={onPickDevice}
+        pairing={pairing}
+        screensaverArt={screensaverArt}
+        utcOffsetMin={utcOffsetMin}
       />
       {defaultDeviceModalOpen ? (
         <DefaultDeviceModal
           devices={connectDevices}
           currentDefaultId={settings.defaultDeviceId}
           isActiveDevice={status?.active === true}
-          onTransfer={
-            status
-              ? () => {
-                  const target = connectDevices.find((d) => d.is_active) || connectDevices[0]
-                  if (target) onPickDevice(target)
-                  return Promise.resolve()
-                }
-              : () => Promise.resolve()
-          }
+          onTransfer={() => {
+            const target = connectDevices.find((d) => d.is_active) || connectDevices[0]
+            if (target) onPickDevice(target)
+            return Promise.resolve()
+          }}
           onChange={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
           onClose={() => setDefaultDeviceModalOpen(false)}
         />
       ) : null}
-      {/* epic10 task 4: the Raspberry Pi provisioning/connection view */}
       {piServerModalOpen ? (
         <PiServerModal
           onClose={() => {
@@ -824,20 +514,9 @@ function AppInner() {
           onOpenKeyboard={(field) => setPiKeyboardField(field)}
         />
       ) : null}
-      {/* ticket 9.4: the Home Assistant connection settings view (its
-          on-screen keyboard renders inside the modal's own backdrop) */}
       {haSettingsOpen ? <HaSettingsModal onClose={() => setHaSettingsOpen(false)} /> : null}
-      {/* ticket10-2: the on-screen keyboard for the Pi credential fields */}
       {piKeyboardField ? (
         <PiKeyboardOverlay field={piKeyboardField} onClose={() => setPiKeyboardField(null)} />
-      ) : null}
-      {deviceMenuOpen ? (
-        <DevicePicker
-          devices={connectDevices}
-          onSelect={onPickDevice}
-          placement="modal"
-          onClose={() => setDeviceMenuOpen(false)}
-        />
       ) : null}
       {lightControl ? (
         <HALightControlModal
@@ -846,29 +525,8 @@ function AppInner() {
           onClose={() => setLightControl(null)}
         />
       ) : null}
-      {/* ticket 9.3: the home carousel entity picker */}
       {entityPickerOpen ? (
         <HomeEntityPickerModal onClose={() => setEntityPickerOpen(false)} />
-      ) : null}
-      {btMenuOpen ? <BluetoothMenu online={online} onClose={() => setBtMenuOpen(false)} /> : null}
-      <DebugScreen open={debugOpen} onClose={() => setDebugOpen(false)} onReport={setReportId} />
-      {pairing ? <PairingDialog passkey={pairing.passkey} address={pairing.address} /> : null}
-      {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
-      {updateCardOpen ? (
-        <UpdateCard
-          latest={latestVersion}
-          highlights={latestHighlights}
-          mandatory={updateMandatory}
-          onRemindLater={remindLater}
-          onSkip={skipVersion}
-        />
-      ) : null}
-      {screensaverOpen ? (
-        <Screensaver
-          artUrl={screensaverArt}
-          utcOffsetMin={utcOffsetMin}
-          onClose={handleScreensaverClose}
-        />
       ) : null}
     </>
   )
@@ -879,22 +537,7 @@ function AppInner() {
         <ConnectionChooser
           onPickPc={() => setForced('pc-connect')}
           onPickBluetooth={() => setForced('needs-network')}
-          // ticket10-6C: the USB-tethering onboarding wizard (dev screen
-          // path — the production path is the offline branch below)
           onPickUsbTethering={() => setForced('tethering-onboarding')}
-        />
-        {globalOverlays}
-      </div>
-    )
-  }
-  // ticket10-6C: the USB-tethering onboarding wizard (dev screen path)
-  if (forced === 'tethering-onboarding') {
-    return (
-      <div className={styles.app}>
-        <TetheringWizard
-          onBack={() => setForced('connection-chooser')}
-          onOpenKeyboard={(field) => setPiKeyboardField(field)}
-          keyboardField={piKeyboardField}
         />
         {globalOverlays}
       </div>
@@ -904,6 +547,18 @@ function AppInner() {
     return (
       <div className={styles.app}>
         <PcConnect />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'tethering-onboarding') {
+    return (
+      <div className={styles.app}>
+        <TetheringWizard
+          onBack={() => setForced('connection-chooser')}
+          onOpenKeyboard={(field) => setPiKeyboardField(field)}
+          keyboardField={piKeyboardField}
+        />
         {globalOverlays}
       </div>
     )
@@ -951,27 +606,13 @@ function AppInner() {
       </div>
     )
   }
-  if (forced === 'update-card') {
-    return (
-      <div className={styles.app}>
-        <UpdateCard
-          latest="1.1.0"
-          highlights={[
-            'Clock screensaver (double-press power)',
-            'Setup progress bar',
-            'Bluetooth pairing fixes',
-          ]}
-          onRemindLater={() => setForced(null)}
-          onSkip={() => setForced(null)}
-        />
-      </div>
-    )
-  }
   if (forced === 'debug') {
     return (
       <div className={styles.app}>
-        <DebugScreen open onClose={() => setForced(null)} onReport={setReportId} />
-        {reportId ? <ReportDialog id={reportId} onDismiss={() => setReportId(null)} /> : null}
+        <DebugScreen open onClose={() => setForced(null)} onReport={overlays.openReport} />
+        {overlays.reportId ? (
+          <ReportDialog id={overlays.reportId} onDismiss={() => overlays.close('report')} />
+        ) : null}
       </div>
     )
   }
@@ -983,53 +624,6 @@ function AppInner() {
       </>
     )
   }
-  if (forced === 'idle') {
-    return (
-      <div className={styles.app}>
-        <IdleScreen
-          connected={connected}
-          devices={connectDevices}
-          onSelectDevice={onPickDevice}
-          defaultDeviceId={settings.defaultDeviceId}
-        />
-        {globalOverlays}
-      </div>
-    )
-  }
-  if (forced === 'reconnecting') {
-    return (
-      <div className={styles.app}>
-        <ReconnectingScreen
-          deviceName="Kaz’s S24"
-          carriers={{ usb: false, bt: false }}
-          onSetUpOther={() => {}}
-        />
-        {globalOverlays}
-      </div>
-    )
-  }
-  if (forced === 'no-internet') {
-    return (
-      <div className={styles.app}>
-        <ReconnectingScreen
-          phase="no-internet"
-          deviceName="Kaz’s S24"
-          carriers={{ usb: false, bt: false }}
-          onSetUpOther={() => {}}
-        />
-        {globalOverlays}
-      </div>
-    )
-  }
-  if (forced === 'checking') {
-    return (
-      <div className={styles.app}>
-        <ReconnectingScreen phase="checking" />
-        {globalOverlays}
-      </div>
-    )
-  }
-
   if (forced === 'library') {
     return (
       <div className={styles.app}>
@@ -1084,48 +678,51 @@ function AppInner() {
       </div>
     )
   }
-
-  const offlineScreenFor = (screen: OfflineScreen) => {
-    switch (screen) {
-      case 'checking':
-        return <ReconnectingScreen phase="checking" deviceName={topKnownDeviceName} />
-      case 'tethering':
-        return <NeedsNetwork />
-      case 'reconnecting':
-        return (
-          <ReconnectingScreen
-            phase="reconnecting"
-            deviceName={topKnownDeviceName}
-            carriers={carriers}
-            trouble={btTrouble}
-            onSetUpOther={() => offline.setSetupOverride(true)}
-          />
-        )
-      case 'pc':
-        return <PcConnect />
-      case 'bluetooth':
-        return <NeedsNetwork />
-      case 'tethering-onboarding':
-        // ticket10-6C: the USB-tethering onboarding wizard — unmounts by
-        // itself as soon as the internet arrives (the offline condition
-        // clears with the tethering up), same as the chooser before it
-        return (
-          <TetheringWizard
-            onBack={() => offline.setMethod('chooser')}
-            onOpenKeyboard={(field) => setPiKeyboardField(field)}
-            keyboardField={piKeyboardField}
-          />
-        )
-      default:
-        return (
-          <ConnectionChooser
-            onPickPc={() => offline.setMethod('pc')}
-            onPickBluetooth={() => offline.setMethod('bluetooth')}
-            // ticket10-6C: the third card opens the onboarding wizard
-            onPickUsbTethering={() => offline.setMethod('tethering-onboarding')}
-          />
-        )
-    }
+  if (forced === 'idle') {
+    return (
+      <div className={styles.app}>
+        <IdleScreen
+          connected={connected}
+          devices={connectDevices}
+          onSelectDevice={onPickDevice}
+          defaultDeviceId={settings.defaultDeviceId}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'reconnecting') {
+    return (
+      <div className={styles.app}>
+        <ReconnectingScreen
+          deviceName="Kaz’s S24"
+          carriers={{ usb: false, bt: false }}
+          onSetUpOther={() => {}}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'no-internet') {
+    return (
+      <div className={styles.app}>
+        <ReconnectingScreen
+          phase="no-internet"
+          deviceName="Kaz’s S24"
+          carriers={{ usb: false, bt: false }}
+          onSetUpOther={() => {}}
+        />
+        {globalOverlays}
+      </div>
+    )
+  }
+  if (forced === 'checking') {
+    return (
+      <div className={styles.app}>
+        <ReconnectingScreen phase="checking" />
+        {globalOverlays}
+      </div>
+    )
   }
 
   if (!forced) {
@@ -1146,20 +743,40 @@ function AppInner() {
 
     switch (route.kind) {
       case 'offline':
+        if (route.screen === 'tethering-onboarding') {
+          // ticket10-6C: the USB-tethering onboarding wizard — unmounts by
+          // itself as soon as the internet arrives
+          return (
+            <div className={styles.app}>
+              <TetheringWizard
+                onBack={() => offline.setMethod('chooser')}
+                onOpenKeyboard={(field) => setPiKeyboardField(field)}
+                keyboardField={piKeyboardField}
+              />
+              {globalOverlays}
+            </div>
+          )
+        }
         return (
           <div className={styles.app}>
-            {offlineScreenFor(route.screen)}
+            <OfflinePage
+              screen={route.screen}
+              deviceName={topKnownDeviceName}
+              carriers={carriers}
+              trouble={btTrouble}
+              onSetUpOther={() => offline.setSetupOverride(true)}
+              onPickMethod={offline.setMethod}
+            />
             {globalOverlays}
           </div>
         )
       case 'auth':
         return (
           <>
-            <AuthScreen url={route.url} />
+            <AuthPage url={route.url} />
             {globalOverlays}
           </>
         )
-
       case 'spotify-unreachable':
         return (
           <div className={styles.app}>
@@ -1167,43 +784,27 @@ function AppInner() {
             {globalOverlays}
           </div>
         )
-      // hides the starting up screen on first boot after a successful bluetooth pairing with pan
       case 'auth-pending':
         return (
           <>
-            <AuthScreen
-              hint={
-                route.stuck
-                  ? 'Still fetching from Spotify if this persists, try unplugging and replugging.'
-                  : undefined
-              }
-            />
+            <AuthPage stuck={route.stuck} />
             {globalOverlays}
           </>
         )
       case 'booting':
         return (
           <div className={styles.app}>
-            <BootSplash
-              caption="starting up"
-              hint={
-                route.stuck
-                  ? 'Still connecting to Spotify if this persists for another minute, try unplugging and replugging.'
-                  : undefined
-              }
-            />
+            <BootPage phase="starting" stuck={route.stuck} />
             {globalOverlays}
           </div>
         )
       case 'setting-up':
         return (
           <div className={styles.app}>
-            <BootSplash caption="setting things up" progress={route.progress} />
+            <BootPage phase="setting-up" progress={route.progress} />
             {globalOverlays}
           </div>
         )
-
-      // library navigation view (replaces idle/playing when in library mode)
       case 'library':
         return (
           <div className={styles.app}>
@@ -1220,8 +821,8 @@ function AppInner() {
               }
               phoneVolume={status?.active === true && status.volume_disabled === true}
               onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
-              onOpenDevices={() => setDeviceMenuOpen(true)}
-              onOpenBluetooth={() => setBtMenuOpen(true)}
+              onOpenDevices={() => overlays.open('deviceMenu')}
+              onOpenBluetooth={() => overlays.open('btMenu')}
               // bug46: dimmable HA light cards open the control popup
               onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
               // ticket 9.5: the Einstellungen → Home row opens the entity picker
@@ -1279,92 +880,86 @@ function AppInner() {
         }
       >
         <div className={styles.appPlaying}>
-          {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
-          <div className={styles.stage} ref={stageRef}>
-            <div
-              className={`${styles.viewLayer} ${renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
-            >
-              <div className={styles.top}>
-                <div
-                  className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}
-                >
-                  <AlbumArt src={playerStatus.track_image} size={artSize} />
-                  <TrackInfo
-                    trackName={playerStatus.track_name}
-                    artist={playerStatus.track_artist}
-                  />
-                </div>
-                <div className={styles.right}>
+        {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
+        <div className={styles.stage} ref={stageRef}>
+          <div
+            className={`${styles.viewLayer} ${renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
+          >
+            <div className={styles.top}>
+              <div
+                className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}
+              >
+                <AlbumArt src={playerStatus.track_image} size={artSize} />
+                <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
+              </div>
+              <div className={styles.right}>
                   <Lyrics
                     status={playerStatus}
                     onSeek={handleSeek}
                     active={renderLyricsLayout}
                     lyricsState={lyricsState}
                   />
-                </div>
               </div>
             </div>
+          </div>
+          <div
+            className={`${styles.viewLayer} ${!renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
+          >
             <div
-              className={`${styles.viewLayer} ${!renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
+              className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
             >
-              <div
-                className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
-              >
-                <NoLyricsView
-                  status={playerStatus}
-                  active={!renderLyricsLayout}
-                  artSize={heroArtSize}
-                />
-              </div>
+              <NoLyricsView status={playerStatus} active={!renderLyricsLayout} artSize={heroArtSize} />
             </div>
           </div>
+        </div>
 
-          <div className={styles.bottom}>
-            <ProgressBar status={playerStatus} onSeek={handleSeek} />
-            <Controls
-              isPaused={controls.isPaused}
-              shuffleMode={controls.shuffleMode}
-              repeat={controls.repeat}
-              disallowPrev={playerStatus.disallow_prev}
-              disallowNext={playerStatus.disallow_next}
-              isPodcast={isPodcast}
-              showSave={!isPodcast}
-              saved={liked.saved}
-              onToggleSaved={liked.toggle}
-              onPrev={controls.onPrev}
-              onNext={controls.onNext}
-              onPlayPause={controls.onPlayPause}
-              onCycleShuffle={controls.onCycleShuffle}
-              onCycleRepeat={controls.onCycleRepeat}
-              onRewind15={() => seekRelative(-15000)}
-              onForward15={() => seekRelative(15000)}
-              onMore={() => setMenuOpen(true)}
-            />
-          </div>
-
-          <Menu
-            open={menuOpen}
-            onClose={closeMenu}
-            showLyrics={showLyrics}
-            onToggleLyrics={toggleLyrics}
-            karaokeLyrics={settings.karaokeLyrics}
-            onToggleKaraoke={toggleKaraoke}
-            voiceMic={settings.voiceMic}
-            onToggleVoiceMic={toggleVoiceMic}
-            currentDevice={playerStatus.device_name}
-            onOpenDevices={() => {
-              setMenuOpen(false)
-              setDeviceMenuOpen(true)
-            }}
-            onOpenBluetooth={() => {
-              setMenuOpen(false)
-              setBtMenuOpen(true)
-            }}
-            onOpenSettings={() => {
-              setMenuOpen(false)
-              setSettingsOpen(true)
-            }}
+        <div className={styles.bottom}>
+          <ProgressBar status={playerStatus} onSeek={handleSeek} />
+          <Controls
+            isPaused={controls.isPaused}
+            shuffleMode={controls.shuffleMode}
+            repeat={controls.repeat}
+            disallowPrev={playerStatus.disallow_prev}
+            disallowNext={playerStatus.disallow_next}
+            isPodcast={isPodcast}
+            showSave={!isPodcast}
+            saved={liked.saved}
+            onToggleSaved={liked.toggle}
+            onPrev={controls.onPrev}
+            onNext={controls.onNext}
+            onPlayPause={controls.onPlayPause}
+            onCycleShuffle={controls.onCycleShuffle}
+            onCycleRepeat={controls.onCycleRepeat}
+            onRewind15={() => seekRelative(-15000)}
+            onForward15={() => seekRelative(15000)}
+            onMore={() => overlays.open('menu')}
           />
+        </div>
+
+        <Menu
+          open={overlays.isOpen('menu')}
+          onClose={closeMenu}
+          showLyrics={showLyrics}
+          onToggleLyrics={toggleLyrics}
+          karaokeLyrics={settings.karaokeLyrics}
+          onToggleKaraoke={toggleKaraoke}
+          voiceMic={settings.voiceMic}
+          onToggleVoiceMic={toggleVoiceMic}
+          currentDevice={playerStatus.device_name}
+          onOpenDevices={() => {
+            overlays.close('menu')
+            overlays.open('deviceMenu')
+          }}
+          onOpenBluetooth={() => {
+            overlays.close('menu')
+            overlays.open('btMenu')
+          }}
+          onOpenSettings={() => {
+            overlays.close('menu')
+            overlays.open('settings')
+          }}
+        />
+
         </div>
       </div>
 
@@ -1373,8 +968,4 @@ function AppInner() {
       {globalOverlays}
     </>
   )
-}
-
-export default function App() {
-  return <AppInner />
 }
