@@ -1,11 +1,24 @@
 // ticket 9.4 — the daemon's Home Assistant login + connection-test endpoints.
 //
-//   POST /api/ha/login   body { url, username, password }
-//       200 { ok: true, token }   — the fresh 10-year long-lived token the
-//                                   daemon minted via the HA WS flow
+//   POST /api/ha/login — EXACTLY ONE mode per request (issue #80):
+//       token mode     body { url, token }          — the daemon validates
+//                                                        the long-lived token
+//                                                        and echoes it back
+//                                                        (preferred when a
+//                                                        token is given)
+//       password mode  body { url, username, password } — the daemon
+//                  bootstraps the HA login flow (WS auth) and returns a
+//                  FRESH 10-year long-lived token
+//       200 { ok: true, token }   — token mode: the validated token echoed;
+//                                   password mode: the fresh 10-year
+//                                   long-lived token the daemon minted via
+//                                   the HA WS flow
 //       400 { ok: false, error: 'bad_request' }
 //       401 { ok: false, error: 'invalid_credentials' | 'mfa' }
 //       502 { ok: false, error: 'unreachable' }
+//       — a failure may carry an extra "message" field (the daemon's
+//         human-readable reason); it rides along on the HaSettingsApiError
+//         (detail) and the UI displays it when present
 //       404 / non-JSON body      — a daemon OLDER than ticket 9.4 (the Go
 //                                   mux answers the unknown POST paths with
 //                                   its plain-text 404)
@@ -36,11 +49,7 @@ export const HA_SETTINGS_TIMEOUT_MS = 10000
 
 // the daemon's login error classes (ticket 9.4 design §4) — the UI maps
 // these to the concrete error lines (Bug53 .errorDetail pattern)
-export type HaLoginErrorCode =
-  | 'bad_request'
-  | 'invalid_credentials'
-  | 'mfa'
-  | 'unreachable'
+export type HaLoginErrorCode = 'bad_request' | 'invalid_credentials' | 'mfa' | 'unreachable'
 
 // local (non-daemon) failure classes of this client
 export type HaSettingsErrorCode =
@@ -57,17 +66,28 @@ export class HaSettingsApiError extends Error {
   readonly code: HaSettingsErrorCode
   // the HTTP status the daemon answered with (null for timeout/network)
   readonly status: number | null
+  // the daemon's optional human-readable message for the failure (the
+  // contract's "message" field, issue #80) — surfaced verbatim by the UI
+  // when present. The daemon controls this text; it never carries a
+  // credential value (same no-leak rule as the class string).
+  readonly detail?: string
 
   constructor(
     code: HaSettingsErrorCode,
     status: number | null,
     message: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; detail?: string },
   ) {
+    // the Error constructor honors only the `cause` key of the options bag
+    // (Chrome 69: older engines ignore it entirely) — the extra `detail`
+    // key rides along harmlessly, same pattern as piProfile.ts
     super(message, options)
     this.name = 'HaSettingsApiError'
     this.code = code
     this.status = status
+    if (options?.detail !== undefined) {
+      this.detail = options.detail
+    }
   }
 }
 
@@ -113,31 +133,47 @@ async function haSettingsFetch(path: string, init: RequestInit): Promise<Respons
 }
 
 // Maps a non-OK response to the typed error. A JSON body carries the
-// daemon's error class; a NON-JSON body is the old-daemon signature (the
+// daemon's error class (plus, optionally, the human-readable "message"
+// field of issue #80); a NON-JSON body is the old-daemon signature (the
 // plain-text 404) → 'not_available' with a clear "daemon outdated?" message.
 // Neither path may surface credential values — the daemon's error bodies
-// only carry the class string (ticket 9.4 design §4: "Passwort und Token
-// landen in KEINER Log-Zeile").
+// carry only the class string + its own message (ticket 9.4 design §4:
+// "Passwort und Token landen in KEINER Log-Zeile").
 async function errorFrom(label: string, res: Response): Promise<HaSettingsApiError> {
   try {
-    const body = (await safeJson(res)) as { ok?: unknown; error?: unknown } | null
+    const body = (await safeJson(res)) as {
+      ok?: unknown
+      error?: unknown
+      message?: unknown
+    } | null
     if (typeof body === 'object' && body !== null) {
       const err = body.error
+      // the daemon's optional human-readable reason — kept verbatim on the
+      // error (detail); the UI displays it when present (issue #80)
+      const detail = typeof body.message === 'string' ? body.message : undefined
       if (
         err === 'bad_request' ||
         err === 'invalid_credentials' ||
         err === 'mfa' ||
         err === 'unreachable'
       ) {
-        return new HaSettingsApiError(err, res.status, `${label} ${err} (${res.status})`)
+        return new HaSettingsApiError(err, res.status, `${label} ${err} (${res.status})`, {
+          detail,
+        })
       }
     }
     // JSON body without a known class — keep the status, class it as
-    // bad_request (the only 400 the contract defines)
+    // bad_request (the only 400 the contract defines); the daemon's own
+    // message (when present) still rides along
+    const detail =
+      typeof body === 'object' && body !== null && typeof body.message === 'string'
+        ? body.message
+        : undefined
     return new HaSettingsApiError(
       'bad_request',
       res.status,
       `${label} ${res.status} (unknown error class)`,
+      { detail },
     )
   } catch {
     // non-JSON body → the daemon predates the endpoints (old daemon,
@@ -150,21 +186,35 @@ async function errorFrom(label: string, res: Response): Promise<HaSettingsApiErr
   }
 }
 
+// One credential set per request (issue #80): a non-empty token selects
+// the TOKEN mode ({ url, token } — the daemon validates and echoes the
+// token), otherwise the PASSWORD mode ({ url, username, password } — the
+// daemon bootstraps the HA login flow and mints a fresh long-lived token).
+// When BOTH sets are filled the token wins (client-side preference — the
+// payloads stay clean, no dead fields).
 export interface HaLoginCredentials {
   url: string
-  username: string
-  password: string
+  // token mode (preferred) — sent verbatim when non-empty
+  token?: string
+  // password mode — sent only when no (non-empty) token is given
+  username?: string
+  password?: string
 }
 
-// Asks the daemon to log in to the HA server (WS auth + long-lived token
-// minting) and returns the fresh token. Throws HaSettingsApiError with the
-// concrete error class on any failure (see the endpoint contract above).
+// Asks the daemon to log in to the HA server and returns the long-lived
+// token (validated-and-echoed in token mode, freshly minted via the WS
+// auth flow in password mode). Throws HaSettingsApiError with the concrete
+// error class on any failure (see the endpoint contract above).
 export async function haLogin(creds: HaLoginCredentials): Promise<{ token: string }> {
+  const payload =
+    creds.token !== undefined && creds.token !== ''
+      ? { url: creds.url, token: creds.token }
+      : { url: creds.url, username: creds.username ?? '', password: creds.password ?? '' }
   const res = await haSettingsFetch('/api/ha/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // the credentials ride in the body — never in the URL, never logged
-    body: JSON.stringify(creds),
+    body: JSON.stringify(payload),
   })
   if (!res.ok) throw await errorFrom('ha login', res)
   let body: { ok?: unknown; token?: unknown } | null

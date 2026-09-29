@@ -135,11 +135,27 @@
 .field {
   @include column;
   @include flex-gap-y($s-2);
+
+  // issue #80: the Token field keeps its hint OUTSIDE the wrapping label
+  // (accessible-name hygiene) — the inner label repeats the same column
+  // flow for its label/input pair
+  label {
+    @include column;
+    @include flex-gap-y($s-2);
+  }
 }
 
 .fieldLabel {
   font-size: $fs-sm;
   color: $text-secondary;
+}
+
+// issue #80: the hint line under the Token field (same treatment as the
+// PiServerModal's .disabledHint — tertiary text, no margin beyond the
+// .field flex-gap-y spacing)
+.fieldHint {
+  font-size: $fs-sm;
+  color: $text-tertiary;
 }
 
 .input {

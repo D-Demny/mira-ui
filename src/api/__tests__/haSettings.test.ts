@@ -1,12 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
-import {
-  HA_SETTINGS_TIMEOUT_MS,
-  HaSettingsApiError,
-  haLogin,
-  haTest,
-} from '../haSettings'
+import { HA_SETTINGS_TIMEOUT_MS, HaSettingsApiError, haLogin, haTest } from '../haSettings'
 
 // ticket 9.4: the daemon's HA login + test endpoint clients.
 //
@@ -45,6 +40,58 @@ describe('haLogin (POST /api/ha/login)', () => {
     expect(token).toBe('eyJ.fresh.10y-token')
   })
 
+  it('sends ONLY the token mode { url, token } when a token is given (issue #80)', async () => {
+    let body: unknown = null
+    server.use(
+      http.post('*/api/ha/login', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ ok: true, token: 'eyJ.validated.long-lived' })
+      }),
+    )
+    const { token } = await haLogin({ url: CREDS.url, token: 'eyJ.validated.long-lived' })
+    // clean payload — exactly one mode per request, no username/password
+    expect(body).toEqual({ url: CREDS.url, token: 'eyJ.validated.long-lived' })
+    expect(token).toBe('eyJ.validated.long-lived')
+  })
+
+  it('token wins over the password set when both are filled (issue #80)', async () => {
+    let body: unknown = null
+    server.use(
+      http.post('*/api/ha/login', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ ok: true, token: 'eyJ.validated.long-lived' })
+      }),
+    )
+    await haLogin({ ...CREDS, token: 'eyJ.validated.long-lived' })
+    expect(body).toEqual({ url: CREDS.url, token: 'eyJ.validated.long-lived' })
+  })
+
+  it('carries the daemon "message" on the error as detail (issue #80); absent when not sent', async () => {
+    server.use(
+      http.post('*/api/ha/login', () =>
+        HttpResponse.json(
+          { ok: false, error: 'invalid_credentials', message: 'Account locked' },
+          { status: 401 },
+        ),
+      ),
+    )
+    const withMsg = asApiError(await haLogin(CREDS).catch((e: unknown) => e))
+    expect(withMsg.code).toBe('invalid_credentials')
+    expect(withMsg.detail).toBe('Account locked')
+    // the message is a detail, not the message itself — the error text
+    // keeps its class + status wording
+    expect(withMsg.message).not.toContain('Account locked')
+
+    server.use(
+      http.post('*/api/ha/login', () =>
+        HttpResponse.json({ ok: false, error: 'unreachable' }, { status: 502 }),
+      ),
+    )
+    const noMsg = asApiError(await haLogin(CREDS).catch((e: unknown) => e))
+    expect(noMsg.code).toBe('unreachable')
+    expect(noMsg.detail).toBeUndefined()
+  })
+
   it.each([
     ['bad_request', 400],
     ['invalid_credentials', 401],
@@ -52,9 +99,7 @@ describe('haLogin (POST /api/ha/login)', () => {
     ['unreachable', 502],
   ] as const)('maps the daemon error class %s (%s)', async (code, status) => {
     server.use(
-      http.post('*/api/ha/login', () =>
-        HttpResponse.json({ ok: false, error: code }, { status }),
-      ),
+      http.post('*/api/ha/login', () => HttpResponse.json({ ok: false, error: code }, { status })),
     )
     const err = asApiError(await haLogin(CREDS).catch((e: unknown) => e))
     expect(err.code).toBe(code)
@@ -67,9 +112,7 @@ describe('haLogin (POST /api/ha/login)', () => {
 
   it('maps a non-JSON body (old daemon, plain-text 404) to not_available', async () => {
     server.use(
-      http.post('*/api/ha/login', () =>
-        new HttpResponse('404 page not found', { status: 404 }),
-      ),
+      http.post('*/api/ha/login', () => new HttpResponse('404 page not found', { status: 404 })),
     )
     const err = asApiError(await haLogin(CREDS).catch((e: unknown) => e))
     expect(err.code).toBe('not_available')
@@ -85,9 +128,7 @@ describe('haLogin (POST /api/ha/login)', () => {
   })
 
   it('rejects a 200 without a usable token (daemon contract violation)', async () => {
-    server.use(
-      http.post('*/api/ha/login', () => HttpResponse.json({ ok: true })),
-    )
+    server.use(http.post('*/api/ha/login', () => HttpResponse.json({ ok: true })))
     const err = asApiError(await haLogin(CREDS).catch((e: unknown) => e))
     expect(err.code).toBe('bad_request')
     expect(err.message).toMatch(/without token/)
@@ -96,9 +137,7 @@ describe('haLogin (POST /api/ha/login)', () => {
 
   it('times out after 10 seconds (code timeout, no status)', async () => {
     vi.useFakeTimers()
-    server.use(
-      http.post('*/api/ha/login', () => new Promise<HttpResponse<undefined>>(() => {})),
-    )
+    server.use(http.post('*/api/ha/login', () => new Promise<HttpResponse<undefined>>(() => {})))
     const pending = haLogin(CREDS).catch((e: unknown) => e)
     await vi.advanceTimersByTimeAsync(HA_SETTINGS_TIMEOUT_MS)
     const err = asApiError(await pending)
@@ -197,9 +236,7 @@ describe('haTest (POST /api/ha/test)', () => {
 
   it('times out after 10 seconds (code timeout)', async () => {
     vi.useFakeTimers()
-    server.use(
-      http.post('*/api/ha/test', () => new Promise<HttpResponse<undefined>>(() => {})),
-    )
+    server.use(http.post('*/api/ha/test', () => new Promise<HttpResponse<undefined>>(() => {})))
     const pending = haTest({ url: CREDS.url }).catch((e: unknown) => e)
     await vi.advanceTimersByTimeAsync(HA_SETTINGS_TIMEOUT_MS)
     const err = asApiError(await pending)

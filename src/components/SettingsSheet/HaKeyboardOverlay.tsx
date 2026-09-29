@@ -24,10 +24,13 @@ import styles from './HaKeyboardOverlay.module.scss'
 // the same dial highlight (pure CSS class on the focused key, no
 // el.focus() per tick) and the same '•' masking for the password field.
 
-export type HaKeyboardField = 'url' | 'username' | 'password'
+export type HaKeyboardField = 'url' | 'token' | 'username' | 'password'
 
 const FIELD_LABELS: Record<HaKeyboardField, string> = {
   url: 'URL/IP:Port',
+  // issue #80: the long-lived token (HA-UI Profil → Sicherheit) — masked
+  // like the password, it is a credential
+  token: 'Token',
   username: 'Username',
   password: 'Passwort',
 }
@@ -138,7 +141,7 @@ export function HaKeyboardOverlay({ field, value, onChange, onClose }: HaKeyboar
     },
   })
 
-  const preview = field === 'password' ? '•'.repeat(value.length) : value
+  const preview = field === 'password' || field === 'token' ? '•'.repeat(value.length) : value
 
   return (
     <div

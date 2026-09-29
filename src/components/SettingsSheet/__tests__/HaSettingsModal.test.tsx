@@ -10,9 +10,10 @@ import { __resetHomeEntityStores } from '@/hooks/useHomeEntities'
 import { server } from '@/__tests__/msw-server'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
-// ticket 9.4: the Home Assistant settings modal (URL/IP:Port / Username /
-// Passwort + on-screen keyboard + "Verbindung testen" (probe only) +
-// "Speichern" (transactional, optionally with the daemon's WS login)).
+// ticket 9.4 + issue #80: the Home Assistant settings modal (URL/IP:Port /
+// Token / Username / Passwort + on-screen keyboard + "Verbindung testen"
+// (probe only) + "Speichern" (transactional — ALWAYS the daemon's login,
+// exactly one mode per request: token wins over the password set)).
 //
 // Test isolation: the settings store (__resetSettings) and the 60 s-TTL
 // entity catalog (__resetHomeEntityStores) are reset in beforeEach;
@@ -159,13 +160,16 @@ describe('HaSettingsModal: status line per status state', () => {
 })
 
 describe('HaSettingsModal: field pre-fills', () => {
-  it('pre-fills all three fields from the saved ha config (password masked)', () => {
+  it('pre-fills all four fields from the saved ha config (token + password masked)', () => {
     updateSettings({ ha: FULL_HA })
     server.use(http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })))
     render(<HaSettingsModal onClose={() => {}} />)
     expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue(
       'http://10.10.1.104:8123',
     )
+    const token = screen.getByLabelText('Token')
+    expect(token).toHaveValue('tok-secret')
+    expect(token).toHaveAttribute('type', 'password')
     expect(screen.getByRole('textbox', { name: 'Username' })).toHaveValue('mira')
     const password = screen.getByLabelText('Passwort')
     expect(password).toHaveValue('pw-secret')
@@ -211,11 +215,13 @@ describe('HaSettingsModal: dial focus chain (fields + buttons)', () => {
     })
   }
 
-  it('walks url → username → password → test → save (clamped at both ends)', () => {
+  it('walks url → token → username → password → test → save (clamped at both ends)', () => {
     render(<HaSettingsModal onClose={() => {}} />)
     // the first focus item is the URL field
     expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveClass('focused')
 
+    wheel(-40)
+    expect(screen.getByLabelText('Token')).toHaveClass('focused')
     wheel(-40)
     expect(screen.getByRole('textbox', { name: 'Username' })).toHaveClass('focused')
     wheel(-40)
@@ -230,6 +236,10 @@ describe('HaSettingsModal: dial focus chain (fields + buttons)', () => {
     expect(screen.getByRole('button', { name: 'Verbindung testen' })).toHaveClass('focused')
     wheel(40) // …and back into the fields
     expect(screen.getByLabelText('Passwort')).toHaveClass('focused')
+    wheel(40) // …to username
+    expect(screen.getByRole('textbox', { name: 'Username' })).toHaveClass('focused')
+    wheel(40) // …and to the token field (issue #80)
+    expect(screen.getByLabelText('Token')).toHaveClass('focused')
   })
 })
 
@@ -265,6 +275,9 @@ describe('HaSettingsModal: on-screen keyboard (dedicated HaKeyboardOverlay insta
     fireEvent.focus(screen.getByRole('textbox', { name: 'URL/IP:Port' }))
     expect(screen.getByRole('dialog', { name: 'URL/IP:Port' })).toBeInTheDocument()
 
+    fireEvent.focus(screen.getByLabelText('Token'))
+    expect(screen.getByRole('dialog', { name: 'Token' })).toBeInTheDocument()
+
     fireEvent.focus(screen.getByRole('textbox', { name: 'Username' }))
     expect(screen.getByRole('dialog', { name: 'Username' })).toBeInTheDocument()
 
@@ -274,10 +287,10 @@ describe('HaSettingsModal: on-screen keyboard (dedicated HaKeyboardOverlay insta
 
   it('Enter on a focused field opens the keyboard for exactly that field', () => {
     render(<HaSettingsModal onClose={() => {}} />)
-    wheel(-40) // → username
-    expect(screen.getByRole('textbox', { name: 'Username' })).toHaveClass('focused')
+    wheel(-40) // → token
+    expect(screen.getByLabelText('Token')).toHaveClass('focused')
     confirm()
-    expect(screen.getByRole('dialog', { name: 'Username' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Token' })).toBeInTheDocument()
   })
 
   it('typing on the keyboard edits the DRAFT (the field behind + the preview), never the store', () => {
@@ -301,6 +314,7 @@ describe('HaSettingsModal: on-screen keyboard (dedicated HaKeyboardOverlay insta
     // the password field, open its keyboard and type one key
     back()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    wheel(-40) // → token
     wheel(-40) // → username
     wheel(-40) // → password
     confirm()
@@ -312,6 +326,20 @@ describe('HaSettingsModal: on-screen keyboard (dedicated HaKeyboardOverlay insta
       .getAllByLabelText('Passwort')
       .find((el) => el.tagName === 'INPUT') as HTMLInputElement
     expect(passwordInput).toHaveValue('1')
+    expect(screen.getByText('•')).toBeInTheDocument()
+
+    // issue #80: the token field masks its preview like the password (a
+    // credential, not a URL) — dial back to it and type one key
+    back()
+    wheel(40) // → username
+    wheel(40) // → token
+    confirm()
+    expect(screen.getByRole('dialog', { name: 'Token' })).toBeInTheDocument()
+    confirm()
+    const tokenInput = screen
+      .getAllByLabelText('Token')
+      .find((el) => el.tagName === 'INPUT') as HTMLInputElement
+    expect(tokenInput).toHaveValue('1')
     expect(screen.getByText('•')).toBeInTheDocument()
   })
 
@@ -388,17 +416,17 @@ describe('HaSettingsModal: on-screen keyboard (dedicated HaKeyboardOverlay insta
   it('Back closes the keyboard first and the modal second; the dial focus stays on the field', () => {
     const onClose = vi.fn()
     render(<HaSettingsModal onClose={onClose} />)
-    wheel(-40) // → username
-    expect(screen.getByRole('textbox', { name: 'Username' })).toHaveClass('focused')
-    confirm() // opens the keyboard for the username field
-    expect(screen.getByRole('dialog', { name: 'Username' })).toBeInTheDocument()
+    wheel(-40) // → token (issue #80)
+    expect(screen.getByLabelText('Token')).toHaveClass('focused')
+    confirm() // opens the keyboard for the token field
+    expect(screen.getByRole('dialog', { name: 'Token' })).toBeInTheDocument()
 
     // Back #1: consumed by the keyboard's entry — only the keyboard closes
     expect(back()).toBe(true)
-    expect(screen.queryByRole('dialog', { name: 'Username' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Token' })).not.toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
-    // the modal's dial focus is untouched: still on the username field
-    expect(screen.getByRole('textbox', { name: 'Username' })).toHaveClass('focused')
+    // the modal's dial focus is untouched: still on the token field
+    expect(screen.getByLabelText('Token')).toHaveClass('focused')
 
     // Back #2: the modal's entry closes the view
     expect(back()).toBe(true)
@@ -432,8 +460,8 @@ describe('HaSettingsModal: Verbindung testen (probe only, never persists)', () =
     await waitFor(() =>
       expect(screen.getByText('Konfiguriert — nicht authentifiziert (401)')).toBeInTheDocument(),
     )
-    // re-probe via the button with an edited URL (the stored token rides
-    // along — the draft has no token field, phase 2)
+    // re-probe via the button with an edited URL (the token field's value —
+    // pre-filled from the saved config — rides along)
     server.use(
       http.post('*/api/ha/test', async ({ request }) => {
         bodies.push(await request.json())
@@ -535,13 +563,13 @@ describe('HaSettingsModal: Speichern (transactional)', () => {
     expect(screen.getByText('Home Assistant')).toBeInTheDocument()
   })
 
-  it('an unchanged valid login token skips the re-login (token + source kept, URL still saved)', async () => {
+  it('a configured install re-saves in TOKEN mode (stored token pre-fills the field, daemon echo persisted)', async () => {
     updateSettings({ ha: FULL_HA })
-    let loginCalls = 0
+    const loginBodies: unknown[] = []
     server.use(
-      http.post('*/api/ha/login', () => {
-        loginCalls += 1
-        return HttpResponse.json({ ok: true, token: 'tok-must-not-appear' })
+      http.post('*/api/ha/login', async ({ request }) => {
+        loginBodies.push(await request.json())
+        return HttpResponse.json({ ok: true, token: 'tok-secret' })
       }),
       http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })),
     )
@@ -550,14 +578,17 @@ describe('HaSettingsModal: Speichern (transactional)', () => {
     // the mount probe (saved config) must settle first — while it is in
     // flight both buttons are disabled (busy state)
     await screen.findByText(`Konfiguriert — verbunden, ${CATALOG_SIZE} Entitäten`)
-    // only the URL changes — the stored token is a valid login result for
-    // exactly these credentials → no re-login
+    // the token field is pre-filled with the stored token (issue #80) →
+    // "Speichern" ALWAYS re-validates via the daemon's token mode
+    expect(screen.getByLabelText('Token')).toHaveValue('tok-secret')
     fireEvent.change(screen.getByRole('textbox', { name: 'URL/IP:Port' }), {
       target: { value: 'http://10.10.1.105:8123' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() => expect(storeWrites).toHaveLength(1))
-    expect(loginCalls).toBe(0)
+    // exactly ONE mode per request — token mode, clean payload (no
+    // username/password fields)
+    expect(loginBodies).toEqual([{ url: 'http://10.10.1.105:8123', token: 'tok-secret' }])
     expect(storeWrites[0]).toEqual({
       ha: {
         url: 'http://10.10.1.105:8123',
@@ -569,33 +600,107 @@ describe('HaSettingsModal: Speichern (transactional)', () => {
     })
   })
 
-  it('a changed password triggers the re-login (fresh token, tokenSource login)', async () => {
+  it('when BOTH credential sets are filled, the token wins (clean token-mode payload)', async () => {
     updateSettings({ ha: FULL_HA })
     const loginBodies: unknown[] = []
     server.use(
       http.post('*/api/ha/login', async ({ request }) => {
         loginBodies.push(await request.json())
-        return HttpResponse.json({ ok: true, token: 'tok-relogin' })
+        return HttpResponse.json({ ok: true, token: 'tok-secret' })
       }),
       http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })),
     )
     const storeWrites = captureStoreWrites()
     render(<HaSettingsModal onClose={() => {}} />)
-    // the mount probe (saved config) must settle first — while it is in
-    // flight both buttons are disabled (busy state)
     await screen.findByText(`Konfiguriert — verbunden, ${CATALOG_SIZE} Entitäten`)
+    // both sets are filled (pre-filled token + the password edit below) →
+    // the daemon gets ONLY the token mode (issue #80)
+    fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'pw-new' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(storeWrites).toHaveLength(1))
+    expect(loginBodies).toEqual([{ url: 'http://10.10.1.104:8123', token: 'tok-secret' }])
+    expect(storeWrites[0]).toEqual({
+      ha: {
+        url: 'http://10.10.1.104:8123',
+        username: 'mira',
+        password: 'pw-new',
+        token: 'tok-secret',
+        tokenSource: 'login',
+      },
+    })
+  })
+
+  it('clearing the token falls back to PASSWORD mode (re-login mints a fresh token)', async () => {
+    updateSettings({ ha: FULL_HA })
+    const loginBodies: unknown[] = []
+    server.use(
+      http.post('*/api/ha/login', async ({ request }) => {
+        loginBodies.push(await request.json())
+        return HttpResponse.json({ ok: true, token: 'tok-fresh-10y' })
+      }),
+      http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })),
+    )
+    const storeWrites = captureStoreWrites()
+    render(<HaSettingsModal onClose={() => {}} />)
+    await screen.findByText(`Konfiguriert — verbunden, ${CATALOG_SIZE} Entitäten`)
+    // an empty token field selects the password mode for the next save
+    fireEvent.change(screen.getByLabelText('Token'), { target: { value: '' } })
     fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: 'pw-new' } })
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() => expect(storeWrites).toHaveLength(1))
     expect(loginBodies).toEqual([
       { url: 'http://10.10.1.104:8123', username: 'mira', password: 'pw-new' },
     ])
+    // the fresh long-lived token replaces the cleared one (identical persist
+    // shape for both modes)
     expect(storeWrites[0]).toEqual({
       ha: {
         url: 'http://10.10.1.104:8123',
         username: 'mira',
         password: 'pw-new',
-        token: 'tok-relogin',
+        token: 'tok-fresh-10y',
+        tokenSource: 'login',
+      },
+    })
+  })
+
+  it('token-only fill on a fresh install: save gated until a credential mode is complete, then token mode', async () => {
+    const loginBodies: unknown[] = []
+    server.use(
+      http.post('*/api/ha/login', async ({ request }) => {
+        loginBodies.push(await request.json())
+        return HttpResponse.json({ ok: true, token: 'eyJ.validated.long-lived' })
+      }),
+      http.post('*/api/ha/test', () => haTestOk({ reachable: true, authenticated: true })),
+    )
+    const storeWrites = captureStoreWrites()
+    render(<HaSettingsModal onClose={() => {}} />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'URL/IP:Port' }), {
+      target: { value: 'http://10.10.1.104:8123' },
+    })
+    // URL + username only (no token, no password) → not a complete mode
+    fireEvent.change(screen.getByRole('textbox', { name: 'Username' }), {
+      target: { value: 'mira' },
+    })
+    expect(screen.getByRole('button', { name: 'Speichern' })).toBeDisabled()
+    // URL + token (password fields stay blank) → the token mode is complete
+    fireEvent.change(screen.getByLabelText('Token'), {
+      target: { value: 'eyJ.validated.long-lived' },
+    })
+    expect(screen.getByRole('button', { name: 'Speichern' })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(storeWrites).toHaveLength(1))
+    // the daemon got ONLY the token mode (clean payload); the username draft
+    // value rides along in the unchanged persist shape
+    expect(loginBodies).toEqual([
+      { url: 'http://10.10.1.104:8123', token: 'eyJ.validated.long-lived' },
+    ])
+    expect(storeWrites[0]).toEqual({
+      ha: {
+        url: 'http://10.10.1.104:8123',
+        username: 'mira',
+        password: '',
+        token: 'eyJ.validated.long-lived',
         tokenSource: 'login',
       },
     })
@@ -630,7 +735,7 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
     fireEvent.change(screen.getByLabelText('Passwort'), { target: { value: FILL.pw } })
   }
 
-  it('invalid_credentials → "Benutzername oder Passwort falsch", no store write', async () => {
+  it('invalid_credentials → "Ungültige Zugangsdaten", no store write', async () => {
     server.use(
       http.post('*/api/ha/login', () =>
         HttpResponse.json({ ok: false, error: 'invalid_credentials' }, { status: 401 }),
@@ -640,9 +745,7 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
     render(<HaSettingsModal onClose={() => {}} />)
     fillFields()
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-    await waitFor(() =>
-      expect(screen.getByText('Benutzername oder Passwort falsch')).toBeInTheDocument(),
-    )
+    await waitFor(() => expect(screen.getByText('Ungültige Zugangsdaten')).toBeInTheDocument())
     expect(storeWrites).toHaveLength(0)
     expect(getSettings().ha).toEqual({
       url: '',
@@ -652,7 +755,7 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
       tokenSource: 'default',
     })
     // the credentials must not appear in the error line
-    expect(screen.getByText('Benutzername oder Passwort falsch').textContent).not.toContain(FILL.pw)
+    expect(screen.getByText('Ungültige Zugangsdaten').textContent).not.toContain(FILL.pw)
   })
 
   it('mfa → "2FA aktiv — Access Token manuell eingeben (Phase 2)", no store write', async () => {
@@ -673,7 +776,7 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
     expect(storeWrites).toHaveLength(0)
   })
 
-  it('unreachable → "Nicht erreichbar (Timeout für <host>)", no store write', async () => {
+  it('unreachable → "Home Assistant nicht erreichbar", no store write', async () => {
     server.use(
       http.post('*/api/ha/login', () =>
         HttpResponse.json({ ok: false, error: 'unreachable' }, { status: 502 }),
@@ -684,9 +787,7 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
     fillFields()
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
     await waitFor(() =>
-      expect(
-        screen.getByText('Nicht erreichbar (Timeout für 10.10.1.104:8123)'),
-      ).toBeInTheDocument(),
+      expect(screen.getByText('Home Assistant nicht erreichbar')).toBeInTheDocument(),
     )
     expect(storeWrites).toHaveLength(0)
   })
@@ -729,6 +830,45 @@ describe('HaSettingsModal: login failure flows (no store write + concrete error 
     )
     expect(storeWrites).toHaveLength(0)
   })
+
+  it('bad_request → "Ungültige Anfrage", no store write', async () => {
+    server.use(
+      http.post('*/api/ha/login', () =>
+        HttpResponse.json({ ok: false, error: 'bad_request' }, { status: 400 }),
+      ),
+    )
+    const storeWrites = captureStoreWrites()
+    render(<HaSettingsModal onClose={() => {}} />)
+    fillFields()
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() => expect(screen.getByText('Ungültige Anfrage')).toBeInTheDocument())
+    expect(storeWrites).toHaveLength(0)
+  })
+
+  it('surfaces the daemon "message" verbatim next to the error line (issue #80)', async () => {
+    server.use(
+      http.post('*/api/ha/login', () =>
+        HttpResponse.json(
+          {
+            ok: false,
+            error: 'invalid_credentials',
+            message: 'Password was changed since last login',
+          },
+          { status: 401 },
+        ),
+      ),
+    )
+    const storeWrites = captureStoreWrites()
+    render(<HaSettingsModal onClose={() => {}} />)
+    fillFields()
+    fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+    await waitFor(() =>
+      expect(
+        screen.getByText('Ungültige Zugangsdaten (Password was changed since last login)'),
+      ).toBeInTheDocument(),
+    )
+    expect(storeWrites).toHaveLength(0)
+  })
 })
 
 describe('HaSettingsModal: security (no credential logging)', () => {
@@ -745,22 +885,23 @@ describe('HaSettingsModal: security (no credential logging)', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'URL/IP:Port' }), {
       target: { value: 'http://10.10.1.104:8123' },
     })
+    fireEvent.change(screen.getByLabelText('Token'), { target: { value: 'tok-super-secret-abc' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'Username' }), {
       target: { value: 'mira-secret-user' },
     })
     fireEvent.change(screen.getByLabelText('Passwort'), {
       target: { value: 'pw-super-secret-xyz' },
     })
+    // both credential sets are filled → the token mode is sent
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-    await waitFor(() =>
-      expect(screen.getByText('Benutzername oder Passwort falsch')).toBeInTheDocument(),
-    )
-    // the rendered error line carries no credential value
-    expect(screen.getByText('Benutzername oder Passwort falsch').textContent).not.toContain(
+    await waitFor(() => expect(screen.getByText('Ungültige Zugangsdaten')).toBeInTheDocument())
+    // the rendered error line carries no credential value (issue #80)
+    expect(screen.getByText('Ungültige Zugangsdaten').textContent).not.toContain(
       'pw-super-secret-xyz',
     )
-    expect(screen.getByText('Benutzername oder Passwort falsch').textContent).not.toContain(
-      'mira-secret-user',
+    expect(screen.getByText('Ungültige Zugangsdaten').textContent).not.toContain('mira-secret-user')
+    expect(screen.getByText('Ungültige Zugangsdaten').textContent).not.toContain(
+      'tok-super-secret-abc',
     )
     // neither did any console.* call (the modal + the Part A clients must
     // never log credentials — ticket 9.4 hard acceptance criterion)
@@ -769,6 +910,7 @@ describe('HaSettingsModal: security (no credential logging)', () => {
       .join('\n')
     expect(all).not.toContain('pw-super-secret-xyz')
     expect(all).not.toContain('mira-secret-user')
+    expect(all).not.toContain('tok-super-secret-abc')
   })
 })
 
@@ -791,6 +933,7 @@ describe('HaSettingsModal: layout (CR69 / Bug51)', () => {
     // credential fields and the action buttons
     expect(content?.textContent).toContain('Home Assistant')
     expect(content?.textContent).toContain('URL/IP:Port')
+    expect(content?.textContent).toContain('Token')
     expect(content?.textContent).toContain('Username')
     expect(content?.textContent).toContain('Passwort')
     expect(content?.textContent).toContain('Verbindung testen')

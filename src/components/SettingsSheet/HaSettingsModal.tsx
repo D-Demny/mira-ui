@@ -1,35 +1,37 @@
 import { memo, useCallback, useEffect, useState } from 'react'
 import { HaSettingsApiError, haLogin } from '@/api/haSettings'
-import { getSettings, updateSettings, type HaSettingsValue } from '@/settings'
+import { getSettings, updateSettings } from '@/settings'
 import { useHaStatus } from '@/hooks/useHaStatus'
 import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import { HaKeyboardOverlay, type HaKeyboardField } from './HaKeyboardOverlay'
 import styles from './HaSettingsModal.module.scss'
 
-// ticket 9.4: the "Home Assistant" settings view — 1:1 the PiServerModal
-// structure (backdrop > fixed card shell > .content scroll container,
-// Bug10-1/Bug51): the status line (useHaStatus), the three credential
-// fields (URL/IP:Port / Username / Passwort, dial focus chain + on-screen
-// keyboard) and the two action buttons ("Verbindung testen" = probe only,
-// never persists; "Speichern" = transactional save, optionally preceded by
-// the daemon's WS login that mints the fresh 10-year token).
+// ticket 9.4 + issue #80: the "Home Assistant" settings view — 1:1 the
+// PiServerModal structure (backdrop > fixed card shell > .content scroll
+// container, Bug10-1/Bug51): the status line (useHaStatus), the four
+// credential fields (URL/IP:Port / Token / Username / Passwort — dial
+// focus chain + on-screen keyboard) and the two action buttons
+// ("Verbindung testen" = probe only, never persists; "Speichern" =
+// transactional save that ALWAYS runs the daemon's login first).
 //
 // DRAFT MODEL (differs from the Pi modal on purpose): the fields are
 // modal-local draft state, NOT store-backed. The Pi fields persist on every
 // keystroke; here only "Speichern" may write the settings store (the test
 // button must not change the daemon's HA config, ticket 9.4 design §3).
 //
-// SAVE RULE (documented): on "Speichern"
-//   1. when username AND password are set AND (no token is stored yet, OR
-//      the stored token is not from a login, OR the stored credentials
-//      differ from the entered ones) → the daemon's WS login runs
-//      (haLogin) and mints a fresh 10-year long-lived token →
-//      tokenSource: 'login'
-//   2. otherwise the stored token + tokenSource are kept as-is (a valid
-//      login token needs no re-login; an empty token stays empty with
-//      tokenSource 'default')
-// A login failure saves NOTHING (no store write) and shows the concrete
-// error class instead (Bug53 .errorDetail pattern).
+// SAVE RULE (documented, issue #80): "Speichern" is enabled only with a URL
+// AND either a token OR username+password filled, and it ALWAYS calls the
+// daemon's login with EXACTLY ONE mode per request:
+//   1. token mode { url, token } when a token is filled (preferred — also
+//      wins when both credential sets are filled): the daemon validates
+//      the long-lived token and echoes it back
+//   2. password mode { url, username, password } otherwise: the daemon
+//      bootstraps the HA login flow and returns a FRESH long-lived token
+// On 200 the response token is persisted with tokenSource 'login' (the
+// password mode's echoed token IS a real long-lived token the proxy will
+// use — identical shape for both modes). A login failure saves NOTHING (no
+// store write) and shows the concrete error line instead (Bug53 .errorDetail
+// pattern), plus the daemon's "message" field when present.
 //
 // KEYBOARD: a dedicated HaKeyboardOverlay instance (own HaKeyboardField
 // union + label map) rendered INSIDE the modal's backdrop — its focus entry
@@ -41,22 +43,20 @@ import styles from './HaSettingsModal.module.scss'
 // SECURITY (ticket 9.4 hard constraint): the username, password and token
 // are never logged (no console.* with credential values anywhere in this
 // file) and never surface in the error lines (haErrorDetail emits only the
-// error class + the host part of the URL).
+// error class + the daemon's own message).
 
 interface Props {
   onClose: () => void
 }
 
-// the focus list in visual order (the dial chain): the three credential
+// the focus list in visual order (the dial chain): the four credential
 // fields, then the action buttons — ONE useOverlayListFocus entry routes
 // wheel/Enter/Back over the whole list (bug31 pattern, 1:1 PiServerModal)
-type FocusItem =
-  | { kind: 'field'; field: HaKeyboardField }
-  | { kind: 'test' }
-  | { kind: 'save' }
+type FocusItem = { kind: 'field'; field: HaKeyboardField } | { kind: 'test' } | { kind: 'save' }
 
 const FOCUS_ITEMS: FocusItem[] = [
   { kind: 'field', field: 'url' },
+  { kind: 'field', field: 'token' },
   { kind: 'field', field: 'username' },
   { kind: 'field', field: 'password' },
   { kind: 'test' },
@@ -64,10 +64,11 @@ const FOCUS_ITEMS: FocusItem[] = [
 ]
 
 const IDX_URL = 0
-const IDX_USERNAME = 1
-const IDX_PASSWORD = 2
-const IDX_TEST = 3
-const IDX_SAVE = 4
+const IDX_TOKEN = 1
+const IDX_USERNAME = 2
+const IDX_PASSWORD = 3
+const IDX_TEST = 4
+const IDX_SAVE = 5
 
 // 'http://10.10.1.104:8123' → '10.10.1.104:8123' — the status/error lines
 // name the host only (a URL with a trailing path would only add noise)
@@ -83,26 +84,36 @@ function hostOf(url: string): string {
 // `detail` is either the typed HaSettingsApiError.code (save flow) or the
 // error message the status hook recorded for a failed probe (the message
 // always carries the class string — see errorFrom in haSettings.ts). Only
-// the class + the host are rendered — never a credential value.
-function haErrorDetail(detail: string, host: string): string {
-  if (detail.includes('invalid_credentials')) return 'Benutzername oder Passwort falsch'
-  if (detail.includes('mfa')) return '2FA aktiv — Access Token manuell eingeben (Phase 2)'
-  if (detail.includes('unreachable')) {
-    return host !== '' ? `Nicht erreichbar (Timeout für ${host})` : 'Nicht erreichbar'
-  }
+// the class + the daemon's own "message" are rendered (issue #80) — never
+// a credential value.
+function haErrorDetail(detail: string, daemonMessage?: string): string {
+  let line: string
+  if (detail.includes('invalid_credentials')) line = 'Ungültige Zugangsdaten'
+  else if (detail.includes('mfa')) line = '2FA aktiv — Access Token manuell eingeben (Phase 2)'
+  else if (detail.includes('unreachable')) line = 'Home Assistant nicht erreichbar'
   // 'not available' = the HaSettingsApiError MESSAGE wording for the
   // 'not_available' code (non-JSON body = the daemon predates the endpoints)
-  if (detail.includes('not_available') || detail.includes('not available')) {
-    return 'HA-Login nicht verfügbar (Daemon veraltet?)'
+  else if (detail.includes('not_available') || detail.includes('not available')) {
+    line = 'HA-Login nicht verfügbar (Daemon veraltet?)'
+  } else if (detail.includes('timeout')) line = 'Zeitüberschreitung — Daemon antwortet nicht'
+  else if (detail.includes('network')) line = 'Daemon nicht erreichbar (Netzwerkfehler)'
+  else if (detail.includes('bad_request')) line = 'Ungültige Anfrage'
+  else line = detail
+  // the daemon's optional human-readable message (issue #80) — displayed
+  // when present and not just a duplicate of the class text already in
+  // `detail`
+  const msg = daemonMessage?.trim()
+  if (msg !== undefined && msg !== '' && !detail.toLowerCase().includes(msg.toLowerCase())) {
+    line += ` (${msg})`
   }
-  if (detail.includes('timeout')) return 'Zeitüberschreitung — Daemon antwortet nicht'
-  if (detail.includes('network')) return 'Daemon nicht erreichbar (Netzwerkfehler)'
-  if (detail.includes('bad_request')) return 'Ungültige URL'
-  return detail
+  return line
 }
 
 interface DraftState {
   url: string
+  // issue #80: token mode — pre-filled from the saved config (an empty
+  // token on a fresh install keeps the field blank)
+  token: string
   username: string
   password: string
 }
@@ -114,10 +125,12 @@ function HaSettingsModalImpl({ onClose }: Props) {
   const { probe, refetchEntities } = st
 
   // the draft — initialized from the saved ha config (the settings store is
-  // the only source of pre-fill values; see the DRAFT MODEL above)
+  // the only source of pre-fill values; see the DRAFT MODEL above). The
+  // token field starts with the stored token, so a configured install can
+  // re-save in token mode without re-entering it (issue #80)
   const [draft, setDraft] = useState<DraftState>(() => {
     const ha = getSettings().ha
-    return { url: ha.url, username: ha.username, password: ha.password }
+    return { url: ha.url, token: ha.token, username: ha.username, password: ha.password }
   })
   const [keyboardField, setKeyboardField] = useState<HaKeyboardField | null>(null)
   const [saving, setSaving] = useState(false)
@@ -135,10 +148,6 @@ function HaSettingsModalImpl({ onClose }: Props) {
         ? st.defaultUrl
         : ''
 
-  // the stored token (the probe uses it when present — the draft has no
-  // token field, manual tokens are phase 2)
-  const savedToken = getSettings().ha.token
-
   // probe on open (ticket: the connection status is established "beim
   // Modal-Open + nach Aktionen" — no ambient polling): the saved url with
   // the stored token. An empty url is not probed (the daemon answers 400
@@ -151,70 +160,62 @@ function HaSettingsModalImpl({ onClose }: Props) {
   }, [probe])
 
   // "Verbindung testen": PROBE ONLY (design §3) — the daemon's
-  // POST /api/ha/test with the current URL value and the stored token (when
-  // present). No store write, no login; the result updates the status line
-  // via the hook.
+  // POST /api/ha/test with the current URL value and the token field's
+  // value (when present). No store write, no login; the result updates the
+  // status line via the hook.
   const handleTest = useCallback(() => {
     setSaveError(null)
     const url = urlValue.trim()
     if (url === '') return
-    probe(url, savedToken !== '' ? savedToken : undefined)
-  }, [probe, savedToken, urlValue])
+    probe(url, draft.token !== '' ? draft.token : undefined)
+  }, [probe, draft.token, urlValue])
 
-  // "Speichern": transactional (see the SAVE RULE in the file header). A
-  // login failure writes NOTHING to the store and surfaces the concrete
-  // error class instead.
+  // "Speichern": transactional (see the SAVE RULE in the file header).
+  // ALWAYS runs the daemon's login with exactly one mode per request
+  // (issue #80): token mode when a token is filled (preferred — wins over
+  // the username/password set when both are filled), password mode
+  // otherwise. A login failure writes NOTHING to the store and surfaces
+  // the concrete error line instead.
   const handleSave = async () => {
     if (saving || st.probing) return
     const url = urlValue.trim()
     if (url === '') return
-    const cur = getSettings().ha
-    // re-login only when the stored token is not already a valid login
-    // result for exactly these credentials (the simple rule, documented
-    // above): token missing, or not from a login, or credentials changed
-    // since the last login
-    const needsLogin =
-      draft.username !== '' &&
-      draft.password !== '' &&
-      (cur.token === '' ||
-        cur.tokenSource !== 'login' ||
-        cur.username !== draft.username ||
-        cur.password !== draft.password)
+    const useToken = draft.token !== ''
+    const passFilled = draft.username !== '' && draft.password !== ''
+    if (!useToken && !passFilled) return
     setSaving(true)
     setSaveError(null)
     try {
-      let token = cur.token
-      let tokenSource: HaSettingsValue['tokenSource'] = cur.tokenSource
-      if (needsLogin) {
-        const res = await haLogin({ url, username: draft.username, password: draft.password })
-        token = res.token
-        tokenSource = 'login'
-      }
-      // the single store write — the whole ha object (token + source
-      // included), never a partial
+      const res = await haLogin(
+        useToken
+          ? { url, token: draft.token }
+          : { url, username: draft.username, password: draft.password },
+      )
+      // the single store write — the whole ha object (the response token +
+      // tokenSource 'login' included), never a partial; identical shape for
+      // both modes (issue #80)
       updateSettings({
         ha: {
           url,
           username: draft.username,
           password: draft.password,
-          token,
-          tokenSource,
+          token: res.token,
+          tokenSource: 'login',
         },
       })
       // re-sync after the action (ticket: "nach Aktionen"): probe the
       // freshly saved values (status line → "Konfiguriert — verbunden, N
       // Entitäten") and force a fresh entity catalog fetch (the 60 s-TTL
       // cache may still hold the pre-save state)
-      probe(url, token !== '' ? token : undefined)
+      probe(url, res.token !== '' ? res.token : undefined)
       refetchEntities()
     } catch (err) {
-      // SECURITY: only the error class (+ host) is rendered — never the
-      // credentials (the HaSettingsApiError message itself carries no
-      // credential value, see haSettings.ts)
-      const host = hostOf(url)
+      // SECURITY: only the error class (+ the daemon's own message) is
+      // rendered — never the credentials (the HaSettingsApiError code and
+      // detail carry no credential value, see haSettings.ts)
       setSaveError(
         err instanceof HaSettingsApiError
-          ? haErrorDetail(err.code, host)
+          ? haErrorDetail(err.code, err.detail)
           : err instanceof Error
             ? err.message
             : 'Speichern fehlgeschlagen',
@@ -260,17 +261,25 @@ function HaSettingsModalImpl({ onClose }: Props) {
   } else if (st.connection === 'reachable-unauth') {
     statusLine = 'Konfiguriert — nicht authentifiziert (401)'
   } else if (st.connection === 'unreachable') {
-    statusLine = st.probedUrl !== '' ? `Nicht erreichbar (${hostOf(st.probedUrl)})` : 'Nicht erreichbar'
+    statusLine =
+      st.probedUrl !== '' ? `Nicht erreichbar (${hostOf(st.probedUrl)})` : 'Nicht erreichbar'
   } else if (st.base === 'configured') {
     statusLine = 'Konfiguriert'
   } else {
     // 'default' without a probe result: the daemon's build-time defaults
     // apply — the default URL is shown once a probe has delivered it
     statusLine =
-      st.defaultUrl !== null ? `Nicht konfiguriert (Default: ${st.defaultUrl})` : 'Nicht konfiguriert'
+      st.defaultUrl !== null
+        ? `Nicht konfiguriert (Default: ${st.defaultUrl})`
+        : 'Nicht konfiguriert'
   }
 
   const busy = st.probing || saving
+  // issue #80: "Speichern" needs a URL AND one filled credential mode —
+  // the token alone, or username+password together
+  const saveReady =
+    urlValue.trim() !== '' &&
+    (draft.token !== '' || (draft.username !== '' && draft.password !== ''))
 
   return (
     <div className={styles.backdrop} onClick={onClose}>
@@ -291,13 +300,16 @@ function HaSettingsModalImpl({ onClose }: Props) {
                 aria-label="Close"
               >
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <path
+                    d="M6 6l12 12M18 6L6 18"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
                 </svg>
               </button>
             </div>
-            <div
-              className={`${styles.status} ${statusOn ? styles.statusOn : styles.statusOff}`}
-            >
+            <div className={`${styles.status} ${statusOn ? styles.statusOn : styles.statusOff}`}>
               {statusLine}
             </div>
           </div>
@@ -305,9 +317,7 @@ function HaSettingsModalImpl({ onClose }: Props) {
           {/* the probe error (a failed probe — daemon timeout, bad request,
               old daemon) — the concrete reason, Bug53 pattern */}
           {st.probeError !== null && (
-            <div className={styles.errorDetail}>
-              {haErrorDetail(st.probeError, hostOf(st.probedUrl))}
-            </div>
+            <div className={styles.errorDetail}>{haErrorDetail(st.probeError)}</div>
           )}
 
           <label className={styles.field}>
@@ -327,6 +337,29 @@ function HaSettingsModalImpl({ onClose }: Props) {
               tabIndex={focusedIndex === IDX_URL ? 0 : -1}
             />
           </label>
+
+          {/* issue #80: long-lived token mode (preferred) — masked like the
+              password. The hint lives in the .field column but OUTSIDE the
+              wrapping label, so it never becomes part of the input's
+              accessible name */}
+          <div className={styles.field}>
+            <label>
+              <span className={styles.fieldLabel}>Token</span>
+              <input
+                className={`${styles.input} ${focusedIndex === IDX_TOKEN ? styles.focused : ''}`}
+                type="password"
+                value={draft.token}
+                onChange={(e) => setDraft((d) => ({ ...d, token: e.target.value }))}
+                onClick={() => tapItem(IDX_TOKEN)}
+                onFocus={() => setKeyboardField('token')}
+                ref={focusedIndex === IDX_TOKEN ? setFocusRef : undefined}
+                tabIndex={focusedIndex === IDX_TOKEN ? 0 : -1}
+              />
+            </label>
+            <span className={styles.fieldHint}>
+              HA-UI Profil → Sicherheit → Langlebige Zugriffstokens
+            </span>
+          </div>
 
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Username</span>
@@ -383,7 +416,7 @@ function HaSettingsModalImpl({ onClose }: Props) {
             }`}
             ref={focusedIndex === IDX_SAVE ? setFocusRef : undefined}
             tabIndex={focusedIndex === IDX_SAVE ? 0 : -1}
-            disabled={busy || urlValue.trim() === ''}
+            disabled={busy || !saveReady}
             onClick={() => {
               tapItem(IDX_SAVE)
               void handleSave()
