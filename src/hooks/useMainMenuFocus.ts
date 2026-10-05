@@ -46,7 +46,9 @@ export interface UseMainMenuFocusResult {
   selectSidebar: (index: number) => void
   // confirm the focused item of the active pane (dial press / Enter)
   confirm: () => void
-  // tap a carousel card: focus it and confirm
+  // tap a carousel card: focus it and confirm; in preview mode (sidebar
+  // pane) the confirmed selection is synced to the previewed item first, so
+  // the action and the focus both belong to the DISPLAYED list (mira-ui#82)
   selectContent: (index: number) => void
   // move the content focus without confirming (sub-menu open/close)
   focusContent: (index: number) => void
@@ -149,13 +151,23 @@ export function useMainMenuFocus({
     [setActivePane],
   )
 
-  const selectContent = useCallback((index: number) => {
-    contentIndexRef.current = index
-    setContentIndexState(index)
-    // bug47: a tap/confirm keeps the smooth scroll
-    setContentMoveKind('jump')
-    onConfirmContentRef.current(index)
-  }, [])
+  const selectContent = useCallback(
+    (index: number) => {
+      if (activePaneRef.current === 'sidebar') {
+        // mira-ui#82: the carousel is showing a PREVIEWED category — sync the
+        // confirmed selection to it first (selectSidebar-equivalent), so the
+        // confirm callback and the resulting content focus both belong to the
+        // displayed list instead of another category's
+        selectSidebar(sidebarIndexRef.current)
+      }
+      contentIndexRef.current = index
+      setContentIndexState(index)
+      // bug47: a tap/confirm keeps the smooth scroll
+      setContentMoveKind('jump')
+      onConfirmContentRef.current(index)
+    },
+    [selectSidebar],
+  )
 
   const focusContent = useCallback((index: number) => {
     const count = countsRef.current.contentCount

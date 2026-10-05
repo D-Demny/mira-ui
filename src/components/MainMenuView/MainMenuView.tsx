@@ -790,8 +790,12 @@ export function MainMenuView({
 
   // bug4/bug22: open a playlist's (or Liked Songs') track list as a sub-menu
   // (focus resets to track 0)
-  const openPlaylistTracklist = (card: MenuCard, index: number) => {
-    if (confirmedCategory.id !== 'playlists' || openTracklist) return
+  const openPlaylistTracklist = (
+    card: MenuCard,
+    index: number,
+    category: MenuCategory = confirmedCategory,
+  ) => {
+    if (category.id !== 'playlists' || openTracklist) return
     const match = /^spotify:playlist:([^/]+)/.exec(card.uri ?? '')
     let playlistId = ''
     let contextUri = ''
@@ -843,10 +847,18 @@ export function MainMenuView({
   }
 
   // dial press / tap on a card: start playback, open a track list, or action
-  const handleCardAction = (card: MenuCard, index: number) => {
+  // category: the category the card is DISPLAYED in — normally the confirmed
+  // one; a preview-pane tap confirms against the previewed category instead
+  // (mira-ui#82). The action branches are category-dependent, so the branch
+  // must follow the displayed category, not just the card.
+  const handleCardAction = (
+    card: MenuCard,
+    index: number,
+    category: MenuCategory = confirmedCategory,
+  ) => {
     // bug3: confirming the current track in 'Läuft gerade' returns to the
     // full-screen player WITHOUT a play API call (no restart)
-    if (confirmedCategory.id === 'now-playing' && index === 0 && card.id === 'np-current') {
+    if (category.id === 'now-playing' && index === 0 && card.id === 'np-current') {
       onExit?.()
       return
     }
@@ -858,7 +870,7 @@ export function MainMenuView({
     // the card list must not shift the queue positions). Single-track contexts
     // (context_uri is a track uri or empty) have no shared queue: play the
     // track directly, as before.
-    if (confirmedCategory.id === 'now-playing' && index > 0 && card.id.startsWith('np-q-')) {
+    if (category.id === 'now-playing' && index > 0 && card.id.startsWith('np-q-')) {
       if (!card.uri) return
       // issue #56: same play-then-settle handling as the other paths; the pane
       // is already 'now-playing' here, so the switch inside the helper is a
@@ -881,13 +893,13 @@ export function MainMenuView({
       return
     }
     if (
-      confirmedCategory.id === 'playlists' &&
+      category.id === 'playlists' &&
       !openTracklist &&
       (card.uri?.startsWith('spotify:playlist:') || card.uri === LIKED_SONGS_ID)
     ) {
       // bug4/bug22: playlist / Liked Songs card opens the track sub-menu
       // instead of playing
-      openPlaylistTracklist(card, index)
+      openPlaylistTracklist(card, index, category)
       return
     }
     // bug16/bug22: confirming a track in the track sub-menu plays the parent
@@ -1099,9 +1111,12 @@ export function MainMenuView({
       }
     },
     onConfirmContent: (index) => {
-      // only ever runs in the content pane, where displayed == confirmed
-      if (confirmedCategory.id === 'home') {
-        // ticket 9.6 W2: dial confirm on a dashboard grid slot — scenes and
+      // mira-ui#82: resolve the card against the category the carousel is
+      // DISPLAYING — in the content pane that is the confirmed one; a
+      // preview-pane tap syncs the confirmed selection to the previewed item
+      // in the same event (the hook), and this render's displayedCategory is
+      // exactly the list the user just tapped, so card and list always agree.
+      if (displayedCategory.id === 'home') {
         // lights actuate exactly like a tap (same homeSceneTap/homeLightTap
         // callbacks); a cover column is an EXPLICIT up/down control, so a
         // plain dial confirm on it is deliberately a no-op
@@ -1113,8 +1128,8 @@ export function MainMenuView({
         // index ≥ scenes + lights → cover column: no-op (up/down buttons only)
         return
       }
-      const card = confirmedCategory.cards[index]
-      if (card) handleCardAction(card, index)
+      const card = displayedCategory.cards[index]
+      if (card) handleCardAction(card, index, displayedCategory)
     },
     // bug53: dial HOLD on a card — same routing as the press path, plus the
     // dimmable-light → dim view shortcut (handleCardHold covers it)
@@ -1123,11 +1138,13 @@ export function MainMenuView({
       // through the SAME shared helper as the touch hold (homeHoldRoute):
       // scene slots no-op, light slots open the control view, cover columns
       // stop (slot offsets: scenes[0..s) → lights → cover columns)
-      if (confirmedCategory.id === 'home') {
+      // mira-ui#82: same displayed-category resolution as onConfirmContent —
+      // dial holds only run in the content pane, where displayed == confirmed
+      if (displayedCategory.id === 'home') {
         homeHoldSlot(index)
         return
       }
-      const card = confirmedCategory.cards[index]
+      const card = displayedCategory.cards[index]
       if (card) handleCardHold(card, index)
     },
     // bug4/bug25: back in the content pane first leaves the settings sub-level,

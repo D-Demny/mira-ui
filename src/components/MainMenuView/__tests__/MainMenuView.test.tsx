@@ -582,6 +582,45 @@ describe('MainMenuView', () => {
       expect(screen.queryByText('Workout')).not.toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Zuletzt' })).toHaveClass('itemFocused')
     })
+
+    // mira-ui#82: a tap while the sidebar PREVIEWS a category must act on the
+    // previewed list. 'Zuletzt' (confirmed, ONE track) is confirmed, 'Playlists'
+    // (THREE cards) is only previewed — index 2 does not exist in the confirmed
+    // list, so pre-fix the tap was a silent no-op resolved against a foreign
+    // category's cards; post-fix the tapped card's own action runs.
+    it('a tap while previewing acts on the PREVIEWED category, not the confirmed one (mira-ui#82)', async () => {
+      const onPlay = vi.fn()
+      render(<MainMenuView onPlay={onPlay} />)
+
+      // confirm 'Zuletzt' (the short list A), then back to the sidebar pane
+      fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+      await screen.findByText('Siamese Dream')
+      pressBack()
+
+      // dial UP to PREVIEW 'Playlists' (the longer list B) without confirming
+      wheel(10)
+      await screen.findByText('Road Trip')
+      // the FOCUSED sidebar item is now the previewed 'Playlists'; the CONFIRMED
+      // one stays 'Zuletzt' (aria-current) until the tap below syncs it
+      expect(screen.getByRole('button', { name: 'Playlists' })).toHaveClass('itemFocused')
+      expect(screen.getByRole('button', { name: 'Zuletzt' })).toHaveAttribute(
+        'aria-current',
+        'true',
+      )
+
+      // tap the previewed Liked Songs card (index 2 of B — absent from A)
+      fireEvent.click(screen.getByRole('button', { name: 'Liked Songs' }))
+
+      // the tapped card's OWN action ran: the Liked Songs track list opened…
+      expect(await screen.findByText('Faded')).toBeInTheDocument()
+      // …nothing was played from a foreign category's list, and the confirmed
+      // selection synced to the previewed category
+      expect(onPlay).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: 'Playlists' })).toHaveAttribute(
+        'aria-current',
+        'true',
+      )
+    })
   })
 
   describe('bug2: card spacing & centering', () => {

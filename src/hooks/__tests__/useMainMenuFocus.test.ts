@@ -288,4 +288,61 @@ describe('useMainMenuFocus', () => {
     rerender({ contentCount: 1 })
     expect(result.current.contentIndex).toBe(0)
   })
+
+  // mira-ui#82: a card tap while the sidebar pane PREVIEWS another category
+  // must sync the confirmed selection to the previewed item BEFORE confirming,
+  // so the view's confirm callback acts on the displayed list.
+  it('mira-ui#82: a tap in the sidebar pane syncs the previewed category first', () => {
+    const onSelectSidebar = vi.fn()
+    const onConfirmContent = vi.fn()
+    // the confirmed category (A) has ONE card; the previewed one (B, sidebar
+    // index 3) is longer — a tap at B's index 2 cannot exist in A's list
+    const { result, rerender } = renderHook(
+      ({ contentCount }: { contentCount: number }) =>
+        useMainMenuFocus({
+          sidebarCount: 5,
+          contentCount,
+          onExit: vi.fn(),
+          onSelectSidebar,
+          onConfirmContent,
+        }),
+      { initialProps: { contentCount: 1 } },
+    )
+
+    // preview: dial down to sidebar index 3 without confirming
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+    act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10))
+    })
+    expect(result.current.sidebarIndex).toBe(3)
+    expect(result.current.activePane).toBe('sidebar')
+
+    // tap card 2 of the PREVIEWED list B (index 2 does not exist in A)
+    act(() => {
+      result.current.selectContent(2)
+    })
+
+    // the sync ran FIRST and confirmed the previewed item...
+    expect(onSelectSidebar).toHaveBeenCalledTimes(1)
+    expect(onSelectSidebar).toHaveBeenCalledWith(3)
+    expect(onConfirmContent).toHaveBeenCalledTimes(1)
+    expect(onConfirmContent).toHaveBeenCalledWith(2)
+    expect(onSelectSidebar.mock.invocationCallOrder[0]).toBeLessThan(
+      onConfirmContent.mock.invocationCallOrder[0],
+    )
+
+    // ...the focus now lives in the content pane of the previewed category
+    expect(result.current.activePane).toBe('content')
+    expect(result.current.sidebarIndex).toBe(3)
+
+    // once the view re-renders with B's (longer) list, the focus must be a
+    // valid index in the now-displayed list
+    rerender({ contentCount: 5 })
+    expect(result.current.contentIndex).toBe(2)
+  })
 })
