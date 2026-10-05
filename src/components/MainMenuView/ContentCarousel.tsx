@@ -711,6 +711,14 @@ export function ContentCarousel({
     .filter(Boolean)
     .join(' ')
 
+  // issue#82: React keys must be unique among siblings. A duplicate card.id
+  // (e.g. a Spotify queue listing the same track repeatedly) yields duplicate
+  // keys, which corrupts reconciliation — orphaned DOM cards linger in the
+  // shared carousel div and resurface as phantom cards on category switches.
+  // The upstream data layers sanitize ids, so this should never fire; if one
+  // slips through, disambiguate by absolute index instead of letting React
+  // take it. Plain Set: membership test only, rebuilt every render.
+  const seenCardKeys = new Set<string>()
   return (
     <div className={carouselClass} ref={carouselRef}>
       {leadingWidth > 0 && (
@@ -725,9 +733,12 @@ export function ContentCarousel({
         const index = start + i
         // key includes the view identity (category / track sub-menu) so a view
         // switch always mounts fresh cards and never reuses a stale one (bug15)
+        let key = `${categoryId}:${card.id}`
+        if (seenCardKeys.has(key)) key = `${key}#${index}`
+        seenCardKeys.add(key)
         return (
           <CarouselCard
-            key={`${categoryId}:${card.id}`}
+            key={key}
             card={card}
             index={index}
             isFocused={focusedIndex === index}

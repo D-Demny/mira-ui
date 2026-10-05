@@ -507,6 +507,12 @@ export function MainMenuView({
   // track's echo, and keep each remaining entry's position in the ORIGINAL
   // next_tracks list (Spotify queue index, the active track being 0) so
   // bug26's in-queue skip offset stays correct after the list shrinks.
+  // issue#82: a Connect queue can repeat the same track many times (a
+  // re-queued playlist arrives as a repeating loop in next_tracks). Duplicate
+  // card ids become duplicate React keys in the carousel, which corrupts
+  // reconciliation — orphaned DOM cards linger in the shared carousel div
+  // and resurface as phantom song cards in every other category. Repeated
+  // entries are dropped too (first occurrence = earliest position is kept).
   // bug58: dial-FPS fix shipped as permanent behavior (see the static-bg
   // freeze below and ContentCarousel's scroll-port classes); the temporary
   // A/B experiment flags were stripped after on-device measurement
@@ -522,6 +528,7 @@ export function MainMenuView({
       position: number
     }[] = []
     const nextTracks = nowPlaying.next_tracks ?? []
+    const seenQueueIds = new Set<string>()
     for (let i = 0; i < nextTracks.length; i++) {
       const track = nextTracks[i]
       if (!track || !track.uri || !track.name) continue
@@ -532,8 +539,14 @@ export function MainMenuView({
         continue
       }
       const rawArt = track.image_url || undefined
+      // issue#82: queue ids must be unique (they become React keys) — a
+      // re-queued playlist ships the same tracks repeatedly; keep only the
+      // first occurrence so its original position stays bug26's skip target.
+      const queueId = track.track_id || track.uri
+      if (seenQueueIds.has(queueId)) continue
+      seenQueueIds.add(queueId)
       queue.push({
-        id: track.track_id || track.uri,
+        id: queueId,
         title: track.name,
         subtitle: track.artist,
         art: rawArt,
