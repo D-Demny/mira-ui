@@ -16,7 +16,11 @@ function DeviceIcon({ type }: { type: string }) {
   if (type === 'SMARTPHONE' || type === 'TABLET') {
     return (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path d="M5 5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5z" stroke="currentColor" strokeWidth="1.5" />
+        <path
+          d="M5 5a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
         <path d="M13.25 16.75a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0z" fill="currentColor" />
       </svg>
     )
@@ -24,14 +28,22 @@ function DeviceIcon({ type }: { type: string }) {
   if (type === 'COMPUTER' || type === 'CHROMEBOOK') {
     return (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <path d="M3 5a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V5z" stroke="currentColor" strokeWidth="1.5" />
+        <path
+          d="M3 5a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V5z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
         <path d="M1 17h22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     )
   }
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
     </svg>
   )
 }
@@ -80,11 +92,7 @@ function DefaultDeviceModalImpl({
   })
 
   const optionClass = (isSelected: boolean, isFocused: boolean) =>
-    [
-      styles.option,
-      isSelected ? styles.selected : '',
-      isFocused ? styles.focused : '',
-    ]
+    [styles.option, isSelected ? styles.selected : '', isFocused ? styles.focused : '']
       .filter(Boolean)
       .join(' ')
 
@@ -94,14 +102,14 @@ function DefaultDeviceModalImpl({
         <div className={styles.header}>
           <div className={styles.titleRow}>
             <span className={styles.title}>Default Device</span>
-            <button
-              type="button"
-              className={styles.closeBtn}
-              onClick={onClose}
-              aria-label="Close"
-            >
+            <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
               </svg>
             </button>
           </div>
@@ -173,11 +181,7 @@ function DefaultDeviceModalImpl({
         </ul>
 
         {isActiveDevice && currentDefaultId && currentDefault && !currentDefault.is_active && (
-          <button
-            type="button"
-            className={styles.transferBtn}
-            onClick={() => void onTransfer()}
-          >
+          <button type="button" className={styles.transferBtn} onClick={() => void onTransfer()}>
             Play on {currentDefault.name}
           </button>
         )}

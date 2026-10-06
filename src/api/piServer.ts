@@ -161,6 +161,7 @@ export async function getPiSetupStatus(): Promise<SetupPiStatus> {
     // the daemon always sends key_installed (bool); a missing field (older
     // shape / partial response) degrades to "key not installed"
     keyInstalled: body.key_installed === true,
-    keyError: typeof body.key_error === 'string' && body.key_error !== '' ? body.key_error : undefined,
+    keyError:
+      typeof body.key_error === 'string' && body.key_error !== '' ? body.key_error : undefined,
   }
 }

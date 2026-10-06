@@ -51,10 +51,7 @@ const FIELD_LABELS: Record<PiKeyboardField, string> = {
 }
 
 type KeyDef =
-  | { kind: 'char'; char: string }
-  | { kind: 'backspace' }
-  | { kind: 'space' }
-  | { kind: 'case' }
+  { kind: 'char'; char: string } | { kind: 'backspace' } | { kind: 'space' } | { kind: 'case' }
 
 function charKey(c: string): KeyDef {
   return { kind: 'char', char: c }
@@ -134,7 +131,11 @@ export function PiKeyboardOverlay({ field, onClose }: PiKeyboardOverlayProps) {
         return
       }
       const ch =
-        key.kind === 'char' ? (upper && isLetter(key.char) ? key.char.toUpperCase() : key.char) : ' '
+        key.kind === 'char'
+          ? upper && isLetter(key.char)
+            ? key.char.toUpperCase()
+            : key.char
+          : ' '
       setFieldValue(cur[field] + ch)
     },
     [field, setFieldValue, upper],

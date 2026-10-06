@@ -57,7 +57,9 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
               <span>Home</span>
               <span className={styles.meta}>Home Assistant</span>
             </span>
-            <span className={styles.chevron} aria-hidden>&#8250;</span>
+            <span className={styles.chevron} aria-hidden>
+              &#8250;
+            </span>
           </li>
         </ul>
       </section>
@@ -82,7 +84,7 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
               const thumb = pickSpotifyImage(playlist.images)
               return (
                 <li
-                  key={playlist.id ?? Math.random().toString(36)}
+                  key={playlist.id}
                   className={`${styles.listItem} ${index === focusedIndex ? styles.focused : ''}`}
                   role="button"
                   tabIndex={0}
@@ -95,19 +97,10 @@ function LibraryViewImpl({ onNavigate, onPlay }: Props) {
                     }
                   }}
                 >
-                  {thumb && (
-                    <img
-                      src={thumb}
-                      alt=""
-                      className={styles.thumbnail}
-                      aria-hidden
-                    />
-                  )}
+                  {thumb && <img src={thumb} alt="" className={styles.thumbnail} aria-hidden />}
                   <span className={styles.listItemText}>
                     <span>{playlist.name ?? 'Untitled'}</span>
-                    <span className={styles.meta}>
-                      {playlist.tracks?.total ?? 0} tracks
-                    </span>
+                    <span className={styles.meta}>{playlist.tracks?.total ?? 0} tracks</span>
                   </span>
                 </li>
               )

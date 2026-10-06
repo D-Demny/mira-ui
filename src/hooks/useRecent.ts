@@ -85,8 +85,7 @@ export function useRecent() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    const hasItems =
-      (cache.get('recent')?.items.length ?? 0) > 0 || itemsRef.current.length > 0
+    const hasItems = (cache.get('recent')?.items.length ?? 0) > 0 || itemsRef.current.length > 0
     if (!hasItems) {
       setLoading(true)
       setError(null)

@@ -34,9 +34,7 @@ describe('pi profile api (ticket10-5)', () => {
   })
 
   it('degrades missing optional fields (false flags, no error)', async () => {
-    server.use(
-      http.delete('*/api/pi/profile', () => HttpResponse.json({})),
-    )
+    server.use(http.delete('*/api/pi/profile', () => HttpResponse.json({})))
     const result = await deletePiProfile('pi-1', {})
     expect(result).toEqual({ keyRemoved: false, authorizedKeysRemoved: false })
     expect(result.error).toBeUndefined()
@@ -61,16 +59,14 @@ describe('pi profile api (ticket10-5)', () => {
   it('throws the daemon error message on 400 (unsafe / missing id)', async () => {
     server.use(
       http.delete('*/api/pi/profile', () =>
-        HttpResponse.json({ error: "unsafe profile id: \"../../x\"" }, { status: 400 }),
+        HttpResponse.json({ error: 'unsafe profile id: "../../x"' }, { status: 400 }),
       ),
     )
     await expect(deletePiProfile('../../x', {})).rejects.toThrow(/unsafe profile id/)
   })
 
   it('throws on the 503 of an old daemon (handler not wired)', async () => {
-    server.use(
-      http.delete('*/api/pi/profile', () => new HttpResponse(null, { status: 503 })),
-    )
+    server.use(http.delete('*/api/pi/profile', () => new HttpResponse(null, { status: 503 })))
     await expect(deletePiProfile('pi-1', {})).rejects.toThrow(/503/)
   })
 

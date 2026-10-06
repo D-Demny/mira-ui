@@ -342,7 +342,9 @@ describe('useMiraServer', () => {
     server.use(
       http.get('*/api/v1/capabilities', ({ request }) => {
         const url = new URL(request.url)
-        return url.origin === 'http://10.9.8.7:8080' ? HttpResponse.json(CACHE) : HttpResponse.error()
+        return url.origin === 'http://10.9.8.7:8080'
+          ? HttpResponse.json(CACHE)
+          : HttpResponse.error()
       }),
     )
     const state = await fetchMiraServerCapabilities('10.9.8.7')
@@ -430,8 +432,22 @@ describe('useMiraServer: active profile targeting (ticket10-5A)', () => {
     // switch the active profile — the new ip must be pinged (not A)
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.1', user: 'root', password: '', keyInstalled: false },
-        { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.2', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '10.0.0.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
+        {
+          id: 'pi-2',
+          label: 'Pi 2',
+          ip: '10.0.0.2',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-2',
     })
@@ -738,9 +754,7 @@ describe('useMiraServer: emit guard (ticket10-7 G1)', () => {
     })
     // mount: one publish — the checking:true flip; the dead-Pi settle
     // (standalone→standalone) is suppressed
-    expect(emitted).toEqual([
-      { mode: 'standalone', features: STANDBY.features, checking: true },
-    ])
+    expect(emitted).toEqual([{ mode: 'standalone', features: STANDBY.features, checking: true }])
     // three full poll cycles — exactly one publish per cycle (was 2 before G1)
     for (let i = 0; i < 3; i++) {
       await act(async () => {

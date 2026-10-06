@@ -74,10 +74,30 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     accent: { a: 'rgba(232, 145, 45, 0.5)', b: 'rgba(150, 72, 32, 0.42)' },
     bg: '#1b120a',
     cards: [
-      { id: 'home-1', title: 'Guten Morgen', subtitle: 'Home Routine', art: art('#f5a623', '#e0533d', '#ffe08a') },
-      { id: 'home-2', title: 'Kaffeezeit', subtitle: 'Home Routine', art: art('#8e5a3a', '#4a2c1d', '#d9a066') },
-      { id: 'home-3', title: 'Abendstimmung', subtitle: 'Home Routine', art: art('#5b3a8e', '#2a1d4a', '#b58ae0') },
-      { id: 'home-4', title: 'Gute Nacht', subtitle: 'Home Routine', art: art('#20304f', '#101828', '#5b7fb5') },
+      {
+        id: 'home-1',
+        title: 'Guten Morgen',
+        subtitle: 'Home Routine',
+        art: art('#f5a623', '#e0533d', '#ffe08a'),
+      },
+      {
+        id: 'home-2',
+        title: 'Kaffeezeit',
+        subtitle: 'Home Routine',
+        art: art('#8e5a3a', '#4a2c1d', '#d9a066'),
+      },
+      {
+        id: 'home-3',
+        title: 'Abendstimmung',
+        subtitle: 'Home Routine',
+        art: art('#5b3a8e', '#2a1d4a', '#b58ae0'),
+      },
+      {
+        id: 'home-4',
+        title: 'Gute Nacht',
+        subtitle: 'Home Routine',
+        art: art('#20304f', '#101828', '#5b7fb5'),
+      },
     ],
   },
   {
@@ -87,10 +107,30 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     accent: { a: 'rgba(84, 58, 182, 0.6)', b: 'rgba(224, 51, 142, 0.4)' },
     bg: '#160f24',
     cards: [
-      { id: 'np-1', title: 'Siamese Dream', subtitle: 'The Smashing Pumpkins', art: art('#e06a3f', '#8e2f6e', '#f5c04a') },
-      { id: 'np-2', title: 'The Difference', subtitle: 'Flume, Tom Misch', art: art('#e0338e', '#f5a623', '#3ad1c0') },
-      { id: 'np-3', title: 'Midnight City', subtitle: 'M83', art: art('#3a2f8e', '#1d1450', '#8a6ae0') },
-      { id: 'np-4', title: 'Heat Waves', subtitle: 'Glass Animals', art: art('#0f8e7a', '#0a3d3a', '#4ae0c0') },
+      {
+        id: 'np-1',
+        title: 'Siamese Dream',
+        subtitle: 'The Smashing Pumpkins',
+        art: art('#e06a3f', '#8e2f6e', '#f5c04a'),
+      },
+      {
+        id: 'np-2',
+        title: 'The Difference',
+        subtitle: 'Flume, Tom Misch',
+        art: art('#e0338e', '#f5a623', '#3ad1c0'),
+      },
+      {
+        id: 'np-3',
+        title: 'Midnight City',
+        subtitle: 'M83',
+        art: art('#3a2f8e', '#1d1450', '#8a6ae0'),
+      },
+      {
+        id: 'np-4',
+        title: 'Heat Waves',
+        subtitle: 'Glass Animals',
+        art: art('#0f8e7a', '#0a3d3a', '#4ae0c0'),
+      },
     ],
   },
   {
@@ -100,10 +140,30 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     accent: { a: 'rgba(29, 47, 110, 0.7)', b: 'rgba(58, 106, 224, 0.45)' },
     bg: '#0e1426',
     cards: [
-      { id: 'pl-1', title: 'Road Trip', subtitle: 'Mira Mix', art: art('#f5c04a', '#e0533d', '#fff0c0') },
-      { id: 'pl-2', title: 'Workout', subtitle: 'Mira Mix', art: art('#e0335b', '#6e1d3a', '#f58a9e') },
-      { id: 'pl-3', title: 'Focus', subtitle: 'Mira Mix', art: art('#3a6ae0', '#1d2f6e', '#8ab5f5') },
-      { id: 'pl-4', title: 'Party', subtitle: 'Mira Mix', art: art('#8e2fe0', '#3a146e', '#c08af5') },
+      {
+        id: 'pl-1',
+        title: 'Road Trip',
+        subtitle: 'Mira Mix',
+        art: art('#f5c04a', '#e0533d', '#fff0c0'),
+      },
+      {
+        id: 'pl-2',
+        title: 'Workout',
+        subtitle: 'Mira Mix',
+        art: art('#e0335b', '#6e1d3a', '#f58a9e'),
+      },
+      {
+        id: 'pl-3',
+        title: 'Focus',
+        subtitle: 'Mira Mix',
+        art: art('#3a6ae0', '#1d2f6e', '#8ab5f5'),
+      },
+      {
+        id: 'pl-4',
+        title: 'Party',
+        subtitle: 'Mira Mix',
+        art: art('#8e2fe0', '#3a146e', '#c08af5'),
+      },
     ],
   },
   {
@@ -113,10 +173,30 @@ export const MENU_CATEGORIES: MenuCategory[] = [
     accent: { a: 'rgba(91, 58, 142, 0.6)', b: 'rgba(224, 51, 142, 0.35)' },
     bg: '#150f22',
     cards: [
-      { id: 'rc-1', title: 'Siamese Dream', subtitle: 'The Smashing Pumpkins', art: art('#e06a3f', '#8e2f6e', '#f5c04a') },
-      { id: 'rc-2', title: 'The Difference', subtitle: 'Flume, Tom Misch', art: art('#e0338e', '#f5a623', '#3ad1c0') },
-      { id: 'rc-3', title: 'Blinding Lights', subtitle: 'The Weeknd', art: art('#e0335b', '#3a146e', '#f58af5') },
-      { id: 'rc-4', title: 'As It Was', subtitle: 'Harry Styles', art: art('#f5a623', '#8e2f2f', '#ffe08a') },
+      {
+        id: 'rc-1',
+        title: 'Siamese Dream',
+        subtitle: 'The Smashing Pumpkins',
+        art: art('#e06a3f', '#8e2f6e', '#f5c04a'),
+      },
+      {
+        id: 'rc-2',
+        title: 'The Difference',
+        subtitle: 'Flume, Tom Misch',
+        art: art('#e0338e', '#f5a623', '#3ad1c0'),
+      },
+      {
+        id: 'rc-3',
+        title: 'Blinding Lights',
+        subtitle: 'The Weeknd',
+        art: art('#e0335b', '#3a146e', '#f58af5'),
+      },
+      {
+        id: 'rc-4',
+        title: 'As It Was',
+        subtitle: 'Harry Styles',
+        art: art('#f5a623', '#8e2f2f', '#ffe08a'),
+      },
     ],
   },
   {

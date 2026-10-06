@@ -43,10 +43,7 @@ export function OverlayHost({
   return (
     <>
       <VolumeOverlay state={volumeOverlay} />
-      <PowerMenu
-        open={overlays.isOpen('powerMenu')}
-        onClose={() => overlays.close('powerMenu')}
-      />
+      <PowerMenu open={overlays.isOpen('powerMenu')} onClose={() => overlays.close('powerMenu')} />
       <SettingsSheet
         open={overlays.isOpen('settings')}
         onClose={() => overlays.close('settings')}

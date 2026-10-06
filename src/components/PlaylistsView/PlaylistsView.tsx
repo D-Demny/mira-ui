@@ -59,7 +59,7 @@ function PlaylistsViewImpl({ onNavigate, onPlay }: Props) {
             const thumb = pickSpotifyImage(playlist.images)
             return (
               <li
-                key={playlist.id ?? Math.random().toString(36)}
+                key={playlist.id}
                 className={`${styles.listItem} ${index === focusedIndex ? styles.focused : ''}`}
                 role="button"
                 tabIndex={0}
@@ -72,14 +72,7 @@ function PlaylistsViewImpl({ onNavigate, onPlay }: Props) {
                   }
                 }}
               >
-                {thumb && (
-                  <img
-                    src={thumb}
-                    alt=""
-                    className={styles.thumbnail}
-                    aria-hidden
-                  />
-                )}
+                {thumb && <img src={thumb} alt="" className={styles.thumbnail} aria-hidden />}
                 <div className={styles.listItemInfo}>
                   <span className={styles.listItemText}>{playlist.name ?? 'Untitled'}</span>
                   <span className={styles.meta}>
@@ -89,7 +82,9 @@ function PlaylistsViewImpl({ onNavigate, onPlay }: Props) {
                   </span>
                 </div>
                 {onPlay && (
-                  <span className={styles.playIcon} aria-hidden>&#9654;</span>
+                  <span className={styles.playIcon} aria-hidden>
+                    &#9654;
+                  </span>
                 )}
               </li>
             )

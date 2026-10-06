@@ -67,11 +67,13 @@ describe('useListFocus', () => {
 
   it('does not call onSelect on tap when allowTapSelect is false', () => {
     const onSelect = vi.fn()
-    const { result } = renderHook(() => useListFocus({
-      itemCount: 5,
-      onSelect,
-      allowTapSelect: false,
-    }))
+    const { result } = renderHook(() =>
+      useListFocus({
+        itemCount: 5,
+        onSelect,
+        allowTapSelect: false,
+      }),
+    )
     act(() => {
       result.current.tapItem(3)
     })

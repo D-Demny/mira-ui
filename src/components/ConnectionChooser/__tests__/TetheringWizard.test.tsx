@@ -54,23 +54,17 @@ interface WizardHostProps {
 // the wizard's props are the App's state (piKeyboardField) + callbacks —
 // the harness re-renders with a changed field to simulate the App
 function WizardHost({ onBack, onOpenKeyboard, field }: WizardHostProps) {
-  return (
-    <TetheringWizard onBack={onBack} onOpenKeyboard={onOpenKeyboard} keyboardField={field} />
-  )
+  return <TetheringWizard onBack={onBack} onOpenKeyboard={onOpenKeyboard} keyboardField={field} />
 }
 
 function renderWizard() {
   const onBack = vi.fn()
   const onOpenKeyboard = vi.fn()
   let field: PiKeyboardField | null = null
-  const utils = render(
-    <WizardHost onBack={onBack} onOpenKeyboard={onOpenKeyboard} field={field} />,
-  )
+  const utils = render(<WizardHost onBack={onBack} onOpenKeyboard={onOpenKeyboard} field={field} />)
   const setField = (next: PiKeyboardField | null) => {
     field = next
-    utils.rerender(
-      <WizardHost onBack={onBack} onOpenKeyboard={onOpenKeyboard} field={next} />,
-    )
+    utils.rerender(<WizardHost onBack={onBack} onOpenKeyboard={onOpenKeyboard} field={next} />)
   }
   return { ...utils, onBack, onOpenKeyboard, setField }
 }
@@ -80,7 +74,11 @@ type SetField = (field: PiKeyboardField | null) => void
 // drive the flow from the user step through both keyboards to the automatic
 // setup-pi start (the ticket: user entry → password entry → the script opens
 // the SSH connection automatically)
-async function driveToLogin(setField: SetField, user = 'dietpi', password = 'dietpi'): Promise<void> {
+async function driveToLogin(
+  setField: SetField,
+  user = 'dietpi',
+  password = 'dietpi',
+): Promise<void> {
   updateActivePiProfileField('user', user)
   setField('user')
   setField(null) // open→closed edge with the entered value → advances
@@ -185,7 +183,9 @@ describe('TetheringWizard: happy path, ticket flow 1→6 (ticket10-6)', () => {
     // NOTE: the second arg of findBy* is the QUERY options, the waitFor
     // options (timeout) are the THIRD arg — the default 1 s timeout would
     // never see states that only appear after the 3 s banner
-    await screen.findByText('Richte USB-Tethering ein… (Uplink: Ethernet)', undefined, { timeout: 4000 })
+    await screen.findByText('Richte USB-Tethering ein… (Uplink: Ethernet)', undefined, {
+      timeout: 4000,
+    })
     expect(tetherBodies).toEqual([{ profile_id: 'pi-1' }])
     // the key/model line of the tethering screen (ticket flow step 7)
     expect(screen.getByText('SSH-Key installiert · Pi Zero 2 W (Compute Mode)')).toBeInTheDocument()
@@ -202,7 +202,9 @@ describe('TetheringWizard: failure paths (ticket10-6)', () => {
   it('login failed: 3 s error banner, then the failure screen; no tethering start, no half profile update, retry re-opens the user step', async () => {
     let tetherPosts = 0
     server.use(
-      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job-setup' }, { status: 202 })),
+      http.post('*/api/setup-pi', () =>
+        HttpResponse.json({ job_id: 'job-setup' }, { status: 202 }),
+      ),
       http.get('*/api/setup-pi/status', () =>
         HttpResponse.json({
           state: 'failed',
@@ -235,7 +237,12 @@ describe('TetheringWizard: failure paths (ticket10-6)', () => {
     expect(tetherPosts).toBe(0)
     const s = getSettings()
     expect(s.piProfiles).toEqual([
-      expect.objectContaining({ id: 'pi-1', user: 'dietpi', password: 'dietpi', keyInstalled: false }),
+      expect.objectContaining({
+        id: 'pi-1',
+        user: 'dietpi',
+        password: 'dietpi',
+        keyInstalled: false,
+      }),
     ])
 
     // "Erneut versuchen" restarts the flow at the user step (credentials
@@ -275,7 +282,9 @@ describe('TetheringWizard: failure paths (ticket10-6)', () => {
     ]
     let tetherCalls = 0
     server.use(
-      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job-setup' }, { status: 202 })),
+      http.post('*/api/setup-pi', () =>
+        HttpResponse.json({ job_id: 'job-setup' }, { status: 202 }),
+      ),
       http.get('*/api/setup-pi/status', () =>
         HttpResponse.json({ state: 'success', key_installed: true }),
       ),
@@ -311,7 +320,9 @@ describe('TetheringWizard: failure paths (ticket10-6)', () => {
 
   it('old daemon (503 on the tethering POST): the final screen carries the daemon message + retry', async () => {
     server.use(
-      http.post('*/api/setup-pi', () => HttpResponse.json({ job_id: 'job-setup' }, { status: 202 })),
+      http.post('*/api/setup-pi', () =>
+        HttpResponse.json({ job_id: 'job-setup' }, { status: 202 }),
+      ),
       http.get('*/api/setup-pi/status', () =>
         HttpResponse.json({ state: 'success', key_installed: true }),
       ),
@@ -535,7 +546,9 @@ describe('TetheringWizard: UI give-up cap (Date.now spy, no fake timers)', () =>
     vi.spyOn(Date, 'now').mockImplementation(() => baseTime + 6 * 60 * 1000)
 
     // the next tick trips the cap → the failure screen (no banner)
-    await screen.findByText('Setup took longer than 5 minutes — give up', undefined, { timeout: 6000 })
+    await screen.findByText('Setup took longer than 5 minutes — give up', undefined, {
+      timeout: 6000,
+    })
     expect(screen.getByText('Verbindung fehlgeschlagen')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeInTheDocument()
   }, 12000)

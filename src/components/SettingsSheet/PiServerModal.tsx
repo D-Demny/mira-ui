@@ -1,9 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import {
-  checkMiraServer,
-  getMiraServerState,
-  useMiraServer,
-} from '@/hooks/useMiraServer'
+import { checkMiraServer, getMiraServerState, useMiraServer } from '@/hooks/useMiraServer'
 import {
   activePiProfile,
   defaultPiProfile,
@@ -58,7 +54,10 @@ const EMPTY_PROFILE: PiProfile = defaultPiProfile()
 
 // the status line of the ticket (model only known after a provisioning run
 // reported it via /api/setup-pi/status)
-function statusLineFor(mode: 'standalone' | 'lightweight' | 'compute', model: string | null): string {
+function statusLineFor(
+  mode: 'standalone' | 'lightweight' | 'compute',
+  model: string | null,
+): string {
   if (mode === 'standalone') return 'Getrennt (Standalone)'
   if (mode === 'compute') {
     return model ? `Verbunden (${model} - Compute Mode)` : 'Verbunden (Compute Mode)'
@@ -99,9 +98,7 @@ function piLineFor(
   ageSeconds: number | null,
 ): string {
   if (conn === 'connecting') {
-    return ageSeconds === null
-      ? 'Verbinde…'
-      : `Verbinde… (letzter Versuch vor ${ageSeconds}s)`
+    return ageSeconds === null ? 'Verbinde…' : `Verbinde… (letzter Versuch vor ${ageSeconds}s)`
   }
   const suffix = model
     ? tier === 'compute'
@@ -275,7 +272,9 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   // Date.now is impure) and refreshes with every 2 s tick. ticket10-5: the
   // status now also carries the per-profile key existence (profiles) and
   // the bound profile id (profileId)
-  const [piStatus, setPiStatus] = useState<{ status: PiStatus; ageSeconds: number | null } | null>(null)
+  const [piStatus, setPiStatus] = useState<{ status: PiStatus; ageSeconds: number | null } | null>(
+    null,
+  )
   // ticket10-4: the "letzter guter Zustand" of the live session line — the
   // model/tier remembered while connected, kept for connecting/disconnected
   // (own cache, NOT piInfo: the mode line keeps its setup-status data
@@ -416,7 +415,9 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
       return
     }
     if (status.state === 'running') {
-      setSetup((cur) => (cur.logTail === status.logTail ? cur : { ...cur, logTail: status.logTail }))
+      setSetup((cur) =>
+        cur.logTail === status.logTail ? cur : { ...cur, logTail: status.logTail },
+      )
       return
     }
     if (status.state === 'success') {
@@ -698,7 +699,8 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
   const idxDisable = disableInChain ? profiles.length + 8 : -1
 
   const statusLine = statusLineFor(miraServer.mode, piInfo?.model ?? null)
-  const testBusy = test.phase === 'checking' || setup.phase === 'starting' || setup.phase === 'running'
+  const testBusy =
+    test.phase === 'checking' || setup.phase === 'starting' || setup.phase === 'running'
 
   return (
     <div className={styles.backdrop} onClick={onClose}>
@@ -710,329 +712,332 @@ function PiServerModalImpl({ onClose, onOpenKeyboard }: Props) {
             fixed offsets on top of each other when the content exceeds
             the display height (800x480 device). */}
         <div className={styles.content}>
-        <div className={styles.header}>
-          <div className={styles.titleRow}>
-            <span className={styles.title}>Raspberry Pi</span>
-            <button
-              type="button"
-              className={styles.closeBtn}
-              onClick={onClose}
-              aria-label="Close"
+          <div className={styles.header}>
+            <div className={styles.titleRow}>
+              <span className={styles.title}>Raspberry Pi</span>
+              <button
+                type="button"
+                className={styles.closeBtn}
+                onClick={onClose}
+                aria-label="Close"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M6 6l12 12M18 6L6 18"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div
+              className={`${styles.status} ${
+                miraServer.mode === 'standalone' ? styles.statusOff : styles.statusOn
+              }`}
             >
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-          <div
-            className={`${styles.status} ${
-              miraServer.mode === 'standalone' ? styles.statusOff : styles.statusOn
-            }`}
-          >
-            {statusLine}
-          </div>
-          {/* ticket10-7 KR4: the hint line under the status line while the
+              {statusLine}
+            </div>
+            {/* ticket10-7 KR4: the hint line under the status line while the
               hybrid operation is deactivated — the deliberate end state of
               "Deaktivieren" (a fresh profile clears the flag again via the
               hook, re-enabling hybrid) */}
-          {settings.hybridDisabled && (
-            <div className={styles.disabledHint}>
-              Hybrid deaktiviert — ein neues Profil aktiviert ihn wieder
-            </div>
-          )}
-          {/* ticket10-4: the live SSH-session status between the mode line
+            {settings.hybridDisabled && (
+              <div className={styles.disabledHint}>
+                Hybrid deaktiviert — ein neues Profil aktiviert ihn wieder
+              </div>
+            )}
+            {/* ticket10-4: the live SSH-session status between the mode line
               and the key line (hidden until the first successful read —
               old daemon (503) / offline, same degradation as the key line) */}
-          {piStatus !== null && (
-            <div
-              className={`${styles.piLine} ${
-                piStatus.status.conn === 'connected' ? styles.piLineOn : styles.piLineMuted
-              }`}
-            >
-              {piLineFor(
-                piStatus.status.conn,
-                piStatus.status.model ?? piModel?.model,
-                piStatus.status.tier ?? piModel?.tier,
-                piStatus.ageSeconds,
-              )}
-            </div>
-          )}
-          {/* ticket10-3: key status below the mode line (hidden until the
+            {piStatus !== null && (
+              <div
+                className={`${styles.piLine} ${
+                  piStatus.status.conn === 'connected' ? styles.piLineOn : styles.piLineMuted
+                }`}
+              >
+                {piLineFor(
+                  piStatus.status.conn,
+                  piStatus.status.model ?? piModel?.model,
+                  piStatus.status.tier ?? piModel?.tier,
+                  piStatus.ageSeconds,
+                )}
+              </div>
+            )}
+            {/* ticket10-3: key status below the mode line (hidden until the
               first successful status read — old daemon / offline) */}
-          {keyInfo !== null && (
-            <div
-              className={`${styles.keyLine} ${
-                keyInfo.error
-                  ? styles.keyLineError
-                  : keyInfo.installed
-                    ? styles.keyLineOk
-                    : styles.keyLineWarn
-              }`}
-            >
-              {keyLineFor(keyInfo.installed, keyInfo.error)}
-            </div>
-          )}
-        </div>
+            {keyInfo !== null && (
+              <div
+                className={`${styles.keyLine} ${
+                  keyInfo.error
+                    ? styles.keyLineError
+                    : keyInfo.installed
+                      ? styles.keyLineOk
+                      : styles.keyLineWarn
+                }`}
+              >
+                {keyLineFor(keyInfo.installed, keyInfo.error)}
+              </div>
+            )}
+          </div>
 
-        {/* ticket10-5C: the profile list — label + ip per row, the live
+          {/* ticket10-5C: the profile list — label + ip per row, the live
             session state of the ACTIVE profile only (inactive profiles
             have no live session), the per-profile key state (daemon status
             first, settings flag as fallback — keyInstalledFor), and the
             "aktiv" marker. Tap/confirm on a row switches the active
             profile; the row of the active profile is a no-op. */}
-        <ul className={styles.profileList}>
-          {profiles.length === 0 ? (
-            <li className={styles.emptyHint}>Kein Pi konfiguriert</li>
-          ) : (
-            profiles.map((p, i) => {
-              const isActive = activeProfile !== null && p.id === activeProfile.id
-              // the live session state exists only for the ACTIVE profile
-              // (and only once the daemon status has been read at least once)
-              const conn: PiConn | null =
-                isActive && piStatus !== null ? piStatus.status.conn : null
-              const keyOk = keyInstalledFor(p, piStatus)
-              return (
-                <li
-                  key={p.id}
-                  role="button"
-                  tabIndex={focusedIndex === i ? 0 : -1}
-                  className={[
-                    styles.profileRow,
-                    focusedIndex === i ? styles.focused : '',
-                    isActive ? styles.profileActive : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  ref={focusedIndex === i ? setFocusRef : undefined}
-                  onClick={() => {
-                    tapItem(i)
-                    handleSelectProfile(p.id)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
+          <ul className={styles.profileList}>
+            {profiles.length === 0 ? (
+              <li className={styles.emptyHint}>Kein Pi konfiguriert</li>
+            ) : (
+              profiles.map((p, i) => {
+                const isActive = activeProfile !== null && p.id === activeProfile.id
+                // the live session state exists only for the ACTIVE profile
+                // (and only once the daemon status has been read at least once)
+                const conn: PiConn | null =
+                  isActive && piStatus !== null ? piStatus.status.conn : null
+                const keyOk = keyInstalledFor(p, piStatus)
+                return (
+                  <li
+                    key={p.id}
+                    role="button"
+                    tabIndex={focusedIndex === i ? 0 : -1}
+                    className={[
+                      styles.profileRow,
+                      focusedIndex === i ? styles.focused : '',
+                      isActive ? styles.profileActive : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    ref={focusedIndex === i ? setFocusRef : undefined}
+                    onClick={() => {
+                      tapItem(i)
                       handleSelectProfile(p.id)
-                    }
-                  }}
-                >
-                  <span className={styles.profileMain}>
-                    <span className={styles.profileLabel}>{p.label}</span>
-                    {isActive && <span className={styles.activeTag}>aktiv</span>}
-                    <span className={styles.profileIp}>{p.ip}</span>
-                  </span>
-                  <span className={styles.profileStatus}>
-                    {conn !== null && (
-                      <span className={conn === 'connected' ? styles.connOn : styles.connOff}>
-                        {conn === 'connected' ? 'Verbunden' : 'Getrennt'}
-                      </span>
-                    )}
-                    <span className={keyOk ? styles.keyTagOk : styles.keyTagWarn}>
-                      {keyOk ? 'SSH-Key installiert' : 'Passwort-Login erforderlich'}
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        handleSelectProfile(p.id)
+                      }
+                    }}
+                  >
+                    <span className={styles.profileMain}>
+                      <span className={styles.profileLabel}>{p.label}</span>
+                      {isActive && <span className={styles.activeTag}>aktiv</span>}
+                      <span className={styles.profileIp}>{p.ip}</span>
                     </span>
-                  </span>
-                </li>
-              )
-            })
-          )}
-        </ul>
-        {deleteError !== null && <div className={styles.setupError}>{deleteError}</div>}
-        {/* ticket10-7 KR4: the one-shot deactivation outcome below the list
+                    <span className={styles.profileStatus}>
+                      {conn !== null && (
+                        <span className={conn === 'connected' ? styles.connOn : styles.connOff}>
+                          {conn === 'connected' ? 'Verbunden' : 'Getrennt'}
+                        </span>
+                      )}
+                      <span className={keyOk ? styles.keyTagOk : styles.keyTagWarn}>
+                        {keyOk ? 'SSH-Key installiert' : 'Passwort-Login erforderlich'}
+                      </span>
+                    </span>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+          {deleteError !== null && <div className={styles.setupError}>{deleteError}</div>}
+          {/* ticket10-7 KR4: the one-shot deactivation outcome below the list
             (same slot as the delete error — failures stay in the Pi menu,
             KR3): the success line always, the per-profile cleanup failures
             (best-effort transparency) additionally */}
-        {deactivateResult !== null && (
-          <div className={styles.setupSuccess}>{deactivateResult}</div>
-        )}
-        {deactivateError !== null && (
-          <div className={styles.setupError}>{deactivateError}</div>
-        )}
+          {deactivateResult !== null && (
+            <div className={styles.setupSuccess}>{deactivateResult}</div>
+          )}
+          {deactivateError !== null && <div className={styles.setupError}>{deactivateError}</div>}
 
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Profil-Name</span>
-          {/* ticket10-2/10-5C: tapping/focusing a profile field opens the
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Profil-Name</span>
+            {/* ticket10-2/10-5C: tapping/focusing a profile field opens the
               on-screen keyboard for the ACTIVE profile. Bug10-2: the field
               is part of the dial focus chain — the .focused class (same
               pattern as the rows/buttons) highlights it, and the hook's
               setFocusRef scrolls it into the .content scroll container */}
-          <input
-            className={`${styles.input} ${focusedIndex === idxLabel ? styles.focused : ''}`}
-            type="text"
-            value={profile.label}
-            onChange={(e) => setField('label', e.target.value)}
-            onClick={() => tapItem(idxLabel)}
-            onFocus={() => onOpenKeyboard('label')}
-            ref={focusedIndex === idxLabel ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxLabel ? 0 : -1}
-          />
-        </label>
+            <input
+              className={`${styles.input} ${focusedIndex === idxLabel ? styles.focused : ''}`}
+              type="text"
+              value={profile.label}
+              onChange={(e) => setField('label', e.target.value)}
+              onClick={() => tapItem(idxLabel)}
+              onFocus={() => onOpenKeyboard('label')}
+              ref={focusedIndex === idxLabel ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxLabel ? 0 : -1}
+            />
+          </label>
 
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>IP-Adresse</span>
-          {/* ticket10-2: tapping/focusing a credential field opens the on-screen
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>IP-Adresse</span>
+            {/* ticket10-2: tapping/focusing a credential field opens the on-screen
               keyboard; Bug10-2: dial focus chain, see the label field above */}
-          <input
-            className={`${styles.input} ${focusedIndex === idxIp ? styles.focused : ''}`}
-            type="text"
-            inputMode="decimal"
-            value={profile.ip}
-            onChange={(e) => setField('ip', e.target.value)}
-            onClick={() => tapItem(idxIp)}
-            onFocus={() => onOpenKeyboard('ip')}
-            ref={focusedIndex === idxIp ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxIp ? 0 : -1}
-          />
-        </label>
+            <input
+              className={`${styles.input} ${focusedIndex === idxIp ? styles.focused : ''}`}
+              type="text"
+              inputMode="decimal"
+              value={profile.ip}
+              onChange={(e) => setField('ip', e.target.value)}
+              onClick={() => tapItem(idxIp)}
+              onFocus={() => onOpenKeyboard('ip')}
+              ref={focusedIndex === idxIp ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxIp ? 0 : -1}
+            />
+          </label>
 
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>SSH Benutzer</span>
-          {/* Bug10-2: dial focus chain, see the label field above */}
-          <input
-            className={`${styles.input} ${focusedIndex === idxUser ? styles.focused : ''}`}
-            type="text"
-            value={profile.user}
-            onChange={(e) => setField('user', e.target.value)}
-            onClick={() => tapItem(idxUser)}
-            onFocus={() => onOpenKeyboard('user')}
-            ref={focusedIndex === idxUser ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxUser ? 0 : -1}
-          />
-        </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>SSH Benutzer</span>
+            {/* Bug10-2: dial focus chain, see the label field above */}
+            <input
+              className={`${styles.input} ${focusedIndex === idxUser ? styles.focused : ''}`}
+              type="text"
+              value={profile.user}
+              onChange={(e) => setField('user', e.target.value)}
+              onClick={() => tapItem(idxUser)}
+              onFocus={() => onOpenKeyboard('user')}
+              ref={focusedIndex === idxUser ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxUser ? 0 : -1}
+            />
+          </label>
 
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>SSH Passwort</span>
-          {/* security: stored in the plain settings store (localStorage +
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>SSH Passwort</span>
+            {/* security: stored in the plain settings store (localStorage +
               daemon blob) — open point, no encryption in this version.
               Bug10-2: dial focus chain, see the label field above */}
-          <input
-            className={`${styles.input} ${focusedIndex === idxPassword ? styles.focused : ''}`}
-            type="password"
-            value={profile.password}
-            onChange={(e) => setField('password', e.target.value)}
-            onClick={() => tapItem(idxPassword)}
-            onFocus={() => onOpenKeyboard('password')}
-            ref={focusedIndex === idxPassword ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxPassword ? 0 : -1}
-          />
-        </label>
+            <input
+              className={`${styles.input} ${focusedIndex === idxPassword ? styles.focused : ''}`}
+              type="password"
+              value={profile.password}
+              onChange={(e) => setField('password', e.target.value)}
+              onClick={() => tapItem(idxPassword)}
+              onFocus={() => onOpenKeyboard('password')}
+              ref={focusedIndex === idxPassword ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxPassword ? 0 : -1}
+            />
+          </label>
 
-        {/* ticket10-5C: the profile management actions (part of the same
+          {/* ticket10-5C: the profile management actions (part of the same
             dial focus list as the rows above, in this visual order) */}
-        <div className={styles.profileActions}>
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnGrow} ${
-              focusedIndex === idxAdd ? styles.focused : ''
-            }`}
-            ref={focusedIndex === idxAdd ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxAdd ? 0 : -1}
-            onClick={() => {
-              tapItem(idxAdd)
-              handleAddProfile()
-            }}
-          >
-            Profil hinzufügen
-          </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnGrow} ${
-              focusedIndex === idxDelete ? styles.focused : ''
-            }`}
-            ref={focusedIndex === idxDelete ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxDelete ? 0 : -1}
-            disabled={profiles.length === 0}
-            onClick={() => {
-              tapItem(idxDelete)
-              requestDelete()
-            }}
-          >
-            Profil entfernen
-          </button>
-        </div>
+          <div className={styles.profileActions}>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnGrow} ${
+                focusedIndex === idxAdd ? styles.focused : ''
+              }`}
+              ref={focusedIndex === idxAdd ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxAdd ? 0 : -1}
+              onClick={() => {
+                tapItem(idxAdd)
+                handleAddProfile()
+              }}
+            >
+              Profil hinzufügen
+            </button>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnGrow} ${
+                focusedIndex === idxDelete ? styles.focused : ''
+              }`}
+              ref={focusedIndex === idxDelete ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxDelete ? 0 : -1}
+              disabled={profiles.length === 0}
+              onClick={() => {
+                tapItem(idxDelete)
+                requestDelete()
+              }}
+            >
+              Profil entfernen
+            </button>
+          </div>
 
-        <div className={styles.actions}>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={`${styles.btn} ${focusedIndex === idxTest ? styles.focused : ''}`}
+              ref={focusedIndex === idxTest ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxTest ? 0 : -1}
+              disabled={testBusy}
+              onClick={() => {
+                tapItem(idxTest)
+                void handleTest()
+              }}
+            >
+              {test.phase === 'checking' ? 'Prüfe…' : 'Verbindung testen'}
+            </button>
+            {test.phase === 'done' && (
+              <span className={test.ok ? styles.testOk : styles.testFail}>
+                {test.ok
+                  ? test.mode === 'compute'
+                    ? 'Test: Verbunden (Compute Mode)'
+                    : 'Test: Verbunden (Cache Only)'
+                  : 'Test: Getrennt'}
+              </span>
+            )}
+          </div>
+
           <button
             type="button"
-            className={`${styles.btn} ${focusedIndex === idxTest ? styles.focused : ''}`}
-            ref={focusedIndex === idxTest ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxTest ? 0 : -1}
+            className={`${styles.btn} ${styles.btnPrimary} ${
+              focusedIndex === idxSetup ? styles.focused : ''
+            }`}
+            ref={focusedIndex === idxSetup ? setFocusRef : undefined}
+            tabIndex={focusedIndex === idxSetup ? 0 : -1}
             disabled={testBusy}
             onClick={() => {
-              tapItem(idxTest)
-              void handleTest()
+              tapItem(idxSetup)
+              void handleSetup()
             }}
           >
-            {test.phase === 'checking' ? 'Prüfe…' : 'Verbindung testen'}
+            {setup.phase === 'starting'
+              ? 'Starte Einrichtung…'
+              : setup.phase === 'running'
+                ? 'Einrichtung läuft…'
+                : 'Pi automatisch einrichten'}
           </button>
-          {test.phase === 'done' && (
-            <span className={test.ok ? styles.testOk : styles.testFail}>
-              {test.ok
-                ? test.mode === 'compute'
-                  ? 'Test: Verbunden (Compute Mode)'
-                  : 'Test: Verbunden (Cache Only)'
-                : 'Test: Getrennt'}
-            </span>
-          )}
-        </div>
 
-        <button
-          type="button"
-          className={`${styles.btn} ${styles.btnPrimary} ${
-            focusedIndex === idxSetup ? styles.focused : ''
-          }`}
-          ref={focusedIndex === idxSetup ? setFocusRef : undefined}
-          tabIndex={focusedIndex === idxSetup ? 0 : -1}
-          disabled={testBusy}
-          onClick={() => {
-            tapItem(idxSetup)
-            void handleSetup()
-          }}
-        >
-          {setup.phase === 'starting'
-            ? 'Starte Einrichtung…'
-            : setup.phase === 'running'
-              ? 'Einrichtung läuft…'
-              : 'Pi automatisch einrichten'}
-        </button>
-
-        {/* ticket10-7 KR4: the deactivation danger action — rendered only
+          {/* ticket10-7 KR4: the deactivation danger action — rendered only
             with ≥1 profile (an empty list has nothing to deactivate and
             stays a silent fresh standalone), below the setup button.
             Disabled while a provisioning job runs (the G-D3 UI guard) or
             while its own cleanup runs — and out of the dial focus chain in
             both cases (idxDisable = -1, see focusItems) */}
-        {profiles.length > 0 && (
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnDanger} ${styles.btnDangerFull} ${
-              focusedIndex === idxDisable ? styles.focused : ''
-            }`}
-            ref={focusedIndex === idxDisable ? setFocusRef : undefined}
-            tabIndex={focusedIndex === idxDisable ? 0 : -1}
-            disabled={jobActive || deactivateBusy}
-            onClick={() => {
-              tapItem(idxDisable)
-              requestDeactivate()
-            }}
-          >
-            Deaktivieren
-          </button>
-        )}
+          {profiles.length > 0 && (
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnDanger} ${styles.btnDangerFull} ${
+                focusedIndex === idxDisable ? styles.focused : ''
+              }`}
+              ref={focusedIndex === idxDisable ? setFocusRef : undefined}
+              tabIndex={focusedIndex === idxDisable ? 0 : -1}
+              disabled={jobActive || deactivateBusy}
+              onClick={() => {
+                tapItem(idxDisable)
+                requestDeactivate()
+              }}
+            >
+              Deaktivieren
+            </button>
+          )}
 
-        {setup.phase === 'failed' && setup.error && (
-          <div className={styles.setupError}>{setup.error}</div>
-        )}
-        {setup.phase === 'success' && (
-          <div className={styles.setupSuccess}>
-            Erfolgreich eingerichtet
-            {setup.model ? ` — ${setup.model}` : ''}
-            {setup.tier ? ` (${setup.tier})` : ''}
-          </div>
-        )}
-        {setup.logTail.length > 0 && (
-          <pre className={styles.log} aria-label="Einrichtungs-Log">
-            {setup.logTail.join('\n')}
-          </pre>
-        )}
+          {setup.phase === 'failed' && setup.error && (
+            <div className={styles.setupError}>{setup.error}</div>
+          )}
+          {setup.phase === 'success' && (
+            <div className={styles.setupSuccess}>
+              Erfolgreich eingerichtet
+              {setup.model ? ` — ${setup.model}` : ''}
+              {setup.tier ? ` (${setup.tier})` : ''}
+            </div>
+          )}
+          {setup.logTail.length > 0 && (
+            <pre className={styles.log} aria-label="Einrichtungs-Log">
+              {setup.logTail.join('\n')}
+            </pre>
+          )}
         </div>
       </div>
 

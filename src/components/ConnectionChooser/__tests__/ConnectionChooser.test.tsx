@@ -16,7 +16,14 @@ import { server } from '@/__tests__/msw-server'
 //   503     → the last known state is kept (never read → null = idle)
 
 function profile(id: string, keyInstalled = false): PiProfile {
-  return { id, label: id.toUpperCase(), ip: '192.168.7.1', user: 'root', password: '', keyInstalled }
+  return {
+    id,
+    label: id.toUpperCase(),
+    ip: '192.168.7.1',
+    user: 'root',
+    password: '',
+    keyInstalled,
+  }
 }
 
 function seedProfiles(profiles: PiProfile[]) {
@@ -25,11 +32,7 @@ function seedProfiles(profiles: PiProfile[]) {
 
 function renderChooser() {
   return render(
-    <ConnectionChooser
-      onPickPc={vi.fn()}
-      onPickBluetooth={vi.fn()}
-      onPickUsbTethering={vi.fn()}
-    />,
+    <ConnectionChooser onPickPc={vi.fn()} onPickBluetooth={vi.fn()} onPickUsbTethering={vi.fn()} />,
   )
 }
 

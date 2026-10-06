@@ -23,9 +23,8 @@ describe('useHomeLight', () => {
 
   it('sets an error when the state fetch fails', async () => {
     server.use(
-      http.get(
-        '*/ha-api/states/light.*',
-        () => HttpResponse.json({ message: 'unauthorized' }, { status: 401 }),
+      http.get('*/ha-api/states/light.*', () =>
+        HttpResponse.json({ message: 'unauthorized' }, { status: 401 }),
       ),
     )
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -42,9 +41,7 @@ describe('useHomeLight', () => {
         HttpResponse.json({ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'off' }),
       ),
       http.post('*/ha-api/services/light/toggle', () =>
-        HttpResponse.json([
-          { entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' },
-        ]),
+        HttpResponse.json([{ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' }]),
       ),
     )
     const { result } = renderHook(() => useHomeLight())
@@ -64,9 +61,8 @@ describe('useHomeLight', () => {
       http.get('*/ha-api/states/light.*', () =>
         HttpResponse.json({ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' }),
       ),
-      http.post(
-        '*/ha-api/services/light/toggle',
-        () => HttpResponse.json({ message: 'boom' }, { status: 500 }),
+      http.post('*/ha-api/services/light/toggle', () =>
+        HttpResponse.json({ message: 'boom' }, { status: 500 }),
       ),
     )
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -160,9 +156,7 @@ describe('useHomeLight', () => {
         HttpResponse.json({ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'off' }),
       ),
       http.post('*/ha-api/services/light/toggle', () =>
-        HttpResponse.json([
-          { entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' },
-        ]),
+        HttpResponse.json([{ entity_id: 'light.3er_stehlampe_gold_esszimmer', state: 'on' }]),
       ),
     )
     const first = renderHook(() => useHomeLight())
@@ -223,9 +217,7 @@ describe('useHomeLight', () => {
       ),
     )
     const { result } = renderHook(() => useHomeLights())
-    await waitFor(() =>
-      expect(result.current.every((l) => !l.loading)).toBe(true),
-    )
+    await waitFor(() => expect(result.current.every((l) => !l.loading)).toBe(true))
     expect(result.current.map((l) => l.entityId)).toEqual(HOME_LIGHTS.map((l) => l.entityId))
     expect(result.current[1].label).toBe('Esstisch Hängelampe')
     act(() => {

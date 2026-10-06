@@ -14,13 +14,7 @@ import {
   type TetheringUplink,
 } from '@/api/piTethering'
 import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
-import {
-  activePiProfile,
-  getSettings,
-  newPiProfile,
-  updateSettings,
-  useSettings,
-} from '@/settings'
+import { activePiProfile, getSettings, newPiProfile, updateSettings, useSettings } from '@/settings'
 import type { PiKeyboardField } from '../SettingsSheet/PiKeyboardOverlay'
 import styles from './TetheringWizard.module.scss'
 
@@ -149,7 +143,8 @@ function setupOutcomeLine(o: SetupOutcome): string {
   if (o.keyError) return `Key-Setup fehlgeschlagen: ${o.keyError}`
   const key = o.installed ? 'SSH-Key installiert' : 'Passwort-Login erforderlich'
   if (o.model) {
-    const tier = o.tier === 'compute' ? ' (Compute Mode)' : o.tier === 'lightweight' ? ' (Cache Only)' : ''
+    const tier =
+      o.tier === 'compute' ? ' (Compute Mode)' : o.tier === 'lightweight' ? ' (Cache Only)' : ''
     return `${key} · ${o.model}${tier}`
   }
   return key
@@ -217,93 +212,113 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
   // constants can diverge later). The step is passed explicitly: an interval
   // is only alive while its own step is active (stopPolling always precedes
   // leaving a running step), so the tick never sees a stale step
-  const pollTick = useCallback(async (step: 'setup-running' | 'tether-running') => {
-    if (step === 'setup-running') {
-      let status: SetupPiStatus
-      try {
-        status = await getPiSetupStatus()
-      } catch {
-        return // daemon unreachable for a moment — the next tick retries
-      }
-      const startedAt = setupStartedAtRef.current
-      if (startedAt !== null && Date.now() - startedAt > SETUP_PI_UI_CAP_MS) {
-        stopPolling()
-        setSetupError('Setup took longer than 5 minutes — give up')
-        setPhase('setup-failed')
-        return
-      }
-      if (status.state === 'running') {
-        setSetupLog((prev) => (prev === status.logTail ? prev : status.logTail))
-        return
-      }
-      if (status.state === 'success') {
-        stopPolling()
-        setOutcome({
-          installed: status.keyInstalled,
-          keyError: status.keyError,
-          model: status.model,
-          tier: status.tier,
-        })
-        // the per-profile key record of the settings store (the profile
-        // list and the chooser's card check read it — same persist as the
-        // PiServerModal after a finished run)
-        const cur = getSettings()
-        const active = activePiProfile(cur)
-        if (active && active.keyInstalled !== status.keyInstalled) {
-          updateSettings({
-            piProfiles: cur.piProfiles.map((pp) =>
-              pp.id === active.id ? { ...pp, keyInstalled: status.keyInstalled } : pp,
-            ),
-          })
+  const pollTick = useCallback(
+    async (step: 'setup-running' | 'tether-running') => {
+      if (step === 'setup-running') {
+        let status: SetupPiStatus
+        try {
+          status = await getPiSetupStatus()
+        } catch {
+          return // daemon unreachable for a moment — the next tick retries
         }
-        // the 3 s banner below owns the auto-advance to the tethering step
-        setBannerKind('ok')
-        setPhase('setup-banner')
-        return
-      }
-      if (status.state === 'failed') {
-        stopPolling()
-        setOutcome({
-          installed: status.keyInstalled,
-          keyError: status.keyError,
-          model: status.model,
-          tier: status.tier,
-        })
-        setSetupError(status.error ?? 'The setup failed')
-        setBannerKind('fail')
-        setPhase('setup-banner')
-      }
-    } else {
-      let status
-      try {
-        status = await getPiTetheringStatus()
-      } catch {
-        return
-      }
-      const startedAt = tetherStartedAtRef.current
-      if (startedAt !== null && Date.now() - startedAt > TETHERING_UI_CAP_MS) {
-        stopPolling()
-        setTetherResult({ ok: false, error: 'Tethering took longer than 10 minutes — give up', uplink: status.uplink, tetheringOk: status.tetheringOk, internetOk: status.internetOk })
-        setPhase('tether-done')
-        return
-      }
-      if (status.state === 'running') {
-        setTetherLog((prev) => (prev === status.logTail ? prev : status.logTail))
-        if (status.uplink) setTetherUplink(status.uplink)
-        return
-      }
-      if (status.state === 'success' || status.state === 'failed') {
-        stopPolling()
+        const startedAt = setupStartedAtRef.current
+        if (startedAt !== null && Date.now() - startedAt > SETUP_PI_UI_CAP_MS) {
+          stopPolling()
+          setSetupError('Setup took longer than 5 minutes — give up')
+          setPhase('setup-failed')
+          return
+        }
+        if (status.state === 'running') {
+          setSetupLog((prev) => (prev === status.logTail ? prev : status.logTail))
+          return
+        }
         if (status.state === 'success') {
-          // the script exits 0 only when tethering AND internet are both ok
-          setTetherResult({ ok: true, uplink: status.uplink, tetheringOk: status.tetheringOk, internetOk: status.internetOk })
-        } else {
-          setTetherResult({ ok: false, error: status.error, uplink: status.uplink, tetheringOk: status.tetheringOk, internetOk: status.internetOk })
+          stopPolling()
+          setOutcome({
+            installed: status.keyInstalled,
+            keyError: status.keyError,
+            model: status.model,
+            tier: status.tier,
+          })
+          // the per-profile key record of the settings store (the profile
+          // list and the chooser's card check read it — same persist as the
+          // PiServerModal after a finished run)
+          const cur = getSettings()
+          const active = activePiProfile(cur)
+          if (active && active.keyInstalled !== status.keyInstalled) {
+            updateSettings({
+              piProfiles: cur.piProfiles.map((pp) =>
+                pp.id === active.id ? { ...pp, keyInstalled: status.keyInstalled } : pp,
+              ),
+            })
+          }
+          // the 3 s banner below owns the auto-advance to the tethering step
+          setBannerKind('ok')
+          setPhase('setup-banner')
+          return
         }
-        setPhase('tether-done')
+        if (status.state === 'failed') {
+          stopPolling()
+          setOutcome({
+            installed: status.keyInstalled,
+            keyError: status.keyError,
+            model: status.model,
+            tier: status.tier,
+          })
+          setSetupError(status.error ?? 'The setup failed')
+          setBannerKind('fail')
+          setPhase('setup-banner')
+        }
+      } else {
+        let status
+        try {
+          status = await getPiTetheringStatus()
+        } catch {
+          return
+        }
+        const startedAt = tetherStartedAtRef.current
+        if (startedAt !== null && Date.now() - startedAt > TETHERING_UI_CAP_MS) {
+          stopPolling()
+          setTetherResult({
+            ok: false,
+            error: 'Tethering took longer than 10 minutes — give up',
+            uplink: status.uplink,
+            tetheringOk: status.tetheringOk,
+            internetOk: status.internetOk,
+          })
+          setPhase('tether-done')
+          return
+        }
+        if (status.state === 'running') {
+          setTetherLog((prev) => (prev === status.logTail ? prev : status.logTail))
+          if (status.uplink) setTetherUplink(status.uplink)
+          return
+        }
+        if (status.state === 'success' || status.state === 'failed') {
+          stopPolling()
+          if (status.state === 'success') {
+            // the script exits 0 only when tethering AND internet are both ok
+            setTetherResult({
+              ok: true,
+              uplink: status.uplink,
+              tetheringOk: status.tetheringOk,
+              internetOk: status.internetOk,
+            })
+          } else {
+            setTetherResult({
+              ok: false,
+              error: status.error,
+              uplink: status.uplink,
+              tetheringOk: status.tetheringOk,
+              internetOk: status.internetOk,
+            })
+          }
+          setPhase('tether-done')
+        }
       }
-    }
-  }, [stopPolling])
+    },
+    [stopPolling],
+  )
 
   // (3) start the setup-pi run with the stored profile credentials
   const startSetup = useCallback(async () => {
@@ -352,7 +367,12 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
       // no run started (400 / 409 no-key / 500 script missing / 503 old
       // daemon) — the final screen carries the daemon's message + retry
       stopPolling()
-      setTetherResult({ ok: false, error: err instanceof Error ? err.message : 'Tethering', tetheringOk: false, internetOk: false })
+      setTetherResult({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Tethering',
+        tetheringOk: false,
+        internetOk: false,
+      })
       setPhase('tether-done')
       return
     }
@@ -528,9 +548,7 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
 
         {(phase === 'user' || phase === 'pass') && (
           <div className={styles.valueRow}>
-            <span className={styles.valueKey}>
-              {phase === 'user' ? 'Benutzer' : 'Passwort'}
-            </span>
+            <span className={styles.valueKey}>{phase === 'user' ? 'Benutzer' : 'Passwort'}</span>
             <span className={styles.valueValue}>
               {phase === 'user'
                 ? profile?.user || '—'
@@ -544,15 +562,10 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
         {stepText && <p className={styles.hintText}>{stepText}</p>}
         {hint && <p className={styles.hintWarn}>{hint}</p>}
 
-        {phase === 'setup-running' && (
-          <div className={styles.waiting}>Verbinde…</div>
-        )}
+        {phase === 'setup-running' && <div className={styles.waiting}>Verbinde…</div>}
 
         {phase === 'setup-banner' && (
-          <div
-            className={bannerKind === 'ok' ? styles.bannerOk : styles.bannerFail}
-            role="status"
-          >
+          <div className={bannerKind === 'ok' ? styles.bannerOk : styles.bannerFail} role="status">
             {bannerKind === 'ok' ? 'SSH-Login erfolgreich' : 'SSH-Login fehlgeschlagen'}
             {bannerKind === 'fail' && setupError ? ` — ${setupError}` : ''}
           </div>
@@ -572,11 +585,14 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
           </>
         )}
 
-        {phase === 'tether-done' && tetherResult !== null && (
-          tetherResult.ok ? (
+        {phase === 'tether-done' &&
+          tetherResult !== null &&
+          (tetherResult.ok ? (
             <div className={styles.doneOk}>
               Internet über USB-Tethering
-              <span className={styles.uplinkLine}>RPi-Uplink: {uplinkLabel(tetherResult.uplink)}</span>
+              <span className={styles.uplinkLine}>
+                RPi-Uplink: {uplinkLabel(tetherResult.uplink)}
+              </span>
               <span className={styles.hintText}>
                 Die Verbindung wird gleich umgeschaltet — das Menü schließt sich von selbst.
               </span>
@@ -589,8 +605,7 @@ function TetheringWizardImpl({ onBack, onOpenKeyboard, keyboardField }: Props) {
                 </div>
               ))}
             </div>
-          )
-        )}
+          ))}
 
         {setupLog.length > 0 && (
           <pre className={styles.log} aria-label="Verbindungs-Log">

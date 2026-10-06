@@ -90,7 +90,12 @@ describe('useHardwareButtons Enter handling', () => {
   it('lets an active list focus handle Escape before the app back handler', () => {
     const { onBack } = setup()
     const onBackFocus = vi.fn(() => true)
-    ListFocusContext.setActive({ onWheel: vi.fn(), onConfirm: null, onBack: onBackFocus, active: true })
+    ListFocusContext.setActive({
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: onBackFocus,
+      active: true,
+    })
 
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
 
@@ -101,7 +106,12 @@ describe('useHardwareButtons Enter handling', () => {
   it('falls through to the app back handler when list focus does not handle Escape', () => {
     const { onBack } = setup()
     const onBackFocus = vi.fn(() => false)
-    ListFocusContext.setActive({ onWheel: vi.fn(), onConfirm: null, onBack: onBackFocus, active: true })
+    ListFocusContext.setActive({
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: onBackFocus,
+      active: true,
+    })
 
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
 
@@ -116,9 +126,7 @@ describe('useHardwareButtons Enter handling', () => {
 // WITHOUT onHold keep the immediate keydown confirm (covered above).
 describe('useHardwareButtons Enter press/hold (bug53)', () => {
   function key(type: 'keydown' | 'keyup', repeat = false) {
-    document.body.dispatchEvent(
-      new KeyboardEvent(type, { key: 'Enter', bubbles: true, repeat }),
-    )
+    document.body.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', bubbles: true, repeat }))
   }
 
   function setupHoldEntry() {

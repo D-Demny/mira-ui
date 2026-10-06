@@ -57,7 +57,11 @@ interface ScreenDef {
 
 const SCREENS: ScreenDef[] = [
   { id: 'connection-chooser', label: 'Connection chooser', hint: 'PC/Bluetooth picker' },
-  { id: 'tethering-onboarding', label: 'Tethering onboarding', hint: 'USB tethering wizard (ticket10-6)' },
+  {
+    id: 'tethering-onboarding',
+    label: 'Tethering onboarding',
+    hint: 'USB tethering wizard (ticket10-6)',
+  },
   { id: 'pc-connect', label: 'PC connect', hint: 'USB tethering sub-screen' },
   { id: 'needs-network', label: 'Bluetooth connect', hint: 'BT pairing sub-screen' },
   { id: 'boot-splash', label: 'Boot splash', hint: 'Animated brand splash' },
@@ -86,7 +90,11 @@ const SCREENS: ScreenDef[] = [
   { id: 'reconnect-banner', label: 'Reconnect banner', hint: 'Transient drop over the player' },
   { id: 'debug', label: 'Debug screen', hint: 'Diagnostics (hold presets 1+4 on device)' },
   { id: 'screensaver', label: 'Screensaver', hint: 'Clock over ambient art (double power press)' },
-  { id: 'mainmenu', label: 'Main menu (Nocturne)', hint: 'Layout shell w/ gradient bg (ticket 8.4a1)' },
+  {
+    id: 'mainmenu',
+    label: 'Main menu (Nocturne)',
+    hint: 'Layout shell w/ gradient bg (ticket 8.4a1)',
+  },
 ]
 
 export function DevOverlay() {

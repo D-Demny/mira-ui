@@ -36,7 +36,11 @@ import { clearCache } from '@/hooks/usePlaylists'
 import { clearRecentCache } from '@/hooks/useRecent'
 import { clearTracksCache } from '@/hooks/usePlaylistTracks'
 import { __resetHomeLightStore } from '@/hooks/useHomeLight'
-import { MIRA_SERVER_POLL_MS, __resetMiraServerState, getMiraServerState } from '@/hooks/useMiraServer'
+import {
+  MIRA_SERVER_POLL_MS,
+  __resetMiraServerState,
+  getMiraServerState,
+} from '@/hooks/useMiraServer'
 import { __resetSettings, updateSettings } from '@/settings'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
@@ -131,7 +135,14 @@ function killPiEndpoints(counters: { capabilities: number; img: number }): void 
 function seedProfile(): void {
   updateSettings({
     piProfiles: [
-      { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+      {
+        id: 'pi-1',
+        label: 'Pi 1',
+        ip: '192.168.7.1',
+        user: 'root',
+        password: '',
+        keyInstalled: false,
+      },
     ],
     activePiId: 'pi-1',
   })
@@ -177,9 +188,7 @@ beforeEach(() => {
         offset: 0,
       }),
     ),
-    http.get('*/web-api/me/player/recently-played', () =>
-      HttpResponse.json({ items: mockRecent }),
-    ),
+    http.get('*/web-api/me/player/recently-played', () => HttpResponse.json({ items: mockRecent })),
   )
 })
 

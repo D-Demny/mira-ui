@@ -267,7 +267,9 @@ describe('PiServerModal: Verbindung testen', () => {
       target: { value: '10.9.8.7' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Verbindung testen' }))
-    await waitFor(() => expect(screen.getByText('Test: Verbunden (Compute Mode)')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByText('Test: Verbunden (Compute Mode)')).toBeInTheDocument(),
+    )
     expect(getMiraServerState().mode).toBe('compute')
   })
 
@@ -296,7 +298,14 @@ describe('PiServerModal: persistent credentials', () => {
       target: { value: 'hunter2' },
     })
     const expected = [
-      { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.9', user: 'dietpi', password: 'hunter2', keyInstalled: false },
+      {
+        id: 'pi-1',
+        label: 'Pi 1',
+        ip: '10.0.0.9',
+        user: 'dietpi',
+        password: 'hunter2',
+        keyInstalled: false,
+      },
     ]
     await waitFor(() => expect(getSettings().piProfiles).toEqual(expected))
     expect(getSettings().activePiId).toBe('pi-1')
@@ -322,7 +331,14 @@ describe('PiServerModal: persistent credentials', () => {
     })
     await waitFor(() =>
       expect(getSettings().piProfiles).toEqual([
-        { id: 'pi-1', label: 'Pi 1', ip: '10.0.0.9', user: 'root', password: 'secret', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '10.0.0.9',
+          user: 'root',
+          password: 'secret',
+          keyInstalled: false,
+        },
       ]),
     )
     unmount()
@@ -420,8 +436,9 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
     expect(screen.getByText('ssh: Permission denied')).toBeInTheDocument()
     // ticket10-3: a failed run surfaces the key error in the key line
     // (key_installed missing = false — the line is the error, not a half state)
-    expect(screen.getByText('Key-Setup fehlgeschlagen: ssh-keygen: key generation failed'))
-      .toBeInTheDocument()
+    expect(
+      screen.getByText('Key-Setup fehlgeschlagen: ssh-keygen: key generation failed'),
+    ).toBeInTheDocument()
     vi.useRealTimers()
   })
 
@@ -437,7 +454,9 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
       }),
     )
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument(),
+    )
     fireEvent.change(screen.getByRole('textbox', { name: 'IP-Adresse' }), {
       target: { value: 'abc' },
     })
@@ -454,7 +473,9 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
       ),
     )
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument(),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Pi automatisch einrichten' }))
     await waitFor(() =>
       expect(screen.getByText('a provisioning run is already in progress')).toBeInTheDocument(),
@@ -471,7 +492,9 @@ describe('PiServerModal: Pi automatisch einrichten', () => {
       http.get('*/api/setup-pi/status', () => HttpResponse.json({ state: 'idle' })),
     )
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Pi automatisch einrichten' })).toBeInTheDocument(),
+    )
     fireEvent.change(screen.getByRole('textbox', { name: 'IP-Adresse' }), {
       target: { value: '10.0.0.9' },
     })
@@ -627,7 +650,14 @@ describe('PiServerModal: dial focus on credential fields (Bug10-2)', () => {
   it('the fields sit between the profile rows and the buttons (layout order with profiles)', () => {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -697,9 +727,7 @@ describe('PiServerModal: dial focus on credential fields (Bug10-2)', () => {
   })
 
   it('scrolls the focused field into view inside the .content scroll container', () => {
-    const scrollSpy = vi
-      .spyOn(Element.prototype, 'scrollIntoView')
-      .mockImplementation(() => {})
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {})
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
     scrollSpy.mockClear()
 
@@ -713,7 +741,9 @@ describe('PiServerModal: dial focus on credential fields (Bug10-2)', () => {
     expect(scrollSpy.mock.instances.at(-1)).toBe(
       screen.getByRole('textbox', { name: 'IP-Adresse' }),
     )
-    expect((screen.getByRole('textbox', { name: 'IP-Adresse' }) as HTMLElement).closest('.content')).not.toBeNull()
+    expect(
+      (screen.getByRole('textbox', { name: 'IP-Adresse' }) as HTMLElement).closest('.content'),
+    ).not.toBeNull()
     scrollSpy.mockRestore()
   })
 
@@ -741,8 +771,22 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
   function twoProfiles() {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
-        { id: 'pi-2', label: 'Büro', ip: '10.0.0.9', user: 'dietpi', password: 'hunter2', keyInstalled: true },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
+        {
+          id: 'pi-2',
+          label: 'Büro',
+          ip: '10.0.0.9',
+          user: 'dietpi',
+          password: 'hunter2',
+          keyInstalled: true,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -771,7 +815,9 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     // arrives with the first /api/pi/status read (async) — wait for it. The
     // accessible name concatenates the spans WITHOUT spaces ("Pi 1aktiv…")
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Pi 1.*192\.168\.7\.1/ })).toHaveTextContent('Verbunden')
+      expect(screen.getByRole('button', { name: /Pi 1.*192\.168\.7\.1/ })).toHaveTextContent(
+        'Verbunden',
+      )
     })
     const row1 = screen.getByRole('button', { name: /Pi 1.*192\.168\.7\.1/ })
     expect(row1).toHaveTextContent('Passwort-Login erforderlich')
@@ -798,13 +844,23 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     // the daemon status is the ground truth and must win
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: true },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: true,
+        },
       ],
       activePiId: 'pi-1',
     })
     server.use(
       http.get('*/api/pi/status', () =>
-        HttpResponse.json({ conn: 'disconnected', profiles: [{ id: 'pi-1', key_installed: false }] }),
+        HttpResponse.json({
+          conn: 'disconnected',
+          profiles: [{ id: 'pi-1', key_installed: false }],
+        }),
       ),
     )
     render(<PiServerModal onClose={() => {}} onOpenKeyboard={vi.fn()} />)
@@ -816,7 +872,14 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
   it('falls back to the settings keyInstalled flag on an old daemon (503)', async () => {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: true },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: true,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -840,7 +903,14 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     )
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -915,9 +985,7 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
-    expect(
-      screen.getByText('Erfolgreich eingerichtet — Pi Zero 2 W (compute)'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('Erfolgreich eingerichtet — Pi Zero 2 W (compute)')).toBeInTheDocument()
     expect(getSettings().activePiId).toBe('pi-2')
     expect(getSettings().piProfiles[1].keyInstalled).toBe(true)
     // the key line (active profile) AND the row's key state reflect it
@@ -927,8 +995,22 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
   it('switches the active profile on a tap and retargets the capabilities poll to the new ip', async () => {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
-        { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.9', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
+        {
+          id: 'pi-2',
+          label: 'Pi 2',
+          ip: '10.0.0.9',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -973,8 +1055,22 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     )
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: 'pw1', keyInstalled: true },
-        { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.9', user: 'dietpi', password: 'pw2', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: 'pw1',
+          keyInstalled: true,
+        },
+        {
+          id: 'pi-2',
+          label: 'Pi 2',
+          ip: '10.0.0.9',
+          user: 'dietpi',
+          password: 'pw2',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -995,7 +1091,14 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     // the profile is gone from the store, the first remaining one is active
     await waitFor(() => {
       expect(getSettings().piProfiles).toEqual([
-        { id: 'pi-2', label: 'Pi 2', ip: '10.0.0.9', user: 'dietpi', password: 'pw2', keyInstalled: false },
+        {
+          id: 'pi-2',
+          label: 'Pi 2',
+          ip: '10.0.0.9',
+          user: 'dietpi',
+          password: 'pw2',
+          keyInstalled: false,
+        },
       ])
       expect(getSettings().activePiId).toBe('pi-2')
     })
@@ -1048,7 +1151,14 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
     )
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -1069,7 +1179,12 @@ describe('PiServerModal: profile list (ticket10-5C)', () => {
   })
 
   it('registers its own focus entry; back closes the confirmation first, then the view (back hierarchy)', () => {
-    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    const parent: ListFocusEntry = {
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: vi.fn(),
+      active: true,
+    }
     ListFocusContext.setActive(parent)
     const onClose = vi.fn()
     twoProfiles()
@@ -1257,7 +1372,14 @@ describe('PiServerModal: layout (Bug10-1 / Bug51)', () => {
   it('renders the complete block chain as direct children of the scroll container in visual order', () => {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -1381,8 +1503,22 @@ describe('PiServerModal: Deaktivieren (ticket10-7 KR4)', () => {
   function twoProfiles() {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: 'pw1', keyInstalled: true },
-        { id: 'pi-2', label: 'Büro', ip: '10.0.0.9', user: 'dietpi', password: 'pw2', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: 'pw1',
+          keyInstalled: true,
+        },
+        {
+          id: 'pi-2',
+          label: 'Büro',
+          ip: '10.0.0.9',
+          user: 'dietpi',
+          password: 'pw2',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -1524,7 +1660,14 @@ describe('PiServerModal: Deaktivieren (ticket10-7 KR4)', () => {
     )
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: 'pw1', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: 'pw1',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -1569,7 +1712,12 @@ describe('PiServerModal: Deaktivieren (ticket10-7 KR4)', () => {
   })
 
   it('the confirmation: back closes it first, then the view (back hierarchy, parent untouched)', () => {
-    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    const parent: ListFocusEntry = {
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: vi.fn(),
+      active: true,
+    }
     ListFocusContext.setActive(parent)
     const onClose = vi.fn()
     twoProfiles()

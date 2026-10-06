@@ -128,7 +128,12 @@ describe('HALightControlModal (bug46)', () => {
   })
 
   it('registers a focus entry on the list focus stack while open (bug31)', () => {
-    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    const parent: ListFocusEntry = {
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: vi.fn(),
+      active: true,
+    }
     ListFocusContext.setActive(parent)
     seedEntity('off', null)
     renderModal()
@@ -158,9 +163,7 @@ describe('HALightControlModal (bug46)', () => {
     it('clamps at 0 % and keeps the focus on the slider row', async () => {
       seedEntity('on', 5) // → 2 %
       const { container } = renderModal()
-      await waitFor(() =>
-        expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '2'),
-      )
+      await waitFor(() => expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '2'))
 
       wheel(10) // 2 - 5 → clamped to 0
       expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '0')
@@ -218,10 +221,7 @@ describe('HALightControlModal (bug46)', () => {
       await waitFor(() => expect(calls).toHaveLength(1))
       expect(calls[0]).toEqual({ entity_id: ENTITY, color_temp_kelvin: 5600 })
       // the selection highlight follows the confirmed preset
-      expect(screen.getByRole('button', { name: '5600 K' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      )
+      expect(screen.getByRole('button', { name: '5600 K' })).toHaveAttribute('aria-pressed', 'true')
     })
 
     it('confirms the second preset with 4500 kelvin', async () => {
@@ -342,9 +342,7 @@ describe('HALightControlModal (bug46)', () => {
       await waitFor(() => expect(screen.getByText('46%')).toBeInTheDocument())
 
       wheel(-10) // 51 → write fails
-      await waitFor(() =>
-        expect(screen.getByRole('alert')).toHaveTextContent('home assistant 500'),
-      )
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('home assistant 500'))
       expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '46')
 
       // the next write succeeds → the display keeps the new value, error clears
@@ -352,7 +350,7 @@ describe('HALightControlModal (bug46)', () => {
         http.post('*/ha-api/services/light/turn_on', async ({ request }) =>
           HttpResponse.json([
             {
-              entity_id: (await request.json() as { entity_id?: string }).entity_id ?? ENTITY,
+              entity_id: ((await request.json()) as { entity_id?: string }).entity_id ?? ENTITY,
               state: 'on',
               attributes: {},
             },
@@ -363,9 +361,7 @@ describe('HALightControlModal (bug46)', () => {
       await new Promise((r) => setTimeout(r, 300))
       wheel(-10) // 51 → succeeds
       await waitFor(() => expect(screen.getByRole('slider')).toHaveAttribute('aria-valuenow', '51'))
-      await waitFor(() =>
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument(),
-      )
+      await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
     })
 
     it('reverts a failed preset selection highlight', async () => {
@@ -380,9 +376,7 @@ describe('HALightControlModal (bug46)', () => {
 
       fireEvent.click(screen.getByRole('button', { name: '2200 K' }))
 
-      await waitFor(() =>
-        expect(screen.getByRole('alert')).toHaveTextContent('home assistant 500'),
-      )
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('home assistant 500'))
       expect(screen.getByRole('button', { name: '2200 K' })).toHaveAttribute(
         'aria-pressed',
         'false',
@@ -391,7 +385,12 @@ describe('HALightControlModal (bug46)', () => {
   })
 
   it('back closes the modal and restores the parent focus entry', () => {
-    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    const parent: ListFocusEntry = {
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: vi.fn(),
+      active: true,
+    }
     ListFocusContext.setActive(parent)
     const onClose = vi.fn()
     seedEntity('off', null)
