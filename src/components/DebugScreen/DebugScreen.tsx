@@ -95,7 +95,9 @@ function CacheSection() {
       />
       <Row
         label="warmedArt"
-        value={`${stats.warmedArt.entries}/${stats.warmedArt.maxEntries} · ${fmtBytes(stats.warmedArt.approxBytes)}`}
+        value={`${stats.warmedArt.entries}/${stats.warmedArt.maxEntries} · ${fmtBytes(
+          stats.warmedArt.approxBytes,
+        )}${stats.warmedArt.failedEntries > 0 ? ` · failed ${stats.warmedArt.failedEntries}` : ''}`}
       />
     </>
   )

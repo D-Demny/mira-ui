@@ -26,7 +26,7 @@ export interface CacheStats {
   useHomeLights: { entities: number }
   useLyrics: { entries: number; maxEntries: number; richsyncTried: number }
   usePrefetch: { entries: number; maxEntries: number; approxBytes: number }
-  warmedArt: { entries: number; maxEntries: number; approxBytes: number }
+  warmedArt: { entries: number; maxEntries: number; approxBytes: number; failedEntries: number }
 }
 
 export function __cacheStats(): CacheStats {
