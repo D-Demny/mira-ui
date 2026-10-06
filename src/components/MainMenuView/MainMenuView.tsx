@@ -387,7 +387,11 @@ export function MainMenuView({
   // render — collapse the per-entity state into a scalar key (like
   // nowPlayingQueueKey) so the categories memo only rebuilds when an entity's
   // id/state/loading/error/active/dimmable actually changes, never on the
-  // object churn alone (bug8.1)
+  // object churn alone (bug8.1). perf (scroll FPS): the key ALSO carries the
+  // render-relevant scalars (actuating/brightness/position/icon) — a light's
+  // brightness can change while its state stays 'on' (phone-side dim), and the
+  // frozen entity list below must refresh whenever any of them moves, or the
+  // memoized dashboard would paint stale visuals.
   const homeSnapshotKey = selectedEntities
     .map(
       (view) =>
@@ -401,9 +405,29 @@ export function MainMenuView({
         '|' +
         (view.active === null ? 'n' : view.active ? 1 : 0) +
         '|' +
-        (view.dimmable ? 1 : 0),
+        (view.dimmable ? 1 : 0) +
+        '|' +
+        (view.actuating ? 1 : 0) +
+        '|' +
+        (view.brightnessPct ?? -1) +
+        '|' +
+        (view.positionPct ?? -1) +
+        '|' +
+        (view.icon ?? ''),
     )
     .join('\u0000')
+
+  // perf (scroll FPS): freeze the entity list on the scalar snapshot above.
+  // The view objects churn identity every render, but their action methods
+  // are stateless delegates bound to entityId (useHomeEntities), so a stale
+  // array is still action-safe; the extended key keeps every render-relevant
+  // field current, so this frozen list is what the memoized dashboard sees —
+  // stable across dial ticks, fresh on every real entity change.
+  const stableSelectedEntities = useMemo(
+    () => selectedEntities,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [homeSnapshotKey],
+  )
 
   // ticket 9.6 (Task C): the Home dashboard grid's view models — the same
   // pure builders HomeDashboardView uses internally, so MainMenuView can
@@ -413,7 +437,7 @@ export function MainMenuView({
   // so the dial stop count and the confirm/hold routing below match exactly
   // what the dashboard renders (a suppressed zone contributes zero slots).
   const homeDashboard = useMemo(() => {
-    const { scenes, lights, covers } = classifyEntities(selectedEntities)
+    const { scenes, lights, covers } = classifyEntities(stableSelectedEntities)
     return {
       sceneRow: scenes.length === 0 ? [] : buildSceneRow(scenes),
       lightGrid: buildLightGrid(lights),
@@ -422,7 +446,7 @@ export function MainMenuView({
           ? { ...buildCoverSection(covers), columns: [] }
           : buildCoverSection(covers),
     }
-  }, [selectedEntities])
+  }, [stableSelectedEntities])
 
   // ticket 9.6 W2, issue #62: short-press actions on the Home dashboard
   // (tap / dial confirm). Each callback receives the slot/tile/column model
@@ -434,32 +458,39 @@ export function MainMenuView({
   // way = stop, otherwise start / resume / reverse into it; see
   // coverToggleDirection in useHomeEntities). The HOLD on a cover column stays
   // the explicit stop (homeHoldRoute below).
-  const homeSceneTap = (slot: SceneSlotModel) => {
+  const homeSceneTap = useCallback((slot: SceneSlotModel) => {
     if (slot.entityId === null) return
-    selectedEntities.find((e) => e.entityId === slot.entityId)?.actuate()
-  }
-  const homeLightTap = (tile: LightTileModel) => {
+    stableSelectedEntities.find((e) => e.entityId === slot.entityId)?.actuate()
+  }, [stableSelectedEntities])
+  const homeLightTap = useCallback((tile: LightTileModel) => {
     if (tile.entityId === null) return
-    selectedEntities.find((e) => e.entityId === tile.entityId)?.actuate()
-  }
+    stableSelectedEntities.find((e) => e.entityId === tile.entityId)?.actuate()
+  }, [stableSelectedEntities])
   // issue #62: the ^/v tap is a DIRECTION press — toggle-to-stop & direction
   // change (moving that way = stop, otherwise start / resume / reverse). The
   // decision lives in useHomeEntities (coverToggleDirection) so it can read
   // the live store state; this only routes the pressed column.
-  const homeCoverAction = (column: CoverColumnModel, direction: 'up' | 'down') => {
-    if (column.entityId === null) return
-    selectedEntities.find((e) => e.entityId === column.entityId)?.coverToggleDirection(direction)
-  }
+  const homeCoverAction = useCallback(
+    (column: CoverColumnModel, direction: 'up' | 'down') => {
+      if (column.entityId === null) return
+      stableSelectedEntities.find((e) => e.entityId === column.entityId)
+        ?.coverToggleDirection(direction)
+    },
+    [stableSelectedEntities],
+  )
   // issue #63: direct positioning from the Home dashboard's position slider —
   // a tap/drag on a cover track reports an exact 0–100 target (the % down
   // from the track's top edge). Same routing as homeCoverAction: placeholder
   // columns are ignored here (the dashboard toasts them), real covers go
   // through the view model's coverSetPosition (cover.set_cover_position +
   // post-settle resync — see setCoverPosition in useHomeEntities)
-  const homeCoverSetPosition = (column: CoverColumnModel, position: number) => {
-    if (column.entityId === null) return
-    selectedEntities.find((e) => e.entityId === column.entityId)?.coverSetPosition(position)
-  }
+  const homeCoverSetPosition = useCallback(
+    (column: CoverColumnModel, position: number) => {
+      if (column.entityId === null) return
+      stableSelectedEntities.find((e) => e.entityId === column.entityId)?.coverSetPosition(position)
+    },
+    [stableSelectedEntities],
+  )
 
   // ticket 9.6 W2-3: shared HOLD routing for Home dashboard slots — ONE
   // helper used by BOTH input paths (the dial hold via onHoldContent below,
@@ -499,6 +530,25 @@ export function MainMenuView({
       homeDashboard.coverSection.columns[li - homeDashboard.lightGrid.length] ?? null,
     )
   }
+
+  // perf (scroll FPS): <HomeDashboardView> is memoized — its hold/tap/scroll
+  // props must keep stable identity across dial ticks or the whole grid
+  // re-renders every one. homeHoldRoute reads fresh state each render, so pin
+  // it in a ref written at render time (the same latest-callback idiom as
+  // cardHoldRoutingRef below — the render-body ref write is intentional, the
+  // react-hooks/refs finding is the accepted false positive for this pattern)
+  // and expose stable wrappers.
+  const homeHoldRoutingRef = useRef<(tile: LightTileModel | null, column: CoverColumnModel | null) => void>(
+    () => {},
+  )
+  // eslint-disable-next-line react-hooks/refs
+  homeHoldRoutingRef.current = homeHoldRoute
+  const handleHomeLightHold = useCallback((tile: LightTileModel) => {
+    homeHoldRoutingRef.current(tile, null)
+  }, [])
+  const handleHomeCoverHold = useCallback((column: CoverColumnModel) => {
+    homeHoldRoutingRef.current(null, column)
+  }, [])
 
   // bug28: Spotify's Connect state can ship ghost slots in next_tracks for
   // single-track playback (entries with a uri but no metadata → blank card)
@@ -1241,6 +1291,19 @@ export function MainMenuView({
     [settings],
   )
 
+  // issue #57 T1: tap → focus re-root / touch scroll → clear — stabilized for
+  // the memoized dashboard (focusContent is a stable hook callback, the
+  // setter is constant)
+  const { focusContent } = focus
+  const handleHomeSlotTapped = useCallback(
+    (index: number) => {
+      setHomeTouchFocusCleared(false)
+      focusContent(index)
+    },
+    [focusContent],
+  )
+  const handleHomeTouchScroll = useCallback(() => setHomeTouchFocusCleared(true), [])
+
   // bug1: while focus is in the sidebar, the carousel previews the focused
   // item's content; in the content pane it shows the confirmed category
   const displayedCategory =
@@ -1439,12 +1502,16 @@ export function MainMenuView({
 
   // bug20: tapping any sidebar item (including 'Läuft gerade') transfers focus
   // to the content pane; there is no tap target that exits the menu
-  const onCategorySelect = (id: string) => {
+  const { selectSidebar } = focus
+  // perf (scroll FPS): SidebarNav is memoized — a fresh onSelect every dial
+  // tick would re-render the whole nav; categories and selectSidebar are both
+  // tick-stable, so the callback identity can be too
+  const onCategorySelect = useCallback((id: string) => {
     const index = categories.findIndex((category) => category.id === id)
     if (index < 0) return
     // selectSidebar triggers onSelectSidebar, which updates activeCategoryId
-    focus.selectSidebar(index)
-  }
+    selectSidebar(index)
+  }, [categories, selectSidebar])
 
   return (
     <div
@@ -1523,7 +1590,7 @@ export function MainMenuView({
             }
           >
             <HomeDashboardView
-              entities={selectedEntities}
+              entities={stableSelectedEntities}
               // issue #57 T1: the dial focus hides after a touch scroll until a
               // dial tick or slot tap restores it (homeTouchFocusCleared above)
               focusedIndex={
@@ -1539,18 +1606,15 @@ export function MainMenuView({
               onCoverSetPosition={homeCoverSetPosition}
               // ticket 9.6 W2-3: touch HOLD — the SAME shared routing as the
               // dial hold (homeHoldRoute), so both input paths stay in lockstep
-              onLightHold={(tile) => homeHoldRoute(tile, null)}
-              onCoverHold={(column) => homeHoldRoute(null, column)}
+              onLightHold={handleHomeLightHold}
+              onCoverHold={handleHomeCoverHold}
               // issue #57 T1: tap → focus re-root — a SHORT tap moves the dial
               // onto the tapped slot WITHOUT confirming (the slot's own tap
               // callback already ran) and restores any cleared focus
-              onSlotTapped={(index) => {
-                setHomeTouchFocusCleared(false)
-                focus.focusContent(index)
-              }}
+              onSlotTapped={handleHomeSlotTapped}
               // issue #57 T1: touch scroll → clear the dial focus until the next
               // dial tick or slot tap (gated into focusedIndex above)
-              onTouchScroll={() => setHomeTouchFocusCleared(true)}
+              onTouchScroll={handleHomeTouchScroll}
             />
           </div>
         ) : (
