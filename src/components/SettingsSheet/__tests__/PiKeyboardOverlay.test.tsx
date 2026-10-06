@@ -67,7 +67,12 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
   })
 
   it('registers a focus entry on the list focus stack while open (bug31 pattern)', () => {
-    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    const parent: ListFocusEntry = {
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: vi.fn(),
+      active: true,
+    }
     ListFocusContext.setActive(parent)
     const { unmount } = render(<PiKeyboardOverlay field="user" onClose={vi.fn()} />)
 
@@ -228,7 +233,12 @@ describe('PiKeyboardOverlay (ticket10-2)', () => {
   })
 
   it('back closes only the keyboard and the press is consumed (parent entry untouched)', () => {
-    const parent: ListFocusEntry = { onWheel: vi.fn(), onConfirm: null, onBack: vi.fn(), active: true }
+    const parent: ListFocusEntry = {
+      onWheel: vi.fn(),
+      onConfirm: null,
+      onBack: vi.fn(),
+      active: true,
+    }
     ListFocusContext.setActive(parent)
     const onClose = vi.fn()
     render(<PiKeyboardOverlay field="ip" onClose={onClose} />)

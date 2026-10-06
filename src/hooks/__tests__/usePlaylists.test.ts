@@ -103,10 +103,8 @@ describe('usePlaylists', () => {
     server.use(
       http.get('*/web-api/me/playlists', () => {
         callCount++
-        const extra = callCount === 2 ? { id: 'pl3', name: 'New' } as SpotifyPlaylist : null
-        const items = callCount === 2
-          ? [...mockPlaylists, extra]
-          : mockPlaylists
+        const extra = callCount === 2 ? ({ id: 'pl3', name: 'New' } as SpotifyPlaylist) : null
+        const items = callCount === 2 ? [...mockPlaylists, extra] : mockPlaylists
         return HttpResponse.json({
           items,
           total: items.length,
@@ -116,7 +114,7 @@ describe('usePlaylists', () => {
       }),
     )
 
-    const { result, rerender } = renderHook(() => usePlaylists())
+    const { result } = renderHook(() => usePlaylists())
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.items.length).toBe(2)
     expect(callCount).toBe(1)

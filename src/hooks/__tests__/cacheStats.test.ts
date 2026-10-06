@@ -139,9 +139,7 @@ describe('__cacheStats (bug45 option C: cache readout)', () => {
       ),
     )
 
-    const { result: playlistsResult, unmount: playlistsUnmount } = renderHook(() =>
-      usePlaylists(),
-    )
+    const { result: playlistsResult, unmount: playlistsUnmount } = renderHook(() => usePlaylists())
     await waitFor(() => expect(playlistsResult.current.loading).toBe(false))
     expect(playlistsResult.current.items).toHaveLength(1)
 

@@ -1,10 +1,5 @@
 import { memo, useCallback, useEffect, useState } from 'react'
-import {
-  fetchPiStatus,
-  PI_STATUS_POLL_MS,
-  type PiRecovery,
-  type PiStatus,
-} from '@/api/piStatus'
+import { fetchPiStatus, PI_STATUS_POLL_MS, type PiRecovery, type PiStatus } from '@/api/piStatus'
 import { useSettings, type PiProfile } from '@/settings'
 import styles from './ConnectionChooser.module.scss'
 
@@ -145,9 +140,7 @@ function recoveryAgeSeconds(rfc3339: string | undefined, now: number): number | 
 // failures, ticket constraint 3)
 function recoveryTextFor(recovery: PiRecovery, ageSeconds: number | null): string {
   const base =
-    recovery === 'rebooting'
-      ? 'RPi wird neu gestartet — bitte warten…'
-      : 'Warte auf RPi-Boot…'
+    recovery === 'rebooting' ? 'RPi wird neu gestartet — bitte warten…' : 'Warte auf RPi-Boot…'
   return ageSeconds === null ? base : `${base} (seit ${ageSeconds}s)`
 }
 
@@ -232,17 +225,11 @@ function ConnectionChooserImpl({ onPickPc, onPickBluetooth, onPickUsbTethering }
           // the recovery replaces the onboarding card: the daemon rebooted
           // the RPi (or is waiting for its boot) and the onboarding must not
           // be offered in the meantime
-          <div
-            className={`${styles.card} ${styles.recoveryCard}`}
-            role="status"
-            aria-live="polite"
-          >
+          <div className={`${styles.card} ${styles.recoveryCard}`} role="status" aria-live="polite">
             <span className={styles.iconWrap} aria-hidden>
               <UsbIcon />
             </span>
-            <span className={styles.recoveryText}>
-              {recoveryTextFor(recovery, recoveryAge)}
-            </span>
+            <span className={styles.recoveryText}>{recoveryTextFor(recovery, recoveryAge)}</span>
           </div>
         ) : null}
       </div>

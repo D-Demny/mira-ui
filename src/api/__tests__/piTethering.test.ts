@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
-import {
-  getPiTetheringStatus,
-  startPiTethering,
-  TETHERING_TIMEOUT_MS,
-} from '../piTethering'
+import { getPiTetheringStatus, startPiTethering, TETHERING_TIMEOUT_MS } from '../piTethering'
 
 // ticket10-6A: the daemon's USB-tethering endpoints (exact contract in the
 // Update-Eintrag 10-6A of aktueller-stand.md) — the client the onboarding
@@ -211,9 +207,7 @@ describe('pi tethering api (ticket10-6A contract)', () => {
     it('times out after 10 seconds', async () => {
       vi.useFakeTimers()
       server.use(
-        http.get('*/api/pi/tethering/status', () =>
-          new Promise<HttpResponse<undefined>>(() => {}),
-        ),
+        http.get('*/api/pi/tethering/status', () => new Promise<HttpResponse<undefined>>(() => {})),
       )
       const pending = getPiTetheringStatus().catch((e: unknown) => e)
       await vi.advanceTimersByTimeAsync(TETHERING_TIMEOUT_MS)

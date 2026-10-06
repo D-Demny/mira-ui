@@ -117,7 +117,10 @@ function DevicePickerModal({
       if (d && d.can_transfer && !d.is_offline) onSelect?.(d)
     },
     onBack: () => onClose?.(),
-    initialIndex: Math.max(0, devices.findIndex((d) => d.is_active)),
+    initialIndex: Math.max(
+      0,
+      devices.findIndex((d) => d.is_active),
+    ),
   })
 
   const empty = <div className={styles.empty}>No active devices to select from for playback</div>

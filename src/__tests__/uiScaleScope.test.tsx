@@ -79,9 +79,7 @@ beforeEach(() => {
         offset: 0,
       }),
     ),
-    http.get('*/web-api/me/player/recently-played', () =>
-      HttpResponse.json({ items: mockRecent }),
-    ),
+    http.get('*/web-api/me/player/recently-played', () => HttpResponse.json({ items: mockRecent })),
   )
 })
 

@@ -75,10 +75,7 @@ export function resolveArtworkUrl(cdnUrl: string, remoteBlur: boolean): string {
 // Color engine adapter (epic10 task 2): the Pi colors route when
 // remoteColors is enabled, otherwise undefined — the caller keeps its local
 // extraction (the standalone behavior, unchanged).
-export function resolveColorsUrl(
-  cdnUrl: string,
-  remoteColors: boolean,
-): string | undefined {
+export function resolveColorsUrl(cdnUrl: string, remoteColors: boolean): string | undefined {
   return remoteColors ? remoteColorsUrl(cdnUrl) : undefined
 }
 
@@ -114,9 +111,7 @@ function isRemoteColors(raw: unknown): raw is RemoteColors {
 // payload, or a missing active profile (ticket10-5A) — the caller
 // (useColorExtract) then falls back to the local extraction, so a failing
 // Pi never changes the result the user sees.
-export async function fetchRemoteColors(
-  cdnUrl: string,
-): Promise<[number, number, number]> {
+export async function fetchRemoteColors(cdnUrl: string): Promise<[number, number, number]> {
   // no active profile → no Pi to fetch from (standalone)
   if (activePiServerBase() === null) {
     throw new Error('mira server colors: no active pi profile')

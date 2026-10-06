@@ -13,27 +13,33 @@ export function useListFocus({ itemCount, onSelect, allowTapSelect = true }: Use
 
   const scrollRef = useRef<HTMLLIElement | null>(null)
 
-  const handleWheel = useCallback((e: WheelEvent) => {
-    if (e.deltaX === 0) return
-    e.preventDefault()
-    // hardware: clockwise turn = negative deltaX, and should move focus down
-    const dir = e.deltaX > 0 ? -1 : 1
-    const next = Math.max(0, Math.min(itemCount - 1, focusedIndexRef.current + dir))
-    focusedIndexRef.current = next
-    setFocusedIndex(next)
-  }, [itemCount])
+  const handleWheel = useCallback(
+    (e: WheelEvent) => {
+      if (e.deltaX === 0) return
+      e.preventDefault()
+      // hardware: clockwise turn = negative deltaX, and should move focus down
+      const dir = e.deltaX > 0 ? -1 : 1
+      const next = Math.max(0, Math.min(itemCount - 1, focusedIndexRef.current + dir))
+      focusedIndexRef.current = next
+      setFocusedIndex(next)
+    },
+    [itemCount],
+  )
 
   const confirm = useCallback(() => {
     onSelect(focusedIndexRef.current)
   }, [onSelect])
 
-  const tapItem = useCallback((index: number) => {
-    focusedIndexRef.current = index
-    setFocusedIndex(index)
-    if (allowTapSelect) {
-      onSelect(index)
-    }
-  }, [onSelect, allowTapSelect])
+  const tapItem = useCallback(
+    (index: number) => {
+      focusedIndexRef.current = index
+      setFocusedIndex(index)
+      if (allowTapSelect) {
+        onSelect(index)
+      }
+    },
+    [onSelect, allowTapSelect],
+  )
 
   // keep focus in range when the list shrinks (e.g. items removed while focused)
   useEffect(() => {
@@ -65,6 +71,8 @@ export function useListFocus({ itemCount, onSelect, allowTapSelect = true }: Use
     handleWheel,
     confirm,
     tapItem,
-    setFocusRef: (el: HTMLLIElement | null) => { scrollRef.current = el },
+    setFocusRef: (el: HTMLLIElement | null) => {
+      scrollRef.current = el
+    },
   }
 }

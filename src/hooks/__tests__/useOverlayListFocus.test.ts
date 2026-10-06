@@ -135,8 +135,7 @@ describe('useOverlayListFocus (bug31)', () => {
 
   it('keeps the focus in range when the list shrinks', () => {
     const { result, rerender } = renderHook(
-      ({ count }) =>
-        useOverlayListFocus({ itemCount: count, onConfirm: vi.fn(), onBack: vi.fn() }),
+      ({ count }) => useOverlayListFocus({ itemCount: count, onConfirm: vi.fn(), onBack: vi.fn() }),
       { initialProps: { count: 4 } },
     )
 

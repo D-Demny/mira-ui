@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { NavigationProvider, useNavigation } from '@/navigation/navigationContext'
+import { NavigationProvider } from '@/navigation/NavigationProvider'
+import { useNavigation } from '@/navigation/context'
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <NavigationProvider>{children}</NavigationProvider>

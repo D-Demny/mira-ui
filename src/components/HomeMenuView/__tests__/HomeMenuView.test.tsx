@@ -55,9 +55,7 @@ describe('HomeMenuView', () => {
       http.post('*/ha-api/services/light/toggle', async ({ request }) => {
         const body = (await request.json()) as { entity_id?: string }
         toggled.push(body.entity_id ?? '')
-        return HttpResponse.json([
-          { entity_id: body.entity_id, state: 'on', attributes: {} },
-        ])
+        return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
       }),
     )
     render(<HomeMenuView />)
@@ -73,9 +71,7 @@ describe('HomeMenuView', () => {
       http.post('*/ha-api/services/light/toggle', async ({ request }) => {
         const body = (await request.json()) as { entity_id?: string }
         toggled.push(body.entity_id ?? '')
-        return HttpResponse.json([
-          { entity_id: body.entity_id, state: 'on', attributes: {} },
-        ])
+        return HttpResponse.json([{ entity_id: body.entity_id, state: 'on', attributes: {} }])
       }),
     )
     render(<HomeMenuView />)
@@ -89,9 +85,8 @@ describe('HomeMenuView', () => {
 
   it('shows an Offline badge when Home Assistant is unreachable', async () => {
     server.use(
-      http.get(
-        '*/ha-api/states/light.*',
-        () => HttpResponse.json({ message: 'unauthorized' }, { status: 500 }),
+      http.get('*/ha-api/states/light.*', () =>
+        HttpResponse.json({ message: 'unauthorized' }, { status: 500 }),
       ),
     )
     render(<HomeMenuView />)

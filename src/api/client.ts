@@ -268,7 +268,7 @@ export async function fetchUserPlaylists(
     return { items: body.items ?? [], total: body.total ?? 0 }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    throw new Error(`web-api/me/playlists: ${message}`)
+    throw new Error(`web-api/me/playlists: ${message}`, { cause: err })
   }
 }
 
@@ -299,7 +299,7 @@ export async function fetchPlaylistTracks(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    throw new Error(`web-api/playlists/${playlistId}/tracks: ${message}`)
+    throw new Error(`web-api/playlists/${playlistId}/tracks: ${message}`, { cause: err })
   }
 }
 
@@ -348,6 +348,6 @@ export async function fetchRecentlyPlayed(
     return body.items ?? []
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    throw new Error(`web-api/me/player/recently-played: ${message}`)
+    throw new Error(`web-api/me/player/recently-played: ${message}`, { cause: err })
   }
 }

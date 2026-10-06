@@ -21,7 +21,14 @@ beforeEach(() => {
   __resetSettings()
   updateSettings({
     piProfiles: [
-      { id: 'pi-1', label: 'Pi 1', ip: PROFILE_IP, user: 'root', password: '', keyInstalled: false },
+      {
+        id: 'pi-1',
+        label: 'Pi 1',
+        ip: PROFILE_IP,
+        user: 'root',
+        password: '',
+        keyInstalled: false,
+      },
     ],
     activePiId: 'pi-1',
   })
@@ -33,14 +40,21 @@ describe('epic10 task 2: route schema', () => {
     // /img/<key>/160.jpg with exactly one path segment between /img/ and the
     // size suffix (the Pi service splits on '/'). ticket10-5A: the base is
     // the active profile's address
-    expect(remoteArtUrl(CDN)).toBe(`${piServerBase(PROFILE_IP)}/img/${encodeURIComponent(CDN)}/160.jpg`)
-    const key = remoteArtUrl(CDN).slice(`${piServerBase(PROFILE_IP)}/img/`.length, -'/160.jpg'.length)
+    expect(remoteArtUrl(CDN)).toBe(
+      `${piServerBase(PROFILE_IP)}/img/${encodeURIComponent(CDN)}/160.jpg`,
+    )
+    const key = remoteArtUrl(CDN).slice(
+      `${piServerBase(PROFILE_IP)}/img/`.length,
+      -'/160.jpg'.length,
+    )
     expect(key).not.toContain('/')
     expect(decodeURIComponent(key)).toBe(CDN)
   })
 
   it('builds the colors route from the percent-encoded CDN url', () => {
-    expect(remoteColorsUrl(CDN)).toBe(`${piServerBase(PROFILE_IP)}/img/${encodeURIComponent(CDN)}/colors`)
+    expect(remoteColorsUrl(CDN)).toBe(
+      `${piServerBase(PROFILE_IP)}/img/${encodeURIComponent(CDN)}/colors`,
+    )
   })
 
   it('keeps the direct CDN url when the features are off (standalone)', () => {
@@ -53,15 +67,31 @@ describe('epic10 task 2: route schema', () => {
   it('follows the active profile (profile switch moves the base url)', () => {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: PROFILE_IP, user: 'root', password: '', keyInstalled: false },
-        { id: 'pi-2', label: 'Pi 2', ip: '10.9.9.9', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: PROFILE_IP,
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
+        {
+          id: 'pi-2',
+          label: 'Pi 2',
+          ip: '10.9.9.9',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-2',
     })
     expect(remoteArtUrl(CDN)).toBe(
       `${piServerBase('10.9.9.9')}/img/${encodeURIComponent(CDN)}/160.jpg`,
     )
-    expect(remoteColorsUrl(CDN)).toBe(`${piServerBase('10.9.9.9')}/img/${encodeURIComponent(CDN)}/colors`)
+    expect(remoteColorsUrl(CDN)).toBe(
+      `${piServerBase('10.9.9.9')}/img/${encodeURIComponent(CDN)}/colors`,
+    )
   })
 
   it('degrades to the standalone urls while no profile is configured', () => {
@@ -87,9 +117,7 @@ describe('fetchRemoteColors', () => {
 
   it('rejects on a non-OK status', async () => {
     server.use(
-      http.get('*/img/*/colors', () =>
-        HttpResponse.json({ error: 'nope' }, { status: 500 }),
-      ),
+      http.get('*/img/*/colors', () => HttpResponse.json({ error: 'nope' }, { status: 500 })),
     )
     await expect(fetchRemoteColors(CDN)).rejects.toThrow('mira server colors 500')
   })

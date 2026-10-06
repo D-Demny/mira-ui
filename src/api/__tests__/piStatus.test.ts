@@ -58,9 +58,7 @@ describe('pi status api (ticket10-4)', () => {
 
   it('times out after 10 seconds', async () => {
     vi.useFakeTimers()
-    server.use(
-      http.get('*/api/pi/status', () => new Promise<HttpResponse<undefined>>(() => {})),
-    )
+    server.use(http.get('*/api/pi/status', () => new Promise<HttpResponse<undefined>>(() => {})))
     const pending = fetchPiStatus().catch((e: unknown) => e)
     await vi.advanceTimersByTimeAsync(PI_STATUS_TIMEOUT_MS)
     const err = await pending

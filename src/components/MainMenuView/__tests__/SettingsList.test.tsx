@@ -95,10 +95,7 @@ describe('bug36: settings row height & structure', () => {
   it('pins the compact row height in the stylesheet (bug43)', () => {
     // read from disk: vitest's CSS pipeline (css.modules in vitest.config.ts)
     // intercepts .scss files before ?raw, so a raw import yields no source
-    const scss = readFileSync(
-      'src/components/MainMenuView/SettingsList.module.scss',
-      'utf8',
-    )
+    const scss = readFileSync('src/components/MainMenuView/SettingsList.module.scss', 'utf8')
     const rowRule = scss.match(/\.row \{([^}]*)\}/)
     expect(rowRule).not.toBeNull()
     // bug43: row height scaled down by exactly 25% — min-height 96px to

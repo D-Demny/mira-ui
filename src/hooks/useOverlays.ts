@@ -1,14 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 
 export type OverlayId =
-  | 'screensaver'
-  | 'report'
-  | 'debug'
-  | 'deviceMenu'
-  | 'btMenu'
-  | 'settings'
-  | 'powerMenu'
-  | 'menu'
+  'screensaver' | 'report' | 'debug' | 'deviceMenu' | 'btMenu' | 'settings' | 'powerMenu' | 'menu'
 
 /**
  * Back closes the first of these that is open. A fixed order rather than a

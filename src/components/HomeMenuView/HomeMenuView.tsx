@@ -56,7 +56,13 @@ function HomeMenuViewImpl() {
     view.error ? styles.badgeError : view.active === true && !view.loading ? styles.badgeOn : ''
 
   // one row per focus-list item (entity rows carry a status badge)
-  const renderRow = (index: number, key: string, label: string, meta: string, badge: string | null) => {
+  const renderRow = (
+    index: number,
+    key: string,
+    label: string,
+    meta: string,
+    badge: string | null,
+  ) => {
     const view = index < entities.length ? entities[index] : null
     const focused = index === focusedIndex
     return (
@@ -79,11 +85,7 @@ function HomeMenuViewImpl() {
           <span className={styles.meta}>{meta}</span>
         </span>
         {badge !== null ? (
-          <span
-            className={`${styles.badge} ${view ? badgeClassFor(view) : ''}`}
-          >
-            {badge}
-          </span>
+          <span className={`${styles.badge} ${view ? badgeClassFor(view) : ''}`}>{badge}</span>
         ) : null}
       </li>
     )
@@ -97,7 +99,13 @@ function HomeMenuViewImpl() {
         <h2 className={styles.sectionTitle}>Home Assistant</h2>
         <ul className={styles.list} onWheel={handleWheel as unknown as React.WheelEventHandler}>
           {entities.map((view, i) =>
-            renderRow(i, view.entityId, view.label, view.room ?? domainLabelFor(view.domain), badgeFor(view)),
+            renderRow(
+              i,
+              view.entityId,
+              view.label,
+              view.room ?? domainLabelFor(view.domain),
+              badgeFor(view),
+            ),
           )}
         </ul>
       </section>

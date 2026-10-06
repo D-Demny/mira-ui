@@ -2,19 +2,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/__tests__/msw-server'
-import {
-  __resetMiraServerState,
-  checkMiraServer,
-} from '@/hooks/useMiraServer'
+import { __resetMiraServerState, checkMiraServer } from '@/hooks/useMiraServer'
 import { __resetSettings, updateSettings } from '@/settings'
 import { type MiraServerCapabilities } from '@/api/miraServer'
-import {
-  DEFAULT_COLOR,
-  clearColorCache,
-  darkBg,
-  rgba,
-  useColorExtract,
-} from '../useColorExtract'
+import { DEFAULT_COLOR, clearColorCache, darkBg, rgba, useColorExtract } from '../useColorExtract'
 
 // jsdom has no canvas 2D backend: stub the context with a deterministic pixel source
 const SAMPLE = 32
@@ -69,14 +60,14 @@ afterAll(() => {
   vi.restoreAllMocks()
 })
 
-  beforeEach(() => {
-    clearColorCache()
-    __resetMiraServerState()
-    __resetSettings() // ticket10-5A: start every test without a Pi profile
-    fakeCtx.getImageData.mockClear()
-    currentData = makeData(230, 60, 30)
-    taintCanvas = false
-  })
+beforeEach(() => {
+  clearColorCache()
+  __resetMiraServerState()
+  __resetSettings() // ticket10-5A: start every test without a Pi profile
+  fakeCtx.getImageData.mockClear()
+  currentData = makeData(230, 60, 30)
+  taintCanvas = false
+})
 
 describe('useColorExtract', () => {
   it('returns the default color without a url', () => {
@@ -133,7 +124,14 @@ describe('epic10 task 2: remoteColors adapter', () => {
   async function enableRemoteColors() {
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })
@@ -178,7 +176,14 @@ describe('epic10 task 2: remoteColors adapter', () => {
     server.use(http.get('*/img/*/colors', () => HttpResponse.json({ dominant: [10, 20, 30] })))
     updateSettings({
       piProfiles: [
-        { id: 'pi-1', label: 'Pi 1', ip: '192.168.7.1', user: 'root', password: '', keyInstalled: false },
+        {
+          id: 'pi-1',
+          label: 'Pi 1',
+          ip: '192.168.7.1',
+          user: 'root',
+          password: '',
+          keyInstalled: false,
+        },
       ],
       activePiId: 'pi-1',
     })

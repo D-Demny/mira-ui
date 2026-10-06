@@ -85,7 +85,10 @@ function CacheSection() {
         value={`${stats.useColorExtract.entries}/${stats.useColorExtract.maxEntries} · ${fmtBytes(stats.useColorExtract.approxBytes)}`}
       />
       <Row label="useHomeLights" value={`${stats.useHomeLights.entities} entities`} />
-      <Row label="useLyrics" value={`${stats.useLyrics.entries}/${stats.useLyrics.maxEntries} LRU`} />
+      <Row
+        label="useLyrics"
+        value={`${stats.useLyrics.entries}/${stats.useLyrics.maxEntries} LRU`}
+      />
       <Row
         label="usePrefetch"
         value={`${stats.usePrefetch.entries}/${stats.usePrefetch.maxEntries} uris · ${fmtBytes(stats.usePrefetch.approxBytes)}`}

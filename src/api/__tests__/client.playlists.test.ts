@@ -213,11 +213,7 @@ describe('fetchRecentlyPlayed', () => {
   })
 
   it('throws on non-OK response', async () => {
-    server.use(
-      http.get('*/web-api/me/player/recently-played', () =>
-        HttpResponse.error(),
-      ),
-    )
+    server.use(http.get('*/web-api/me/player/recently-played', () => HttpResponse.error()))
 
     await expect(fetchRecentlyPlayed()).rejects.toThrow()
   })
@@ -274,12 +270,10 @@ describe('pickArtUrl (bug27)', () => {
   })
 
   it('falls back to the item images when the album carries none', () => {
-    expect(
-      pickArtUrl({ album: { images: [] }, images: [{ url: 'https://i.scdn.co/own' }] }),
-    ).toBe('https://i.scdn.co/own')
-    expect(pickArtUrl({ images: [{ url: 'https://i.scdn.co/own' }] })).toBe(
+    expect(pickArtUrl({ album: { images: [] }, images: [{ url: 'https://i.scdn.co/own' }] })).toBe(
       'https://i.scdn.co/own',
     )
+    expect(pickArtUrl({ images: [{ url: 'https://i.scdn.co/own' }] })).toBe('https://i.scdn.co/own')
   })
 
   it('skips empty urls down the whole fallback chain', () => {

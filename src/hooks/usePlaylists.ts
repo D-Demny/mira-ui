@@ -67,7 +67,7 @@ export function usePlaylists() {
   }, [])
 
   useEffect(() => {
-    fetchPlaylists()
+    void fetchPlaylists()
     return () => {
       abortRef.current?.abort()
     }
@@ -75,7 +75,7 @@ export function usePlaylists() {
 
   const refetch = useCallback(() => {
     cache.delete('playlists')
-    fetchPlaylists()
+    void fetchPlaylists()
   }, [fetchPlaylists])
 
   return { items, loading, error, refetch }
