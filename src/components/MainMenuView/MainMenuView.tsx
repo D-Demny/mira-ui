@@ -1086,13 +1086,15 @@ export function MainMenuView({
     return true
   }
 
-  // bug25: NotchedSlider drag (touch) updates the same store the dial does
-  const handleSliderChange = (rowId: string, value: number) => {
+  // bug25: NotchedSlider drag (touch) updates the same store the dial does.
+  // Stable identity (updateSettings is a module-level store setter) — SettingsList
+  // is memoized and a fresh onSliderChange every tick would defeat it (perf scroll)
+  const handleSliderChange = useCallback((rowId: string, value: number) => {
     if (rowId === 'set-display') updateSettings({ uiScalePct: value })
     else if (rowId === 'set-lyricsync') updateSettings({ lyricOffsetMs: value })
     else if (rowId === 'set-volume') updateSettings({ volumeStepPct: value })
     else if (rowId === 'set-brightness') updateSettings({ brightness: value })
-  }
+  }, [])
 
   const focus = useMainMenuFocus({
     sidebarCount: categories.length,
@@ -1224,6 +1226,19 @@ export function MainMenuView({
   const handleCardTap = useCallback(
     (_card: MenuCard, index: number) => selectFocusedCard(index),
     [selectFocusedCard],
+  )
+
+  // perf (scroll FPS): SettingsList is memoized — every prop must keep a
+  // stable identity across dial ticks or the whole list re-renders each one.
+  // selectFocusedCard is hook-stable; the settings snapshot only changes
+  // identity on a store write (useSettings/useSyncExternalStore), so both
+  // callbacks are tick-stable
+  const handleSettingsRowTap = useCallback((index: number) => selectFocusedCard(index), [
+    selectFocusedCard,
+  ])
+  const handleToggleAuto = useCallback(
+    () => updateSettings({ autoBrightness: !settings.autoBrightness }),
+    [settings],
   )
 
   // bug1: while focus is in the sidebar, the carousel previews the focused
@@ -1483,9 +1498,9 @@ export function MainMenuView({
               rows={settingsRows}
               focusedIndex={focus.activePane === 'content' ? focus.contentIndex : undefined}
               adjustingRowId={activeAdjustingRowId}
-              onRowTap={(index) => selectFocusedCard(index)}
+              onRowTap={handleSettingsRowTap}
               onSliderChange={handleSliderChange}
-              onToggleAuto={() => updateSettings({ autoBrightness: !settings.autoBrightness })}
+              onToggleAuto={handleToggleAuto}
             />
           </div>
         ) : displayedCategory.id === 'home' ? (
