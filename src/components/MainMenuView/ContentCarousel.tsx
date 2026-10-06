@@ -230,6 +230,10 @@ export function ContentCarousel({
   const focusedCardRef = useRef<HTMLElement | null>(null)
   const carouselRef = useRef<HTMLDivElement | null>(null)
   const lastCategoryIdRef = useRef(categoryId)
+  // perf (scroll FPS): whether the PREVIOUS render was in sidebar preview mode
+  // (no content focus) — part of the bug39 purge guard below, because back
+  // from a deep content dial flips it back ON without any categoryId change
+  const lastInPreviewRef = useRef(focusedIndex == null)
   const lastActiveTrackKeyRef = useRef(activeTrackKey)
   // bug18: measured physical scroll position, feeding the viewport safety
   // guard (smooth path only — the dial path bypasses the guard, see below)
@@ -313,12 +317,22 @@ export function ContentCarousel({
   // browser paints the switch frame AND before the passive metrics sampler
   // below: the new category is always painted from card 0 with a pure
   // index-0 window, never from the old category's scroll position.
-  // (bug8.1: keyed on categoryId, not on the cards array identity — the
-  // parent rebuilds it on every re-render, which reset the scroll on each
-  // dial tick)
+  // (bug8.1: keyed on categoryId + preview mode, NOT on the cards array
+  // identity — the parent rebuilds it on every re-render, which reset the
+  // scroll on each dial tick)
   useLayoutEffect(() => {
-    if (lastCategoryIdRef.current === categoryId) return
+    // the guard ALSO fires when preview mode flips (focusedIndex ↔ defined),
+    // not only on category change: BACK from a deep-dialed content view keeps
+    // the same categoryId but drops focusedIndex to undefined while the port
+    // is still scrolled deep — without this, the preview would render its
+    // front-mounted cards at the old offset (blank gaps). The reset below
+    // glides the port back to card 0 and re-arms bug59 exactly as a real
+    // category switch does. While the dial sits in ONE mode, both refs match
+    // and this is a per-tick no-op (early return above)
+    if (lastCategoryIdRef.current === categoryId && lastInPreviewRef.current === (focusedIndex == null))
+      return
     lastCategoryIdRef.current = categoryId
+    lastInPreviewRef.current = focusedIndex == null
     if (carouselRef.current) carouselRef.current.scrollLeft = 0
     // reset the window state to the pure index window; the guard stays
     // disabled until the fresh (zeroed) position is sampled below
@@ -335,7 +349,7 @@ export function ContentCarousel({
       liveBlurRef.current = true
       setLiveBlur(true)
     }
-  }, [categoryId, underflowPx])
+  }, [categoryId, underflowPx, focusedIndex])
 
   // bug41: an active-track change inside the same category (queue skip in
   // 'Läuft gerade') re-orders the card list around the new current track

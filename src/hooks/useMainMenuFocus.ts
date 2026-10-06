@@ -224,6 +224,18 @@ export function useMainMenuFocus({
     if (activePaneRef.current === 'content') {
       if (onContentBackRef.current?.()) return true
       setActivePane('sidebar')
+      // perf (scroll FPS): returning to the sidebar preview re-roots the
+      // content dial at card 0 — the preview's blur target is card 0 (bug1)
+      // and the carousel glides back to the front (the bug39 purge's
+      // preview-flip guard), so a stale deep index would point the preview
+      // at an unmounted card. Mirrors moveSidebar's preview reset, including
+      // the jump kind: the port animates, it is not a dial tick
+      if (contentIndexRef.current !== 0) {
+        contentIndexRef.current = 0
+        setContentIndexState(0)
+        // bug47: a programmatic reset — smooth scroll, not a dial tick
+        setContentMoveKind('jump')
+      }
       return true
     }
     onExitRef.current()

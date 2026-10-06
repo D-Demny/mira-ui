@@ -173,6 +173,7 @@ import {
   CARD_WIDTH,
   CAROUSEL_EDGE_PADDING,
   COLLAPSED_SIDEBAR_WIDTH,
+  PREVIEW_MOUNT_COUNT,
   dialScrollLeft,
   sidebarOverlap,
   sidebarOverlapAt,
@@ -509,6 +510,39 @@ describe('bug5/bug6/bug18: windowed rendering', () => {
         count * CARD_WIDTH + (count - 1) * CARD_GAP,
       )
     }
+  })
+
+  it('sidebar preview mode mounts only the first cards (perf scroll FPS)', () => {
+    const { container, rerender } = render(
+      <ContentCarousel cards={MANY} categoryId="playlists" />,
+    )
+    // focusedIndex undefined = the sidebar PREVIEW: the capped leading
+    // PREVIEW_MOUNT_COUNT cards, not the 33-card dial window (every sidebar
+    // tick used to remount that whole window)
+    expect(container.querySelectorAll('article')).toHaveLength(PREVIEW_MOUNT_COUNT)
+    expect(screen.getByText('Card 0')).toBeInTheDocument()
+    expect(screen.queryByText('Card 8')).not.toBeInTheDocument()
+    const spacers = container.querySelectorAll('.spacer')
+    expect(spacers).toHaveLength(1)
+    // the missing 42 cards collapse into one trailing spacer
+    // (42·170 + 41·24 = 8124 px)
+    expect((spacers[0] as HTMLElement).style.width).toBe('8124px')
+
+    // a preview SWAP to another category keeps the cap AND mounts strictly
+    // the new list from the front (no stale cards from the old category —
+    // the bug15 invariant at window level)
+    const OTHER: MenuCard[] = Array.from({ length: 60 }, (_, i) => ({
+      id: `o-${i}`,
+      title: `Other ${i}`,
+      subtitle: '',
+    }))
+    rerender(<ContentCarousel cards={OTHER} categoryId="recent" />)
+    expect(container.querySelectorAll('article')).toHaveLength(PREVIEW_MOUNT_COUNT)
+    for (let i = 0; i < PREVIEW_MOUNT_COUNT; i++) {
+      expect(screen.getByText(`Other ${i}`)).toBeInTheDocument()
+    }
+    // Card 7 was mounted in the previous preview — it is gone after the swap
+    expect(screen.queryByText('Card 7')).not.toBeInTheDocument()
   })
 })
 
@@ -1612,7 +1646,7 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     expect(scrollIntoView).not.toHaveBeenCalled()
   })
 
-  it('Fix A: the blur follows blurIndex — survives an undefined focusedIndex (sidebar-pane focus) and resets on a category switch', () => {
+  it('Fix A / S2: the blur follows blurIndex; a preview flip purges the port to card 0', () => {
     const { container, rerender } = render(
       <ContentCarousel
         cards={MANY}
@@ -1648,10 +1682,16 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
     expect(left.value).toBe(dialScrollLeft(50, 4, SCREEN_W, GEO))
 
     // tick 2: the UI focus moves into the SIDEBAR pane — focusedIndex goes
-    // undefined (MainMenuView's ternary) while blurIndex stays 4. The cards
-    // under the glass must KEEP their blur (device report Build #110/#111),
-    // and no scroll write or re-measure happens: the dial branch is keyed on
-    // focusedIndex only
+    // undefined (MainMenuView's ternary) while blurIndex stays 4. perf
+    // (scroll FPS): a PREVIEW FLIP now purges the port to card 0 (S2) — the
+    // sidebar preview mounts only its front window [0, PREVIEW_MOUNT_COUNT),
+    // so a stale deep scroll offset would leave UNMOUNTED cards on screen
+    // (blank gaps). Back from a dialed content view resets the content index
+    // to 0 in useMainMenuFocus (blur target = card 0, bug1), and this purge
+    // glides the port there, re-arming bug59 exactly like a category switch.
+    // The blur derivation itself still follows blurIndex — it is re-derived
+    // from the settled offset on the next frame (empty here: at offset 0 no
+    // card CENTER sits under the glass, the first card starts to its right).
     rerender(
       <ContentCarousel
         cards={MANY}
@@ -1661,15 +1701,19 @@ describe('bug58 T3: per-card blur on sidebar overlap (blur menu background)', ()
         underflowPx={UNDERFLOW_PX}
       />,
     )
-    // bug59: the loop never re-armed on this tick (dial branch bailed on the
-    // undefined focusedIndex) — one settled frame hands the classes back to
-    // React, which derives them from blurIndex (not focusedIndex)
+    // bug59: the preview-flip purge re-armed the loop (the smooth move back
+    // to 0) — settle before asserting. The blur still FOLLOWS blurIndex (the
+    // render-derived set is arithmetic on blurTarget, independent of the
+    // physical offset the port is gliding to), so the two cards under the
+    // glass for a centered card 4 keep their class while the port resets —
+    // in the real flow useMainMenuFocus drops blurIndex (content index) to 0
+    // in this same transition, re-deriving the set empty from card 0.
     clock.settle()
     expect(Array.from(container.querySelectorAll('article.blurred'))).toHaveLength(2)
     for (const title of ['Blur 1', 'Blur 2']) {
       expect(screen.getByText(title).closest('article')).toHaveClass('blurred')
     }
-    expect(left.value).toBe(dialScrollLeft(50, 4, SCREEN_W, GEO)) // no scroll write
+    expect(left.value).toBe(0) // the preview-flip purge wrote scrollLeft 0
     expect(reads.width).toBe(1) // no re-measure
     expect(scrollIntoView).not.toHaveBeenCalled()
 
