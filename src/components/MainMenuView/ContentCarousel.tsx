@@ -329,7 +329,10 @@ export function ContentCarousel({
     // glides the port back to card 0 and re-arms bug59 exactly as a real
     // category switch does. While the dial sits in ONE mode, both refs match
     // and this is a per-tick no-op (early return above)
-    if (lastCategoryIdRef.current === categoryId && lastInPreviewRef.current === (focusedIndex == null))
+    if (
+      lastCategoryIdRef.current === categoryId &&
+      lastInPreviewRef.current === (focusedIndex == null)
+    )
       return
     lastCategoryIdRef.current = categoryId
     lastInPreviewRef.current = focusedIndex == null

@@ -458,14 +458,20 @@ export function MainMenuView({
   // way = stop, otherwise start / resume / reverse into it; see
   // coverToggleDirection in useHomeEntities). The HOLD on a cover column stays
   // the explicit stop (homeHoldRoute below).
-  const homeSceneTap = useCallback((slot: SceneSlotModel) => {
-    if (slot.entityId === null) return
-    stableSelectedEntities.find((e) => e.entityId === slot.entityId)?.actuate()
-  }, [stableSelectedEntities])
-  const homeLightTap = useCallback((tile: LightTileModel) => {
-    if (tile.entityId === null) return
-    stableSelectedEntities.find((e) => e.entityId === tile.entityId)?.actuate()
-  }, [stableSelectedEntities])
+  const homeSceneTap = useCallback(
+    (slot: SceneSlotModel) => {
+      if (slot.entityId === null) return
+      stableSelectedEntities.find((e) => e.entityId === slot.entityId)?.actuate()
+    },
+    [stableSelectedEntities],
+  )
+  const homeLightTap = useCallback(
+    (tile: LightTileModel) => {
+      if (tile.entityId === null) return
+      stableSelectedEntities.find((e) => e.entityId === tile.entityId)?.actuate()
+    },
+    [stableSelectedEntities],
+  )
   // issue #62: the ^/v tap is a DIRECTION press — toggle-to-stop & direction
   // change (moving that way = stop, otherwise start / resume / reverse). The
   // decision lives in useHomeEntities (coverToggleDirection) so it can read
@@ -473,7 +479,8 @@ export function MainMenuView({
   const homeCoverAction = useCallback(
     (column: CoverColumnModel, direction: 'up' | 'down') => {
       if (column.entityId === null) return
-      stableSelectedEntities.find((e) => e.entityId === column.entityId)
+      stableSelectedEntities
+        .find((e) => e.entityId === column.entityId)
         ?.coverToggleDirection(direction)
     },
     [stableSelectedEntities],
@@ -538,9 +545,9 @@ export function MainMenuView({
   // cardHoldRoutingRef below — the render-body ref write is intentional, the
   // react-hooks/refs finding is the accepted false positive for this pattern)
   // and expose stable wrappers.
-  const homeHoldRoutingRef = useRef<(tile: LightTileModel | null, column: CoverColumnModel | null) => void>(
-    () => {},
-  )
+  const homeHoldRoutingRef = useRef<
+    (tile: LightTileModel | null, column: CoverColumnModel | null) => void
+  >(() => {})
   // eslint-disable-next-line react-hooks/refs
   homeHoldRoutingRef.current = homeHoldRoute
   const handleHomeLightHold = useCallback((tile: LightTileModel) => {
@@ -1283,9 +1290,10 @@ export function MainMenuView({
   // selectFocusedCard is hook-stable; the settings snapshot only changes
   // identity on a store write (useSettings/useSyncExternalStore), so both
   // callbacks are tick-stable
-  const handleSettingsRowTap = useCallback((index: number) => selectFocusedCard(index), [
-    selectFocusedCard,
-  ])
+  const handleSettingsRowTap = useCallback(
+    (index: number) => selectFocusedCard(index),
+    [selectFocusedCard],
+  )
   const handleToggleAuto = useCallback(
     () => updateSettings({ autoBrightness: !settings.autoBrightness }),
     [settings],
@@ -1506,12 +1514,15 @@ export function MainMenuView({
   // perf (scroll FPS): SidebarNav is memoized — a fresh onSelect every dial
   // tick would re-render the whole nav; categories and selectSidebar are both
   // tick-stable, so the callback identity can be too
-  const onCategorySelect = useCallback((id: string) => {
-    const index = categories.findIndex((category) => category.id === id)
-    if (index < 0) return
-    // selectSidebar triggers onSelectSidebar, which updates activeCategoryId
-    selectSidebar(index)
-  }, [categories, selectSidebar])
+  const onCategorySelect = useCallback(
+    (id: string) => {
+      const index = categories.findIndex((category) => category.id === id)
+      if (index < 0) return
+      // selectSidebar triggers onSelectSidebar, which updates activeCategoryId
+      selectSidebar(index)
+    },
+    [categories, selectSidebar],
+  )
 
   return (
     <div

@@ -513,9 +513,7 @@ describe('bug5/bug6/bug18: windowed rendering', () => {
   })
 
   it('sidebar preview mode mounts only the first cards (perf scroll FPS)', () => {
-    const { container, rerender } = render(
-      <ContentCarousel cards={MANY} categoryId="playlists" />,
-    )
+    const { container, rerender } = render(<ContentCarousel cards={MANY} categoryId="playlists" />)
     // focusedIndex undefined = the sidebar PREVIEW: the capped leading
     // PREVIEW_MOUNT_COUNT cards, not the 33-card dial window (every sidebar
     // tick used to remount that whole window)

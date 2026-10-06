@@ -397,18 +397,18 @@ describe('HomeDashboardView dial-tick geometry cache (perf scroll FPS)', () => {
     const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
     Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: PORT_HEIGHT })
     Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 550 })
-    const gbcR = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
-      function (this: HTMLElement) {
-        if (this === scroller) return new DOMRect(0, 0, 550, PORT_HEIGHT)
-        const scenes = Array.from(scroller.querySelectorAll('.sceneBtn'))
-        const si = scenes.indexOf(this)
-        if (si >= 0) return slotRect(si)
-        const tiles = Array.from(scroller.querySelectorAll('.lightTile'))
-        const ti = tiles.indexOf(this)
-        if (ti >= 0) return slotRect(scenes.length + ti)
-        return new DOMRect()
-      },
-    )
+    const gbcR = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this === scroller) return new DOMRect(0, 0, 550, PORT_HEIGHT)
+      const scenes = Array.from(scroller.querySelectorAll('.sceneBtn'))
+      const si = scenes.indexOf(this)
+      if (si >= 0) return slotRect(si)
+      const tiles = Array.from(scroller.querySelectorAll('.lightTile'))
+      const ti = tiles.indexOf(this)
+      if (ti >= 0) return slotRect(scenes.length + ti)
+      return new DOMRect()
+    })
 
     // a NEW entities array identity recomputes the zones → the measure effect
     // re-runs and warms the cache: scroller rect + all 7 slots, exactly once.
