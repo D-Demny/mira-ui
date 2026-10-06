@@ -1,0 +1,138 @@
+// issue #79: the default-device switch prompt — same visual family as
+// DefaultDeviceModal (backdrop, card, option rows)
+
+.backdrop {
+  position: fixed;
+  @include inset-0;
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.62);
+  animation: fadeIn $dur-base $ease-standard both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card {
+  width: 540px;
+  max-width: calc(100% - #{$s-6});
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  @include hide-scrollbar;
+  @include column;
+  @include flex-gap-y($s-4);
+  padding: $s-5;
+  background: $bg;
+  border-radius: $r-2xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: slideIn $dur-base $ease-emphasized both;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: $fs-2xl;
+  font-weight: $fw-semibold;
+  letter-spacing: -0.01em;
+  color: $text-primary;
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: $r-md;
+  color: $text-secondary;
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: $text-primary;
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.message {
+  margin: 0;
+  padding: 0 $s-2;
+  font-size: $fs-lg;
+  font-weight: $fw-medium;
+  line-height: 1.4;
+  color: $text-primary;
+}
+
+.options {
+  @include column;
+  @include flex-gap-y($s-2);
+  border-radius: $r-lg;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: $s-3;
+  padding: $s-3 $s-4;
+  cursor: pointer;
+  transition: background-color $dur-fast $ease-standard;
+  user-select: none;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  &:active {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  // bug31 family: the row the rotary dial is focused on
+  &.focused {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.optionName {
+  flex: 1 1 auto;
+  font-size: $fs-lg;
+  font-weight: $fw-medium;
+  color: $text-primary;
+}
+
+.hint {
+  margin: 0;
+  padding: 0 $s-2;
+  font-size: $fs-xs;
+  color: $text-tertiary;
+}

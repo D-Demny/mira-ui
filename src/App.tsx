@@ -23,8 +23,12 @@ import { TrackInfo } from '@/components/TrackInfo'
 import { HALightControlModal } from '@/components/MainMenuView/HALightControlModal'
 import { HomeEntityPickerModal } from '@/components/MainMenuView/HomeEntityPickerModal'
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
+import { TransferPromptModal } from '@/components/SettingsSheet/TransferPromptModal'
 import { HaSettingsModal } from '@/components/SettingsSheet/HaSettingsModal'
-import { PiKeyboardOverlay, type PiKeyboardField } from '@/components/SettingsSheet/PiKeyboardOverlay'
+import {
+  PiKeyboardOverlay,
+  type PiKeyboardField,
+} from '@/components/SettingsSheet/PiKeyboardOverlay'
 import { PiServerModal } from '@/components/SettingsSheet/PiServerModal'
 import { DebugScreen } from '@/components/DebugScreen'
 import { resolveRoute } from '@/app/routes'
@@ -37,6 +41,7 @@ import { useControls } from '@/hooks/useControls'
 import { useDelayedFlag } from '@/hooks/useDelayedFlag'
 import { useDiscoverableWhilePairing } from '@/hooks/useDiscoverableWhilePairing'
 import { useDeviceSwitch } from '@/hooks/useDeviceSwitch'
+import { useDefaultDevicePrompt } from '@/hooks/useDefaultDevicePrompt'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
 import { useIdleScreensaver } from '@/hooks/useIdleScreensaver'
 import { useLastArtUrl } from '@/hooks/useLastArtUrl'
@@ -101,12 +106,7 @@ export default function App() {
 
 function AppContent() {
   const auth = useAuth()
-  const {
-    status: realStatus,
-    loading,
-    connected,
-    setupProgress,
-  } = useObserver()
+  const { status: realStatus, loading, connected, setupProgress } = useObserver()
   const notify = useNotify()
   const { forced, setForced } = useDevScreen()
   const overlays = useOverlayState()
@@ -141,6 +141,23 @@ function AppContent() {
     status: realStatus,
     notify,
     onPicked: closeDeviceMenu,
+  })
+  // issue #79: the default-device switch prompt. Every playback interaction
+  // (player controls, hardware play/pause + presets, menu track selection) is
+  // wrapped through wrapWithDefaultDevicePrompt: when a default device is set
+  // and the active device differs, the interaction is deferred behind the
+  // confirm popup instead of running immediately. A decline suppresses the
+  // popup for 10 minutes (see useDefaultDevicePrompt).
+  const {
+    wrapAction: wrapWithDefaultDevicePrompt,
+    prompt: defaultDevicePrompt,
+    accept: acceptDefaultDeviceTransfer,
+    decline: declineDefaultDeviceTransfer,
+    cancel: cancelDefaultDeviceTransfer,
+  } = useDefaultDevicePrompt({
+    status: realStatus,
+    connectDevices,
+    notify,
   })
 
   const settings = useSettings()
@@ -328,18 +345,28 @@ function AppContent() {
   const lastArtUrl = useLastArtUrl(realStatus)
   const utcOffsetMin = useUtcOffset(realStatus)
 
-  // issue #56: a refused/failed play used to die in a silent `.catch(() => {})`
-  // while the menu had already optimistically switched panes — old cards on
-  // screen, zero feedback. Toast like the preset buttons do, and keep the
-  // rejection so the menu can defer its pane switch until success.
+  // issue #56: the play request settles the returned promise only on the
+  // daemon's answer, so the menu can defer its pane switch until success.
+  // issue #79: when a default-device switch is pending the request is deferred
+  // behind the prompt; the promise then settles once the user answers (a
+  // cancel leaves it pending — no request was sent, so there is nothing to
+  // settle on and the menu pane stays where it was).
   const onPlayFromMenu = useCallback(
     (uri: string, offset?: PlayOffset): Promise<void> => {
-      return playContext(uri, offset).catch((error: unknown) => {
-        notify("Couldn't start playback", { variant: 'error' })
-        throw error
+      const done = new Promise<void>((resolve, reject) => {
+        wrapWithDefaultDevicePrompt(() => {
+          playContext(uri, offset).then(
+            () => resolve(),
+            (error: unknown) => {
+              notify("Couldn't start playback", { variant: 'error' })
+              reject(error)
+            },
+          )
+        })
       })
+      return done
     },
-    [playContext, notify],
+    [playContext, notify, wrapWithDefaultDevicePrompt],
   )
 
   const statusActive = status?.active === true
@@ -349,6 +376,12 @@ function AppContent() {
     if (overlays.goBack()) return
     if (defaultDeviceModalOpen) {
       setDefaultDeviceModalOpen(false)
+      return
+    }
+    // issue #79: the default-device prompt above anything else is dismissed
+    // (the deferred interaction is NOT run — a close is not a decline)
+    if (defaultDevicePrompt != null) {
+      cancelDefaultDeviceTransfer()
       return
     }
     // ticket10-2: the open keyboard is closed FIRST (its own ListFocusContext entry
@@ -404,7 +437,21 @@ function AppContent() {
       return
     }
     // nothing to go back to
-  }, [overlays, offline, defaultDeviceModalOpen, piKeyboardField, forced, setForced, piServerModalOpen, haSettingsOpen, statusActive, navigation, showingLibrary])
+  }, [
+    overlays,
+    offline,
+    defaultDeviceModalOpen,
+    defaultDevicePrompt,
+    piKeyboardField,
+    forced,
+    setForced,
+    piServerModalOpen,
+    haSettingsOpen,
+    statusActive,
+    navigation,
+    showingLibrary,
+    cancelDefaultDeviceTransfer,
+  ])
 
   const controls = usePlayerControls({
     status: status && status.active ? status : null,
@@ -416,6 +463,7 @@ function AppContent() {
     setShuffle,
     setRepeat,
     onCommandError: (message) => notify(message, { variant: 'error' }),
+    wrapActionWithTransfer: wrapWithDefaultDevicePrompt,
   })
 
   const savableStatus = status && status.active ? status : reconnecting ? heldStatus : null
@@ -454,6 +502,7 @@ function AppContent() {
     onScreensaver: onOpenScreensaver,
     onOpenDebug: openDebug,
     notify,
+    wrapActionWithTransfer: wrapWithDefaultDevicePrompt,
   })
 
   // touch gestures
@@ -503,6 +552,14 @@ function AppContent() {
           }}
           onChange={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
           onClose={() => setDefaultDeviceModalOpen(false)}
+        />
+      ) : null}
+      {defaultDevicePrompt != null ? (
+        <TransferPromptModal
+          deviceName={defaultDevicePrompt.deviceName}
+          onAccept={acceptDefaultDeviceTransfer}
+          onDecline={declineDefaultDeviceTransfer}
+          onCancel={cancelDefaultDeviceTransfer}
         />
       ) : null}
       {piServerModalOpen ? (
@@ -880,86 +937,92 @@ function AppContent() {
         }
       >
         <div className={styles.appPlaying}>
-        {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
-        <div className={styles.stage} ref={stageRef}>
-          <div
-            className={`${styles.viewLayer} ${renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
-          >
-            <div className={styles.top}>
-              <div
-                className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}
-              >
-                <AlbumArt src={playerStatus.track_image} size={artSize} />
-                <TrackInfo trackName={playerStatus.track_name} artist={playerStatus.track_artist} />
-              </div>
-              <div className={styles.right}>
+          {bannerReason ? <ReconnectBanner reason={bannerReason} carriers={carriers} /> : null}
+          <div className={styles.stage} ref={stageRef}>
+            <div
+              className={`${styles.viewLayer} ${renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
+            >
+              <div className={styles.top}>
+                <div
+                  className={`${styles.left} ${controls.transitioning ? styles.transitioning : ''}`}
+                >
+                  <AlbumArt src={playerStatus.track_image} size={artSize} />
+                  <TrackInfo
+                    trackName={playerStatus.track_name}
+                    artist={playerStatus.track_artist}
+                  />
+                </div>
+                <div className={styles.right}>
                   <Lyrics
                     status={playerStatus}
                     onSeek={handleSeek}
                     active={renderLyricsLayout}
                     lyricsState={lyricsState}
                   />
+                </div>
+              </div>
+            </div>
+            <div
+              className={`${styles.viewLayer} ${!renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
+            >
+              <div
+                className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
+              >
+                <NoLyricsView
+                  status={playerStatus}
+                  active={!renderLyricsLayout}
+                  artSize={heroArtSize}
+                />
               </div>
             </div>
           </div>
-          <div
-            className={`${styles.viewLayer} ${!renderLyricsLayout ? styles.viewActive : styles.viewInactive}`}
-          >
-            <div
-              className={`${styles.topNoLyrics} ${controls.transitioning ? styles.transitioning : ''}`}
-            >
-              <NoLyricsView status={playerStatus} active={!renderLyricsLayout} artSize={heroArtSize} />
-            </div>
+
+          <div className={styles.bottom}>
+            <ProgressBar status={playerStatus} onSeek={handleSeek} />
+            <Controls
+              isPaused={controls.isPaused}
+              shuffleMode={controls.shuffleMode}
+              repeat={controls.repeat}
+              disallowPrev={playerStatus.disallow_prev}
+              disallowNext={playerStatus.disallow_next}
+              isPodcast={isPodcast}
+              showSave={!isPodcast}
+              saved={liked.saved}
+              onToggleSaved={liked.toggle}
+              onPrev={controls.onPrev}
+              onNext={controls.onNext}
+              onPlayPause={controls.onPlayPause}
+              onCycleShuffle={controls.onCycleShuffle}
+              onCycleRepeat={controls.onCycleRepeat}
+              onRewind15={() => seekRelative(-15000)}
+              onForward15={() => seekRelative(15000)}
+              onMore={() => overlays.open('menu')}
+            />
           </div>
-        </div>
 
-        <div className={styles.bottom}>
-          <ProgressBar status={playerStatus} onSeek={handleSeek} />
-          <Controls
-            isPaused={controls.isPaused}
-            shuffleMode={controls.shuffleMode}
-            repeat={controls.repeat}
-            disallowPrev={playerStatus.disallow_prev}
-            disallowNext={playerStatus.disallow_next}
-            isPodcast={isPodcast}
-            showSave={!isPodcast}
-            saved={liked.saved}
-            onToggleSaved={liked.toggle}
-            onPrev={controls.onPrev}
-            onNext={controls.onNext}
-            onPlayPause={controls.onPlayPause}
-            onCycleShuffle={controls.onCycleShuffle}
-            onCycleRepeat={controls.onCycleRepeat}
-            onRewind15={() => seekRelative(-15000)}
-            onForward15={() => seekRelative(15000)}
-            onMore={() => overlays.open('menu')}
+          <Menu
+            open={overlays.isOpen('menu')}
+            onClose={closeMenu}
+            showLyrics={showLyrics}
+            onToggleLyrics={toggleLyrics}
+            karaokeLyrics={settings.karaokeLyrics}
+            onToggleKaraoke={toggleKaraoke}
+            voiceMic={settings.voiceMic}
+            onToggleVoiceMic={toggleVoiceMic}
+            currentDevice={playerStatus.device_name}
+            onOpenDevices={() => {
+              overlays.close('menu')
+              overlays.open('deviceMenu')
+            }}
+            onOpenBluetooth={() => {
+              overlays.close('menu')
+              overlays.open('btMenu')
+            }}
+            onOpenSettings={() => {
+              overlays.close('menu')
+              overlays.open('settings')
+            }}
           />
-        </div>
-
-        <Menu
-          open={overlays.isOpen('menu')}
-          onClose={closeMenu}
-          showLyrics={showLyrics}
-          onToggleLyrics={toggleLyrics}
-          karaokeLyrics={settings.karaokeLyrics}
-          onToggleKaraoke={toggleKaraoke}
-          voiceMic={settings.voiceMic}
-          onToggleVoiceMic={toggleVoiceMic}
-          currentDevice={playerStatus.device_name}
-          onOpenDevices={() => {
-            overlays.close('menu')
-            overlays.open('deviceMenu')
-          }}
-          onOpenBluetooth={() => {
-            overlays.close('menu')
-            overlays.open('btMenu')
-          }}
-          onOpenSettings={() => {
-            overlays.close('menu')
-            overlays.open('settings')
-          }}
-        />
-
         </div>
       </div>
 

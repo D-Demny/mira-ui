@@ -1,1 +1,0 @@
-export { TransferPrompt } from './TransferPrompt'
