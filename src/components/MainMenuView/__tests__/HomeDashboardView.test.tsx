@@ -362,6 +362,81 @@ describe('HomeDashboardView fine dial scrolling (ticket 9.6 W2-4, issue #45)', (
   })
 })
 
+// perf (scroll FPS): the per-tick containment check must not force layout —
+// slot geometry is measured ONCE into a content-space cache (on mount / zone
+// change), and dial ticks then compare against scrollTop only. This test
+// installs real (mocked) geometry so the CACHED path runs instead of the
+// zero-geometry fallback pinned above.
+describe('HomeDashboardView dial-tick geometry cache (perf scroll FPS)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // 2 scenes + 2 lights → 7 focus stops (3 scene slots + 4 light tiles; covers
+  // suppressed). Slot i sits at content top 100 + 80·i, height 60; the port is
+  // 400 px tall → stops 0–3 are inside at scrollTop 0, stop 5 (top 500) is not.
+  const PORT_HEIGHT = 400
+  const slotRect = (i: number) => new DOMRect(0, 100 + 80 * i, 550, 60)
+
+  it('measures geometry once per zone change, then dial ticks read only scrollTop', () => {
+    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const entities = [
+      scene('scene.abendstimmung', 'Abendstimmung'),
+      scene('scene.taglicht', 'Taglicht'),
+      light('light.esstisch_lampe', 'Esstisch Lampe'),
+      light('light.flurlicht', 'Flurlampe'),
+    ]
+    // first mount in jsdom's zero geometry — the legacy fallback path runs,
+    // exactly as pinned by the W2-4 tests above
+    const { container, rerender } = render(
+      <HomeDashboardView entities={entities} focusedIndex={1} />,
+    )
+
+    // install REAL geometry before warming the cache: a port height on the
+    // scroller node plus content-space rects for the scroller and every slot
+    const scroller = container.querySelector('[data-home-scroller="true"]') as HTMLElement
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: PORT_HEIGHT })
+    Object.defineProperty(scroller, 'clientWidth', { configurable: true, value: 550 })
+    const gbcR = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(
+      function (this: HTMLElement) {
+        if (this === scroller) return new DOMRect(0, 0, 550, PORT_HEIGHT)
+        const scenes = Array.from(scroller.querySelectorAll('.sceneBtn'))
+        const si = scenes.indexOf(this)
+        if (si >= 0) return slotRect(si)
+        const tiles = Array.from(scroller.querySelectorAll('.lightTile'))
+        const ti = tiles.indexOf(this)
+        if (ti >= 0) return slotRect(scenes.length + ti)
+        return new DOMRect()
+      },
+    )
+
+    // a NEW entities array identity recomputes the zones → the measure effect
+    // re-runs and warms the cache: scroller rect + all 7 slots, exactly once.
+    // The SAME reference is kept for the dial ticks below so the zones (and
+    // the cache) stay stable — only focusedIndex moves.
+    const warmEntities = [...entities]
+    rerender(<HomeDashboardView entities={warmEntities} focusedIndex={1} />)
+    expect(gbcR).toHaveBeenCalledTimes(8)
+    gbcR.mockClear()
+    scrollIntoView.mockClear()
+
+    // in-range tick (stop 2: top 260 + 60 ≤ 400) — containment from the cache;
+    // ZERO layout reads, no scroll needed
+    rerender(<HomeDashboardView entities={warmEntities} focusedIndex={2} />)
+    expect(gbcR).not.toHaveBeenCalled()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    // out-of-range tick (stop 5: top 500, below the port) — still cache-only,
+    // and the single nudge lands on the third light tile (placeholder)
+    rerender(<HomeDashboardView entities={warmEntities} focusedIndex={5} />)
+    expect(gbcR).not.toHaveBeenCalled()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    const scrolled = scrollIntoView.mock.instances.at(-1) as unknown as HTMLElement | undefined
+    expect(scrolled).not.toBeUndefined()
+    expect(scrolled).toHaveClass('lightTile')
+  })
+})
+
 // issue #48: empty-zone suppression — a zone with zero configured entities
 // renders NOTHING (no buttons, no header, no columns), and the focus chain
 // skips it so the remaining zones shift up.
