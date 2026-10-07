@@ -61,6 +61,19 @@
   color: $text-primary;
 }
 
+// issue #95: the idle dashboard's ~35% right column — the same rows, tighter
+// and pill-shaped (a compact vertical stack instead of the old wide card)
+.compact {
+  width: 100%;
+  max-width: 100%;
+  padding: $s-2;
+}
+
+.compactRow {
+  border-radius: 999px; // pill container
+  padding: $s-1 $s-3;
+  gap: $s-2;
+}
 .icon {
   display: flex;
   flex: 0 0 auto;

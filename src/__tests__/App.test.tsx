@@ -44,8 +44,11 @@ describe('App', () => {
     // nothing resolved yet
     expect(screen.getByText('starting up')).toBeInTheDocument()
 
-    // the daemon answers with no active device
-    await waitFor(() => expect(screen.getByText('Nothing playing')).toBeInTheDocument())
+    // the daemon answers with no active device — issue #95: the idle dashboard
+    // shows the (empty) device stack; no scenes are configured in this fixture
+    await waitFor(() =>
+      expect(screen.getByText('No active devices to select from for playback')).toBeInTheDocument(),
+    )
 
     // a device starts playing. both view layers stay mounted so the lyrics
     // toggle can cross-fade, so the track appears in each of them

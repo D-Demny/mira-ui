@@ -10,14 +10,17 @@ import styles from './DevicePicker.module.scss'
 interface Props {
   devices: ConnectDevice[]
   onSelect?: (device: ConnectDevice) => void
+  // issue #95: the idle dashboard's ~35% column — tighter, pill-shaped rows
+  compact?: boolean
 }
-
 function DeviceList({
   devices,
   onSelect,
+  compact = false,
 }: {
   devices: ConnectDevice[]
   onSelect?: (d: ConnectDevice) => void
+  compact?: boolean
 }) {
   return (
     <ul className={styles.list}>
@@ -26,9 +29,9 @@ function DeviceList({
         return (
           <li key={d.id}>
             <div
-              className={`${styles.row} ${d.is_active ? styles.active : ''} ${
-                interactive ? styles.interactive : ''
-              }`}
+              className={`${styles.row} ${compact ? styles.compactRow : ''} ${
+                d.is_active ? styles.active : ''
+              } ${interactive ? styles.interactive : ''}`}
               role={interactive ? 'button' : undefined}
               tabIndex={interactive ? 0 : undefined}
               onClick={interactive ? () => onSelect?.(d) : undefined}
@@ -46,14 +49,18 @@ function DeviceList({
   )
 }
 
-function DevicePickerImpl({ devices, onSelect }: Props) {
+function DevicePickerImpl({ devices, onSelect, compact = false }: Props) {
   const empty = <div className={styles.empty}>No active devices to select from for playback</div>
 
   // always render the box even if no items
   return (
-    <div className={styles.cardInline}>
+    <div className={`${styles.cardInline}${compact ? ` ${styles.compact}` : ''}`}>
       <div className={styles.header}>Devices</div>
-      {devices.length === 0 ? empty : <DeviceList devices={devices} onSelect={onSelect} />}
+      {devices.length === 0 ? (
+        empty
+      ) : (
+        <DeviceList devices={devices} onSelect={onSelect} compact={compact} />
+      )}
     </div>
   )
 }

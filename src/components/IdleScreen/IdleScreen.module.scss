@@ -1,40 +1,87 @@
+// issue #95: the idle dashboard — an asymmetric split of the screen:
+//   ~65% left  = the configured HA scenes as a 2-column grid of squarish
+//                tiles (icon above label) — hidden ENTIRELY without scenes
+//   ~35% right = the audio devices as a compact vertical pill stack
+// Without scenes the layout collapses to one centered column (the device
+// card keeps its comfortable width and centers on screen).
 .idle {
   width: 100%;
   height: 100%;
-  @include flex-center;
-  flex-direction: column;
-  text-align: center;
+  display: flex;
+  flex-direction: column; // no scenes: single centered column
+  align-items: center;
+  justify-content: center;
   padding: $s-7;
-  @include flex-gap-y($s-3);
 }
 
-.icon {
-  color: $text-disabled;
-  margin-bottom: $s-3;
+// scenes + devices side by side (~65 / ~35)
+.split {
+  flex-direction: row;
+  gap: $s-6;
 }
 
-.title {
-  font-size: $fs-4xl;
-  font-weight: $fw-semibold;
-  letter-spacing: -0.02em;
-  color: $text-primary;
+.sceneGrid {
+  flex: 0 1 62%; // ~65% zone (minus the column gap)
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)); // 2x2 of squarish tiles
+  grid-auto-rows: minmax(0, 1fr);
+  align-content: center;
+  gap: $s-3;
 }
 
-.hint {
-  font-size: $fs-xl;
-  color: $text-tertiary;
-  max-width: 480px;
-  white-space: pre-line;
+.sceneTile {
+  position: relative;
+  display: flex;
+  flex-direction: column; // icon above label
+  align-items: center;
+  justify-content: center;
+  gap: $s-2;
+  min-height: 0;
+  padding: $s-3;
+  background: $surface-elev;
+  border: 1px solid $divider;
+  border-radius: $r-lg;
+  cursor: pointer;
+
+  &:hover {
+    background: $surface;
+    border-color: $accent;
+  }
+}
+
+.sceneIcon {
+  display: flex;
+  color: $text-secondary;
+}
+
+.sceneLabel {
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+  color: $text-secondary;
   text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceCol {
+  flex: 0 1 34%; // ~35% zone
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: $s-3;
 }
 
 .status {
   display: flex;
   align-items: center;
-  margin-top: $s-5;
   font-size: $fs-md;
   color: $text-disabled;
-  @include flex-gap-x($s-2);
+  gap: $s-2;
 }
 
 .dot {
