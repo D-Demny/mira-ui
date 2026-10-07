@@ -2,8 +2,8 @@ import { useEffect } from 'react'
 import type { ObserverStatus } from '@/api/types'
 import type { ScreensaverBy } from './useOverlays'
 
-/** ten quiet minutes. Not a setting on purpose. */
-export const SCREENSAVER_AUTO_MS = 10 * 60 * 1000
+/** twenty quiet seconds (issue #96). Not a setting on purpose. */
+export const SCREENSAVER_AUTO_MS = 20_000
 
 /** input that decides the idle timer runs at all */
 export interface IdleEligibility {
