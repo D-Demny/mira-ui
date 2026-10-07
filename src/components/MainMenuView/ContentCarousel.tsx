@@ -17,6 +17,7 @@ import {
   type ScrollMetrics,
 } from './carouselWindow'
 import styles from './ContentCarousel.module.scss'
+import { artLoadDelayMs } from './artLoadDelay'
 
 // cover art size for carousel cards (bug2: was 200, reduced for breathing room)
 const CARD_ART_SIZE = 170
@@ -40,6 +41,10 @@ function CarouselCardImpl({
   onCardHold,
   registerRef,
   registerCardEl,
+  // #90: the cover-load delay captured at this render (see artLoadDelay.ts);
+  // never compared by the memo comparator — observed only at mount and on
+  // this card's own focus flip (the flush)
+  artDelayMs,
 }: CarouselCardProps) {
   // bug59: the article element serves two ref owners — the focused-card ref
   // (scrollIntoView, focus only) and the parent's per-index registry (the
@@ -142,7 +147,16 @@ function CarouselCardImpl({
           : undefined
       }
     >
-      <AlbumArt src={card.art} alt={card.title} size={CARD_ART_SIZE} />
+      <AlbumArt
+        src={card.art}
+        alt={card.title}
+        size={CARD_ART_SIZE}
+        // #90: entry-burst stagger — off-screen covers start their download
+        // later (distance-based, capped); the focused card is flushed to 0
+        // the moment the dial lands on it. No prop in sidebar preview mode
+        // (artDelayMs undefined) = immediate, exactly as before
+        loadDelayMs={isFocused ? 0 : (artDelayMs ?? 0)}
+      />
       <div className={styles.meta}>
         <h3 className={styles.title}>{card.title}</h3>
         {card.subtitle ? <p className={styles.subtitle}>{card.subtitle}</p> : null}
@@ -772,6 +786,13 @@ export function ContentCarousel({
             // once (memo comparator), forcing React's canonical className
             // rewrite in the handoff commit; never read by the card body
             blurEpoch={blurEpoch}
+            // #90: entry-burst stagger — distance from focus at this render;
+            // undefined while the focus sits in the sidebar (preview). The
+            // memo comparator ignores it (see carouselCardCompare), so it is
+            // only ever OBSERVED at a card's mount and on its own focus flip
+            artDelayMs={
+              focusedIndex != null ? artLoadDelayMs(Math.abs(index - focusedIndex)) : undefined
+            }
           />
         )
       })}

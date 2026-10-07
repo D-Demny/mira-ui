@@ -34,6 +34,15 @@ export interface CarouselCardProps {
   // read by the card body (plumbing only — like registerCardEl, a prop the
   // child receives but never touches)
   blurEpoch?: number
+  // #90: the cover-load delay for this card's art (distance from focus, see
+  // artLoadDelay.ts) — undefined while the dial focus sits in the sidebar
+  // (preview mode = no stagger). Deliberately NOT compared by the memo
+  // comparator below (like registerCardEl): a card re-renders only at its
+  // own mount and on its focus/blur flips, so the value it sees there is
+  // exactly "mount-time distance" plus the focus flush — recomputing it
+  // for comparison would change EVERY card's value on each dial tick and
+  // defeat the bug8.2 "exactly two cards re-render per tick" invariant
+  artDelayMs?: number
 }
 
 // bug8.2: a card re-renders only when its focus state or its data changes, so a

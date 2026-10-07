@@ -7,6 +7,10 @@ interface Props {
   src: string | undefined
   size?: number
   alt?: string
+  // #90: delay before the src is handed to the layers (the styled
+  // placeholder, bug27, shows until then). 0/undefined = immediate —
+  // standalone and non-carousel callers are untouched
+  loadDelayMs?: number
 }
 
 const FADE_MS = 220
@@ -120,29 +124,49 @@ function MusicNoteIcon() {
     </svg>
   )
 }
+// #90: the cover-load gate for the entry burst (see artLoadDelay.ts) —
+// holds the src back until the delay has passed, then releases it for good.
+// Re-arms when the src or the delay change; a delay of 0 at any point
+// (e.g. the dial landing on a still-pending card) reveals immediately.
+function useDelayedSrc(src: string | undefined, delayMs: number): string | undefined {
+  const [revealed, setRevealed] = useState(delayMs <= 0)
+  useEffect(() => {
+    if (delayMs <= 0) {
+      setRevealed(true)
+      return undefined
+    }
+    const t = window.setTimeout(() => setRevealed(true), delayMs)
+    return () => window.clearTimeout(t)
+  }, [src, delayMs])
+  return revealed ? src : undefined
+}
 
-function AlbumArtImpl({ src, size = 200, alt = '' }: Props) {
+function AlbumArtImpl({ src, size = 200, alt = '', loadDelayMs = 0 }: Props) {
+  // #90: everything below works on the REVEALED value — while it is still
+  // hidden the layers render the placeholder (no <img>, bug27), so the
+  // gated src swaps in exactly like a regular late src change
+  const effectiveSrc = useDelayedSrc(src, loadDelayMs)
   // epic10 task 2: the remoteBlur feature flips the <img> to the Pi's
   // pre-processed artwork (see ArtImage) — standalone stays untouched
   const { features } = useMiraServer()
-  const [front, setFront] = useState<string | undefined>(src)
+  const [front, setFront] = useState<string | undefined>(effectiveSrc)
   const [back, setBack] = useState<string | undefined>(undefined)
   const [showFront, setShowFront] = useState(true)
   const [frontFailed, setFrontFailed] = useState(false)
   const [backFailed, setBackFailed] = useState(false)
-  const lastRef = useRef<string | undefined>(src)
+  const lastRef = useRef<string | undefined>(effectiveSrc)
   const cleanupRef = useRef(0)
 
   useEffect(() => {
-    if (src === lastRef.current) return
-    lastRef.current = src
+    if (effectiveSrc === lastRef.current) return
+    lastRef.current = effectiveSrc
 
     if (showFront) {
-      setBack(src)
+      setBack(effectiveSrc)
       setBackFailed(false)
       setShowFront(false)
     } else {
-      setFront(src)
+      setFront(effectiveSrc)
       setFrontFailed(false)
       setShowFront(true)
     }
@@ -152,7 +176,7 @@ function AlbumArtImpl({ src, size = 200, alt = '' }: Props) {
       if (showFront) setFront(undefined)
       else setBack(undefined)
     }, FADE_MS + 60)
-  }, [src, showFront])
+  }, [effectiveSrc, showFront])
 
   useEffect(() => () => window.clearTimeout(cleanupRef.current), [])
 

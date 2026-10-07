@@ -179,6 +179,7 @@ import {
   sidebarOverlapAt,
   windowRange,
 } from '../carouselWindow'
+import { ART_LOAD_MAX_MS, artLoadDelayMs } from '../artLoadDelay'
 import type { MenuCard } from '../mockData'
 import type { ObserverStatusActive } from '@/api/types'
 import type * as SettingsModule from '@/settings'
@@ -2057,5 +2058,74 @@ describe('bug59: live blur tracking', () => {
     expect(clock.queueLength()).toBe(1) // armed once, never executed
     expect(reads.left).toBe(0) // the tick path stays read-free
     expect(reads.width).toBe(1) // the viewport is still measured exactly once
+  })
+})
+
+// #90: the entry burst — entering a section mounts the whole window and every
+// card's <img> used to fire at once. The covers are staggered by distance
+// from focus now: visible band immediate, the rest one step further per card,
+// capped (ART_LOAD_MAX_MS), and the focused card is flushed to 0 the moment
+// the dial lands on it. Sidebar preview mode (no focusedIndex) stays immediate.
+describe('#90: entry-burst cover stagger', () => {
+  const ARTED: MenuCard[] = Array.from({ length: 50 }, (_, i) => ({
+    id: `st-${i}`,
+    title: `Art ${i}`,
+    subtitle: '',
+    art: `http://img/st-${i}.jpg`,
+  }))
+
+  it('reveals the visible band immediately and defers the rest, filling the window in bounded time', () => {
+    vi.useFakeTimers()
+    const { container, unmount } = render(
+      <ContentCarousel cards={ARTED} categoryId="playlists" focusedIndex={0} />,
+    )
+
+    // focus 0 mounts cards 0..16 (17); dist ≤5 (cards 0-5) load immediately
+    expect(container.querySelectorAll('article')).toHaveLength(17)
+    expect(container.querySelectorAll('article img')).toHaveLength(6)
+
+    // one step later: the next card (dist 6) joins
+    act(() => {
+      vi.advanceTimersByTime(artLoadDelayMs(6))
+    })
+    expect(container.querySelectorAll('article img')).toHaveLength(7)
+
+    // after the cap the whole mounted window is loaded — and nothing beyond it
+    act(() => {
+      vi.advanceTimersByTime(ART_LOAD_MAX_MS + 100)
+    })
+    expect(container.querySelectorAll('article img')).toHaveLength(17)
+
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('flushes a still-pending card immediately when the dial lands on it (focus flush)', () => {
+    vi.useFakeTimers()
+    const { container, rerender, unmount } = render(
+      <ContentCarousel cards={ARTED} categoryId="playlists" focusedIndex={0} />,
+    )
+
+    // card 16 is mounted but its (capped) timer has not run — no img yet
+    expect(container.querySelectorAll('article img')).toHaveLength(6)
+    expect(screen.queryByRole('img', { name: 'Art 16' })).not.toBeInTheDocument()
+
+    // dial to card 16: it reveals without waiting out its delay
+    rerender(<ContentCarousel cards={ARTED} categoryId="playlists" focusedIndex={16} />)
+    expect(screen.getByRole('img', { name: 'Art 16' })).toHaveAttribute(
+      'src',
+      'http://img/st-16.jpg',
+    )
+
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('sidebar preview mode (no focus) loads every mounted cover immediately', () => {
+    const { container } = render(<ContentCarousel cards={ARTED} categoryId="playlists" />)
+    // the capped preview: every one of its covers immediate — the sidebar
+    // tick feel is exactly what it was before this change
+    expect(container.querySelectorAll('article')).toHaveLength(PREVIEW_MOUNT_COUNT)
+    expect(container.querySelectorAll('article img')).toHaveLength(PREVIEW_MOUNT_COUNT)
   })
 })
