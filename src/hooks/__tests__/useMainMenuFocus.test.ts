@@ -142,10 +142,17 @@ describe('useMainMenuFocus', () => {
       ListFocusContext.entry.onConfirm?.() // enter content
     })
     act(() => {
+      ListFocusContext.entry.onWheel(makeWheelEvent(-10)) // deep-dial card 1
+    })
+    expect(result.current.contentIndex).toBe(1)
+    act(() => {
       ListFocusContext.entry.onBack?.()
     })
     expect(onExit).not.toHaveBeenCalled()
     expect(result.current.activePane).toBe('sidebar')
+    // perf (scroll FPS): the preview re-roots at card 0 (bug1's blur target)
+    // — a stale deep index would point the preview at an unmounted card
+    expect(result.current.contentIndex).toBe(0)
   })
 
   it('back in sidebar mode exits the menu', () => {

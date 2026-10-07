@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  FAILED_ART_MAX,
   MAX_WARM_INFLIGHT,
   WARMED_ART_MAX,
   WARM_SETTLE_TIMEOUT_MS,
@@ -235,6 +236,30 @@ describe('warmedArt (bug8.2 pre-decode, bug45 C FIFO cap, issue50 F1 completion-
     image.load(image.created.length - 1)
     expect(hasWarmedArt('http://a/1.jpg')).toBe(false)
     expect(hasWarmedArt('http://a/0.jpg')).toBe(true)
+  })
+
+  it('caps the FAILED set at FAILED_ART_MAX — the oldest failure is evicted FIFO and re-warmable', () => {
+    const image = stubImage()
+    // fail FAILED_ART_MAX + 5 urls one by one (each: first attempt fails, the
+    // bounded retry fails too → settled failed; sequential, so at most one url
+    // is in flight at a time and no queue interplay hides the eviction)
+    for (let i = 0; i < FAILED_ART_MAX + 5; i++) {
+      const url = `http://f/${i}.jpg`
+      expect(warmArt(url)).toBe(true)
+      image.fail(image.created.length - 1) // first attempt fails
+      vi.advanceTimersByTime(1500) // RETRY_DELAY_MS — the bounded retry re-arms
+      image.fail(image.created.length - 1) // the retry fails too → settled failed
+    }
+    // the cap holds: the 5 oldest failures (f/0 … f/4) were evicted FIFO
+    expect(warmedArtStats().failedEntries).toBe(FAILED_ART_MAX)
+    // an evicted failure is re-warmable again: a fresh request settles done
+    expect(hasWarmedArt('http://f/0.jpg')).toBe(false)
+    expect(warmArt('http://f/0.jpg')).toBe(true)
+    image.load(image.created.length - 1)
+    expect(hasWarmedArt('http://f/0.jpg')).toBe(true)
+    // the failed occupancy is untouched by the re-warm (done and failed are
+    // separate sets)
+    expect(warmedArtStats().failedEntries).toBe(FAILED_ART_MAX)
   })
 
   it('reports the settled (done) entries and approximate size only', () => {

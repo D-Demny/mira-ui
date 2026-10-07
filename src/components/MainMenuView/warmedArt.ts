@@ -24,6 +24,14 @@
 // re-arms it with a fresh budget) and releases its slot so the queue can
 // advance. Plain setTimeout again: Chromium 69 safe.
 export const WARMED_ART_MAX = 1000
+// perf (scroll FPS): the failed set is FIFO-bounded too — `done` has been
+// capped at WARMED_ART_MAX since bug45 option C, but every permanently dead
+// band url accumulated in `failed` without bound (cache audit: the last
+// unbounded structure left after the done cap). Two times the done budget:
+// a transient CDN outage fails a whole band at once and must stay re-warmable;
+// eviction of the oldest failure makes that url re-warmable again (warmArt()
+// refuses only on done/pending/retrying/queued, so leaving `failed` is enough)
+export const FAILED_ART_MAX = 2 * WARMED_ART_MAX
 
 // issue50 F1: at most this many band cover fetches in flight at once — the
 // mounted cards' own <img> requests then keep the remaining connection slots
@@ -62,6 +70,16 @@ const retryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 // — success, failure, and __resetWarmedArt) so it can fire at most once
 const settleTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+// perf (scroll FPS): failed.add + FIFO eviction at FAILED_ART_MAX — the same
+// insertion-order idiom as the done cap (bug45 option C); an evicted url
+// leaves `failed` and is re-warmable again automatically
+function addFailed(url: string): void {
+  failed.add(url)
+  if (failed.size > FAILED_ART_MAX) {
+    const oldest = failed.keys().next().value
+    if (oldest !== undefined) failed.delete(oldest)
+  }
+}
 function startFetch(url: string): void {
   const img = new Image()
   // match AlbumArt's fetch attributes so the browser reuses the same cache
@@ -103,7 +121,7 @@ function settleTimeout(url: string): void {
   pending.delete(url)
   img.onload = null
   img.onerror = null
-  failed.add(url)
+  addFailed(url)
   retried.delete(url)
   pump()
 }
@@ -149,7 +167,7 @@ function settle(url: string, ok: boolean): void {
     retryTimers.set(url, timer)
   } else {
     // second failure: settled failed — re-warmable via a later warmArt()
-    failed.add(url)
+    addFailed(url)
     retried.delete(url)
   }
   pump()
@@ -177,11 +195,13 @@ export function hasWarmedArt(url: string): boolean {
 }
 
 // debug readout (bug45): count + approximate size (url strings only, the
-// decoded bitmaps live in Chromium's own image cache, not the JS heap)
-export function warmedArtStats(): { entries: number; approxBytes: number } {
+// decoded bitmaps live in Chromium's own image cache, not the JS heap).
+// failedEntries: occupancy of the FIFO-bounded failed set (perf scroll FPS) —
+// on-device proof that the cap holds after a CDN outage band-fail
+export function warmedArtStats(): { entries: number; approxBytes: number; failedEntries: number } {
   let bytes = 0
   for (const url of done) bytes += url.length
-  return { entries: done.size, approxBytes: bytes }
+  return { entries: done.size, approxBytes: bytes, failedEntries: failed.size }
 }
 
 // test isolation helper — also drops the listeners of the in-flight Images so

@@ -76,7 +76,7 @@ describe('__cacheStats (bug45 option C: cache readout)', () => {
       useHomeLights: { entities: 0 },
       useLyrics: { entries: 0, maxEntries: 50, richsyncTried: 0 },
       usePrefetch: { entries: 0, maxEntries: 2000, approxBytes: 0 },
-      warmedArt: { entries: 0, maxEntries: 1000, approxBytes: 0 },
+      warmedArt: { entries: 0, maxEntries: 1000, approxBytes: 0, failedEntries: 0 },
     })
   })
 
@@ -188,6 +188,7 @@ describe('__cacheStats (bug45 option C: cache readout)', () => {
       entries: 2,
       maxEntries: 1000,
       approxBytes: url1.length + url2.length,
+      failedEntries: 0,
     })
 
     lightsUnmount()

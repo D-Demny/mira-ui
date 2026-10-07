@@ -5,6 +5,7 @@ import {
   CAROUSEL_EDGE_PADDING,
   COLLAPSED_SIDEBAR_WIDTH,
   NO_WINDOW_THRESHOLD,
+  PREVIEW_MOUNT_COUNT,
   SIDEBAR_WIDTH,
   WINDOW_MAX_CARDS,
   dialScrollLeft,
@@ -36,8 +37,15 @@ describe('windowRange (bug18)', () => {
     expect(windowRange(50, 49, null)).toEqual({ start: 33, end: 50 })
   })
 
-  it('treats a missing focus as index 0', () => {
-    expect(windowRange(50, undefined, null)).toEqual({ start: 0, end: 17 })
+  it('mounts only the preview window when focus is missing (perf scroll FPS)', () => {
+    // no content focus = the sidebar PREVIEW: only the first cards are
+    // mounted — every sidebar tick remounted a full 33-card window before
+    expect(windowRange(50, undefined, null)).toEqual({ start: 0, end: PREVIEW_MOUNT_COUNT })
+    // short lists render in full anyway (the threshold branch comes first)
+    expect(windowRange(NO_WINDOW_THRESHOLD - 1, undefined, null)).toEqual({
+      start: 0,
+      end: NO_WINDOW_THRESHOLD - 1,
+    })
   })
 
   it('disables the viewport guard when the carousel measures 0 wide (jsdom)', () => {
@@ -89,7 +97,8 @@ describe('bug39: guard vs. foreign (stale) scroll offsets', () => {
 
   it('a freshly purged category (null metrics) renders the pure index-0 window', () => {
     expect(windowRange(50, 0, null)).toEqual({ start: 0, end: 17 })
-    expect(windowRange(45, undefined, null)).toEqual({ start: 0, end: 17 })
+    // a missing focus takes the preview window, not the index-0 dial window
+    expect(windowRange(45, undefined, null)).toEqual({ start: 0, end: PREVIEW_MOUNT_COUNT })
   })
 
   it('within one category the guard only widens the window, never shrinks it', () => {

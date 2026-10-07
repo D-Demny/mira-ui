@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import { MenuIcon } from './MenuIcon'
 import type { MenuCategory } from './mockData'
 import styles from './SidebarNav.module.scss'
@@ -23,7 +25,7 @@ interface SidebarNavProps {
   collapsed?: boolean
 }
 
-export function SidebarNav({
+function SidebarNavImpl({
   categories,
   activeId,
   onSelect,
@@ -69,3 +71,8 @@ export function SidebarNav({
     </nav>
   )
 }
+
+// perf (scroll FPS): memo — MainMenuView's dial ticks change focusedIndex but
+// pass tick-stable categories/onSelect/background/collapsed, so the nav bails
+// out of re-rendering on every sidebar tick (only a real focus move repaints)
+export const SidebarNav = memo(SidebarNavImpl)

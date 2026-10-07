@@ -43,7 +43,7 @@
 // view when it escapes the scroller's containment; zero-geometry fallback
 // included.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CARD_HOLD_MS } from '@/hooks/useHardwareButtons'
 import styles from './HomeDashboardView.module.scss'
 import { MenuIcon } from './MenuIcon'
@@ -136,7 +136,7 @@ const TOUCH_SCROLL_IDLE_MS = 400
 // icons are usually generic). Covers deliberately get NO zone icon: their
 // ^ / v buttons ARE the arrows in the mockup.
 
-export function HomeDashboardView({
+function HomeDashboardViewImpl({
   entities,
   focusedIndex,
   onSceneTap,
@@ -201,6 +201,36 @@ export function HomeDashboardView({
     }
   }
 
+  // perf (scroll FPS): one-shot geometry cache for the dial ticks below. On
+  // mount and on every zone-model change this effect measures each slot's
+  // top/height ONCE in content-space coordinates (relative to the scroller's
+  // content origin — scroll-invariant, so a later tick only reads
+  // grid.scrollTop, which never forces a reflow). The per-tick path used to
+  // read clientWidth/clientHeight + two getBoundingClientRect() calls on
+  // every dial turn; with the cache warm those force synchronous layout.
+  const slotGeomRef = useRef(new Map<number, { top: number; height: number }>())
+  const scrollerHeightRef = useRef(0)
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    if (!grid || grid.clientHeight <= 0) {
+      // no geometry yet (jsdom / first paint pending): clear the cache so the
+      // focus path below falls back to the read-free legacy branch
+      slotGeomRef.current.clear()
+      scrollerHeightRef.current = 0
+      return
+    }
+    const gRect = grid.getBoundingClientRect()
+    const geom = slotGeomRef.current
+    geom.clear()
+    for (const [index, el] of slotEls.current) {
+      const r = el.getBoundingClientRect()
+      // content-space top: the rect is viewport-relative at this instant, so
+      // adding the current scrollTop pins it to the scroller's content origin
+      geom.set(index, { top: r.top - gRect.top + grid.scrollTop, height: r.height })
+    }
+    scrollerHeightRef.current = grid.clientHeight
+  }, [sceneRow, lightGrid, coverSection])
+
   // keep the focused slot visible while the dial rotates across the dashboard —
   // issue #45: gridRef now points at .scroller, the dashboard's own vertical
   // scroll port (SettingsList idiom), so containment is checked against the
@@ -215,7 +245,24 @@ export function HomeDashboardView({
     const slot = slotEls.current.get(focusedIndex)
     const grid = gridRef.current
     if (!slot || !grid) return
-    // issue #45: the scroller IS the scroll port — no parentElement indirection
+    // perf (scroll FPS): with the geometry cache warm, containment is a pure
+    // scrollTop comparison in content space — no clientWidth/clientHeight
+    // reads and no getBoundingClientRect() per dial tick (each of those can
+    // force a synchronous reflow mid-frame). The scroller is vertical-only
+    // (.scroller overflow-x: hidden, slots span the full width), so the
+    // vertical check alone is behavior-identical to the 4-edge legacy one.
+    const geom = slotGeomRef.current.get(focusedIndex)
+    if (geom !== undefined && scrollerHeightRef.current > 0) {
+      const top = grid.scrollTop
+      const bottom = top + scrollerHeightRef.current
+      if (geom.top < top || geom.top + geom.height > bottom) {
+        slot.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' })
+      }
+      return
+    }
+    // legacy path — zero-geometry environments (jsdom / first paint pending)
+    // fall back to the native call exactly like the carousel's zero-viewport
+    // branch; the cache-measure effect above re-runs once geometry exists.
     const container = grid
     if (container.clientWidth <= 0 || container.clientHeight <= 0) {
       slot.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'center' })
@@ -838,3 +885,9 @@ export function HomeDashboardView({
     </div>
   )
 }
+
+// perf (scroll FPS): memo — MainMenuView feeds this component tick-stable
+// props (frozen entities list, primitive focusedIndex, useCallback'd
+// callbacks), so dial ticks in the sidebar pane never re-render the whole
+// grid; the geometry cache inside then makes the tick path read-free too.
+export const HomeDashboardView = memo(HomeDashboardViewImpl)

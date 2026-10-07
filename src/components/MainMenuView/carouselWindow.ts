@@ -25,6 +25,15 @@ export const SCROLL_SAFE_MARGIN = 2
 // focus is cut (the lag is on that side; bug47's instant dial scroll removes
 // the lag in the first place).
 export const WINDOW_MAX_CARDS = 40
+// perf (scroll FPS): sidebar PREVIEW mode — while the dial sits on the
+// SIDEBAR (focusedIndex undefined), only the first few cards stay mounted
+// instead of a full dial window. The preview pane shows glass-blurred cards
+// from the front (bug1: preview starts at card 0 under the 250 px blur
+// target), so 8 cards (~4 viewports wide at the 194 px card pitch) cover it
+// with slack while cutting the per-sidebar-tick remount churn ~4x. Confirming
+// into a category re-mounts around the content focus anyway (fresh window),
+// so no preview-mounted card is lost in flight.
+export const PREVIEW_MOUNT_COUNT = 8
 // keep in sync with $card-art-size / $s-6 in ContentCarousel.module.scss
 export const CARD_WIDTH = 170
 export const CARD_GAP = 24
@@ -243,6 +252,11 @@ export function windowRange(
   scroll: ScrollMetrics | null,
 ): { start: number; end: number } {
   if (count < NO_WINDOW_THRESHOLD) return { start: 0, end: count }
+  // perf (scroll FPS): sidebar preview mode (focusedIndex undefined) mounts
+  // only the first PREVIEW_MOUNT_COUNT cards — see its constant; a full
+  // window here remounts every card on each sidebar tick (new category →
+  // new art URLs) and churning it is exactly what this perf pass removes
+  if (focusedIndex === undefined) return { start: 0, end: Math.min(count, PREVIEW_MOUNT_COUNT) }
   const center = focusedIndex ?? 0
   let start = Math.max(0, center - WINDOW_BEFORE)
   let end = Math.min(count, center + 1 + WINDOW_AFTER)
