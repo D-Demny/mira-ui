@@ -61,6 +61,14 @@ describe('settings store', () => {
     expect(getSettings().uiScalePct).toBe(115)
   })
 
+  it('auto-home switch defaults ON and an explicit off survives the round trip', () => {
+    // issue #85: opt-out feature — default on, a stored false is real user intent
+    expect(getSettings().autoSwitchHomeWhenIdle).toBe(true)
+    updateSettings({ autoSwitchHomeWhenIdle: false })
+    __resetSettings()
+    expect(getSettings().autoSwitchHomeWhenIdle).toBe(false)
+  })
+
   it('snaps an off-step ui scale to the nearest notch on load', () => {
     localStorage.setItem('mira.settings.v1', JSON.stringify({ uiScalePct: 103 }))
     __resetSettings()

@@ -80,6 +80,12 @@ export interface Settings {
   autoCollapseSidebar: 'off' | 'on'
   // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
   ha: HaSettingsValue
+  // issue #85: auto-switch the UI to the Home view while playback is idle
+  // (off/idle after ~3 s, paused after a 30 s grace); 'playing' always takes
+  // over back onto the now-playing screen. Default ON; blobs predating the
+  // field coerce to true (see coerce). Additive field, no schema version
+  // bump (same pattern as hybridDisabled — old builds ignore unknown keys).
+  autoSwitchHomeWhenIdle: boolean
 }
 
 export const VOLUME_STEP_MIN = 1
@@ -140,6 +146,8 @@ const DEFAULTS: Settings = {
   // defaults apply (the modal pre-fills the default URL from the
   // POST /api/ha/test response, task 7)
   ha: { url: '', username: '', password: '', token: '', tokenSource: 'default' },
+  // issue #85: ON by default (the feature is opt-out)
+  autoSwitchHomeWhenIdle: true,
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -337,6 +345,11 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     // key (every blob predating v3) coerces to the empty defaults, which is
     // the whole v2→v3 migration (idempotent, no separate step)
     ha: coerceHa(partial?.ha),
+    // issue #85: default ON — only an explicit false (user disabled the
+    // switch) coerces to false; missing (blobs predating the field) and
+    // foreign values fall back to the default. Additive field, no schema
+    // version bump (like hybridDisabled).
+    autoSwitchHomeWhenIdle: partial?.autoSwitchHomeWhenIdle !== false,
   }
 }
 

@@ -20,6 +20,7 @@ function input(over: Partial<RouteInput> = {}): RouteInput {
     splashOnlineStuck: false,
     loadStuck: false,
     showingLibrary: false,
+    showingIdleHome: false,
     ...over,
   }
 }
@@ -166,6 +167,39 @@ describe('resolveRoute', () => {
       expect(
         resolveRoute(input({ ...over, status: { active: false, setting_up: true } })).kind,
       ).toBe('setting-up')
+    })
+  })
+
+  describe('idle-home', () => {
+    // issue #85: the auto-home flag replaces idle/playing while up — same
+    // precedence semantics as library (navigation, not daemon state)
+    it('replaces the player when a device is active', () => {
+      expect(resolveRoute(input({ showingIdleHome: true }))).toEqual({ kind: 'idle-home' })
+    })
+
+    it('replaces idle when nothing is playing', () => {
+      expect(resolveRoute(input({ status: idle, showingIdleHome: true }))).toEqual({
+        kind: 'idle-home',
+      })
+    })
+
+    it('still loses to the rungs above it', () => {
+      const over = { showingIdleHome: true }
+      expect(resolveRoute(input({ ...over, offlineScreen: 'chooser' })).kind).toBe('offline')
+      expect(
+        resolveRoute(input({ ...over, auth: { required: true, url: 'https://x', loading: false } }))
+          .kind,
+      ).toBe('auth')
+      expect(resolveRoute(input({ ...over, status: null, loading: true })).kind).toBe('booting')
+      expect(
+        resolveRoute(input({ ...over, status: { active: false, setting_up: true } })).kind,
+      ).toBe('setting-up')
+    })
+
+    it('loses to library — manual navigation wins over the auto switch', () => {
+      expect(resolveRoute(input({ showingLibrary: true, showingIdleHome: true }))).toEqual({
+        kind: 'library',
+      })
     })
   })
 
