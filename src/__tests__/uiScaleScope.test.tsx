@@ -116,7 +116,7 @@ describe('bug38: display size scaling is scoped to the now-playing screen', () =
     expect(getUiScale()).toBe(1)
   })
 
-  it('renders the zoom on the player wrapper only, with the menu sheet inside and the settings sheet outside', async () => {
+  it('renders the zoom on the player wrapper only, with the player controls inside and the settings sheet outside', async () => {
     seedSettings(115)
     const { container } = renderApp('playing-lyrics')
 
@@ -136,10 +136,10 @@ describe('bug38: display size scaling is scoped to the now-playing screen', () =
     expect(rootEl.style.width).toBe('')
     expect(rootEl.style.getPropertyValue('zoom')).toBe('')
 
-    // the player's own menu sheet lives in the zoomed subtree ...
-    const sheet = screen.getByText('Show Lyrics').closest('[role="dialog"]')
-    expect(sheet).toBeTruthy()
-    expect(wrapper.contains(sheet)).toBe(true)
+    // the player's own controls live in the zoomed subtree ...
+    const selectOutput = screen.getByRole('button', { name: 'Select output' })
+    expect(selectOutput).toBeTruthy()
+    expect(wrapper.contains(selectOutput)).toBe(true)
 
     // ... while the settings list (and the other overlays) render at a fixed 100%
     const settingsSheet = screen.getByText('Display size').closest('[role="dialog"]')

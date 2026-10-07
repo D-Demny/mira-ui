@@ -1,6 +1,5 @@
 import { memo } from 'react'
 import {
-  MoreIcon,
   NextIcon,
   PauseIcon,
   PlayIcon,
@@ -11,12 +10,12 @@ import {
   SeekForward15Icon,
   ShuffleIcon,
   SmartShuffleIcon,
+  SpeakerWirelessIcon,
 } from './icons'
 import { SaveButton } from './SaveButton'
 import styles from './Controls.module.scss'
 
-import type { RepeatMode } from '@/components/Menu'
-import type { ShuffleMode } from '@/hooks/usePlayerControls'
+import type { RepeatMode, ShuffleMode } from '@/hooks/usePlayerControls'
 
 interface Props {
   isPaused: boolean
@@ -32,7 +31,7 @@ interface Props {
   onPrev?: () => void
   onPlayPause?: () => void
   onNext?: () => void
-  onMore?: () => void
+  onOpenOutputs?: () => void
   onCycleShuffle?: () => void
   onCycleRepeat?: () => void
   onRewind15?: () => void
@@ -52,7 +51,7 @@ function ControlsImpl({
   onPrev,
   onPlayPause,
   onNext,
-  onMore,
+  onOpenOutputs,
   onCycleShuffle,
   onCycleRepeat,
   onRewind15,
@@ -147,10 +146,10 @@ function ControlsImpl({
         <button
           type="button"
           className={`${styles.btn} ${styles.btnXs}`}
-          aria-label="More"
-          onClick={onMore}
+          aria-label="Select output"
+          onClick={onOpenOutputs}
         >
-          <MoreIcon size={28} />
+          <SpeakerWirelessIcon size={28} />
         </button>
       </div>
     </div>

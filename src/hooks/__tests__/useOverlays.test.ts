@@ -9,13 +9,13 @@ describe('useOverlays', () => {
 
   it('opens and closes by id', () => {
     const { result } = render()
-    expect(result.current.isOpen('menu')).toBe(false)
+    expect(result.current.isOpen('outputs')).toBe(false)
 
-    act(() => result.current.open('menu'))
-    expect(result.current.isOpen('menu')).toBe(true)
+    act(() => result.current.open('outputs'))
+    expect(result.current.isOpen('outputs')).toBe(true)
 
-    act(() => result.current.close('menu'))
-    expect(result.current.isOpen('menu')).toBe(false)
+    act(() => result.current.close('outputs'))
+    expect(result.current.isOpen('outputs')).toBe(false)
   })
 
   it('toggles the real state, not what a dev screen forced on top of it', () => {
@@ -52,19 +52,20 @@ describe('useOverlays', () => {
       expect(handled).toBe(false)
     })
 
-    it('closes the topmost overlay and leaves the rest alone', () => {
+    it('closes the topmost overlay (earliest in the fixed order) and leaves the rest alone', () => {
       const { result } = render()
       act(() => {
-        result.current.open('menu')
         result.current.open('settings')
+        result.current.open('outputs')
       })
+
+      // outputs sits before settings in BACK_ORDER, so back unwinds it first
+      act(() => void result.current.goBack())
+      expect(result.current.isOpen('outputs')).toBe(false)
+      expect(result.current.isOpen('settings')).toBe(true)
 
       act(() => void result.current.goBack())
       expect(result.current.isOpen('settings')).toBe(false)
-      expect(result.current.isOpen('menu')).toBe(true)
-
-      act(() => void result.current.goBack())
-      expect(result.current.isOpen('menu')).toBe(false)
     })
 
     it('unwinds in a fixed order regardless of the order they opened', () => {
@@ -86,7 +87,7 @@ describe('useOverlays', () => {
     })
 
     it('treats a forced-open overlay as really open', () => {
-      const { result } = render({ forcedOpen: { menu: true } })
+      const { result } = render({ forcedOpen: { outputs: true } })
       expect(result.current.busy).toBe(true)
 
       let handled = false

@@ -16,7 +16,7 @@ export type DevForcedScreen =
   | 'playing-lyrics'
   | 'playing-no-lyrics'
   | 'pairing'
-  | 'menu'
+  | 'outputs'
   | 'power-menu'
   | 'bluetooth-menu'
   | 'settings'

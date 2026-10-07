@@ -72,7 +72,7 @@ const SCREENS: ScreenDef[] = [
   { id: 'playing-lyrics', label: 'Playing: lyrics' },
   { id: 'playing-no-lyrics', label: 'Playing: no lyrics' },
   { id: 'pairing', label: 'Pairing dialog', hint: 'Over the player view' },
-  { id: 'menu', label: 'Menu open', hint: 'Bottom-sheet over player' },
+  { id: 'outputs', label: 'Output picker', hint: 'Speakers + Standard-Gerät star (issue #92)' },
   { id: 'power-menu', label: 'Power menu', hint: 'Sleep/Restart/Reset (tap Reset for confirm)' },
   {
     id: 'bluetooth-menu',

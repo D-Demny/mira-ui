@@ -13,7 +13,7 @@ function defaultProps() {
     onPrev: vi.fn(),
     onPlayPause: vi.fn(),
     onNext: vi.fn(),
-    onMore: vi.fn(),
+    onOpenOutputs: vi.fn(),
     onCycleShuffle: vi.fn(),
     onCycleRepeat: vi.fn(),
   }
@@ -39,14 +39,14 @@ describe('Controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Play' }))
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     fireEvent.click(screen.getByRole('button', { name: 'Repeat off' }))
-    fireEvent.click(screen.getByRole('button', { name: 'More' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Select output' }))
 
     expect(props.onCycleShuffle).toHaveBeenCalledTimes(1)
     expect(props.onPrev).toHaveBeenCalledTimes(1)
     expect(props.onPlayPause).toHaveBeenCalledTimes(1)
     expect(props.onNext).toHaveBeenCalledTimes(1)
     expect(props.onCycleRepeat).toHaveBeenCalledTimes(1)
-    expect(props.onMore).toHaveBeenCalledTimes(1)
+    expect(props.onOpenOutputs).toHaveBeenCalledTimes(1)
   })
 
   it('disables and swallows clicks on prev when disallowPrev is true', () => {

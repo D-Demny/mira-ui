@@ -32,8 +32,8 @@ describe('useOverlayState', () => {
     )
     const consumer = renderHook(() => useOverlayState(), { wrapper })
 
-    expect(consumer.result.current.isOpen('menu')).toBe(false)
-    act(() => consumer.result.current.open('menu'))
-    expect(result.current.overlays.isOpen('menu')).toBe(true)
+    expect(consumer.result.current.isOpen('outputs')).toBe(false)
+    act(() => consumer.result.current.open('outputs'))
+    expect(result.current.overlays.isOpen('outputs')).toBe(true)
   })
 })

@@ -29,7 +29,7 @@ function IdleScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId }:
       </div>
       <div className={styles.title}>Nothing playing</div>
       <div className={styles.hint}>{subtitle}</div>
-      <DevicePicker devices={filteredDevices} onSelect={onSelectDevice} placement="inline" />
+      <DevicePicker devices={filteredDevices} onSelect={onSelectDevice} />
       {!connected ? (
         <div className={styles.status}>
           <span className={`${styles.dot} ${styles.dotOff}`} aria-hidden />
