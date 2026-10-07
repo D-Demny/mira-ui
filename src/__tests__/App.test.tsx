@@ -82,30 +82,4 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText('waiting for sign-in...')).toBeInTheDocument())
     expect(screen.getByText('accounts.spotify.com/authorize?x=1')).toBeInTheDocument()
   })
-
-  // issue #85: the ~3 s machine timer runs in real time, so this test takes a
-  // few seconds — allow it beyond the file-wide 5 s default
-  it('auto-switches to the home menu while idle and back to the player on resume', async () => {
-    server.use(
-      http.get('*/connect/devices', () => HttpResponse.json([])),
-      http.get('*/player/saved', () => HttpResponse.json({ saved: false })),
-      http.get('*/lyrics/*', () => HttpResponse.json({ lines: [] })),
-    )
-
-    render(<App />)
-
-    await waitFor(() => expect(screen.getByText('Nothing playing')).toBeInTheDocument())
-
-    // after the ~3 s quiet time the main menu's home view takes over (the
-    // sidebar categories are its fingerprint)
-    await waitFor(() => expect(screen.queryByText('Nothing playing')).not.toBeInTheDocument(), {
-      timeout: 8000,
-    })
-    expect(screen.getByRole('button', { name: 'Einstellungen' })).toBeInTheDocument()
-
-    // a device starts playing → immediate return to the now-playing screen
-    pushEvent('observer_track_changed', baseWire)
-    await waitFor(() => expect(screen.getAllByText('Song').length).toBeGreaterThan(0))
-    expect(screen.queryByRole('button', { name: 'Einstellungen' })).not.toBeInTheDocument()
-  }, 15000)
 })

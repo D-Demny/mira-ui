@@ -42,7 +42,6 @@ import { useDiscoverableWhilePairing } from '@/hooks/useDiscoverableWhilePairing
 import { useDeviceSwitch } from '@/hooks/useDeviceSwitch'
 import { useDefaultDevicePrompt } from '@/hooks/useDefaultDevicePrompt'
 import { useHardwareButtons } from '@/hooks/useHardwareButtons'
-import { useIdleHome, type IdleHomePhase } from '@/hooks/useIdleHome'
 import { useIdleScreensaver } from '@/hooks/useIdleScreensaver'
 import { useLastArtUrl } from '@/hooks/useLastArtUrl'
 import { useLyrics } from '@/hooks/useLyrics'
@@ -191,11 +190,6 @@ function AppContent() {
   // library navigation mode (fork route /settings/library): replaces
   // idle/playing until the user exits it or presses back again
   const [showingLibrary, setShowingLibrary] = useState(false)
-  // issue #85: the auto-home flag — raised by useIdleHome once the idle/pause
-  // grace has elapsed, cleared when playback starts or the user exits the view
-  const [idleHome, setIdleHome] = useState(false)
-  const showIdleHome = useCallback(() => setIdleHome(true), [])
-  const hideIdleHome = useCallback(() => setIdleHome(false), [])
 
   const toggleLyrics = useCallback(() => {
     updateSettings({ showLyrics: !getSettings().showLyrics })
@@ -265,46 +259,6 @@ function AppContent() {
     reconnecting,
   })
   const offlineScreen = offline.screen
-
-  // issue #85: the auto-home machine runs against the BASE route (flag not
-  // applied) so it only arms on the settled idle/player screens — never over a
-  // system screen, a forced dev screen, or library navigation. A brief drop
-  // keeps the route 'player' with reconnecting=true, which is deliberately
-  // ineligible: the held player stays put until the daemon decides.
-  const baseRoute = resolveRoute({
-    offlineScreen,
-    auth,
-    status,
-    setupProgress,
-    loading,
-    online,
-    reconnecting,
-    playerStartingUp,
-    spotifyStuck,
-    splashOnlineStuck,
-    loadStuck,
-    showingLibrary,
-    showingIdleHome: false,
-  })
-  const idleHomeEligible =
-    !forced && (baseRoute.kind === 'idle' || (baseRoute.kind === 'player' && !reconnecting))
-  // phase from the REAL status — a forced dev screen never drives the machine
-  const idleHomePhase: IdleHomePhase =
-    realStatus == null || !realStatus.active
-      ? 'stopped'
-      : realStatus.is_paused
-        ? 'paused'
-        : 'playing'
-  useIdleHome({
-    enabled: settings.autoSwitchHomeWhenIdle,
-    eligible: idleHomeEligible,
-    phase: idleHomePhase,
-    showing: idleHome,
-    onShow: showIdleHome,
-    onHide: hideIdleHome,
-  })
-  // a playing player wins the same render — no menu flash over a live player
-  const idleHomeActive = idleHome && idleHomePhase !== 'playing'
 
   // seek relative to the live position
   const seekRelative = useCallback(
@@ -466,12 +420,6 @@ function AppContent() {
       }
       return
     }
-    // issue #85: back exits auto-home (like library); the press counts as user
-    // interaction, so the machine re-arms and switches back after the grace
-    if (idleHomeActive) {
-      hideIdleHome()
-      return
-    }
     if (offline.active && offline.method !== 'chooser') {
       offline.setMethod('chooser')
       return
@@ -496,8 +444,6 @@ function AppContent() {
     navigation,
     showingLibrary,
     cancelDefaultDeviceTransfer,
-    idleHomeActive,
-    hideIdleHome,
   ])
 
   const controls = usePlayerControls({
@@ -844,40 +790,7 @@ function AppContent() {
       splashOnlineStuck,
       loadStuck,
       showingLibrary,
-      showingIdleHome: idleHomeActive,
     })
-    // shared by library navigation ('library') and the auto-home view
-    // ('idle-home', issue #85): the same main menu (a fresh mount lands on the
-    // home category); only how it exits differs
-    const renderMainMenu = (onExit: () => void) => (
-      <div className={styles.app}>
-        <MainMenuView
-          onPlay={onPlayFromMenu}
-          nowPlaying={status && status.active ? status : null}
-          onExit={onExit}
-          // bug25: the settings list's link rows open the App-level panels
-          // (rendered by globalOverlays above the menu)
-          defaultDevice={
-            settings.defaultDeviceId
-              ? connectDevices.find((d) => d.id === settings.defaultDeviceId)?.name
-              : undefined
-          }
-          phoneVolume={status?.active === true && status.volume_disabled === true}
-          onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
-          onOpenDevices={() => overlays.open('outputs')}
-          onOpenBluetooth={() => overlays.open('btMenu')}
-          // bug46: dimmable HA light cards open the control popup
-          onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
-          // ticket 9.5: the Einstellungen → Home row opens the entity picker
-          onOpenEntityPicker={() => setEntityPickerOpen(true)}
-          // epic10 task 4: the Raspberry Pi row opens the provisioning view
-          onOpenPiServer={() => setPiServerModalOpen(true)}
-          // ticket 9.4: the Home Assistant row opens the settings view
-          onOpenHaSettings={() => setHaSettingsOpen(true)}
-        />
-        {globalOverlays}
-      </div>
-    )
 
     switch (route.kind) {
       case 'offline':
@@ -944,10 +857,35 @@ function AppContent() {
           </div>
         )
       case 'library':
-        return renderMainMenu(() => setShowingLibrary(false))
-      // issue #85: auto-switched home view — same menu; exit clears the flag
-      case 'idle-home':
-        return renderMainMenu(hideIdleHome)
+        return (
+          <div className={styles.app}>
+            <MainMenuView
+              onPlay={onPlayFromMenu}
+              nowPlaying={status && status.active ? status : null}
+              onExit={() => setShowingLibrary(false)}
+              // bug25: the settings list's link rows open the App-level panels
+              // (rendered by globalOverlays above the menu)
+              defaultDevice={
+                settings.defaultDeviceId
+                  ? connectDevices.find((d) => d.id === settings.defaultDeviceId)?.name
+                  : undefined
+              }
+              phoneVolume={status?.active === true && status.volume_disabled === true}
+              onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
+              onOpenDevices={() => overlays.open('outputs')}
+              onOpenBluetooth={() => overlays.open('btMenu')}
+              // bug46: dimmable HA light cards open the control popup
+              onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
+              // ticket 9.5: the Einstellungen → Home row opens the entity picker
+              onOpenEntityPicker={() => setEntityPickerOpen(true)}
+              // epic10 task 4: the Raspberry Pi row opens the provisioning view
+              onOpenPiServer={() => setPiServerModalOpen(true)}
+              // ticket 9.4: the Home Assistant row opens the settings view
+              onOpenHaSettings={() => setHaSettingsOpen(true)}
+            />
+            {globalOverlays}
+          </div>
+        )
       case 'idle':
         return (
           <div className={styles.app}>

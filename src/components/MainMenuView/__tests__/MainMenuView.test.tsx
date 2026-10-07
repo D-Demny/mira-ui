@@ -2448,21 +2448,6 @@ describe('MainMenuView', () => {
       )
     })
 
-    it('confirming the auto-home row flips the live value (issue #85)', async () => {
-      render(<MainMenuView />)
-      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
-      await screen.findByText('Settings')
-      expect(getSettings().autoSwitchHomeWhenIdle).toBe(true) // default ON
-
-      for (let i = 0; i < 9; i++) wheel(-10) // to row 9, the appended auto-home row
-      confirmDial()
-
-      expect(getSettings().autoSwitchHomeWhenIdle).toBe(false)
-      expect(
-        screen.getByText('Auto-switch to Home when idle').closest('[role="button"]')?.textContent,
-      ).toContain('Off')
-    })
-
     it('Settings opens the sub-level and back returns to the root rows', async () => {
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))

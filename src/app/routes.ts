@@ -19,7 +19,6 @@ export type Route =
   | { kind: 'setting-up'; progress: number | null }
   | { kind: 'library' }
   | { kind: 'idle' }
-  | { kind: 'idle-home' } // issue #85: auto-switched Home view while the player is idle
   | { kind: 'player' }
 
 export interface RouteInput {
@@ -38,7 +37,6 @@ export interface RouteInput {
   loadStuck: boolean
   /** library navigation mode: replaces idle/playing until the user exits it */
   showingLibrary: boolean
-  showingIdleHome: boolean // issue #85: auto-home flag raised by useIdleHome
 }
 
 // Ordered: the first rung that matches wins, and reconnecting suppresses every
@@ -57,7 +55,6 @@ export function resolveRoute(input: RouteInput): Route {
     playerStartingUp,
     spotifyStuck,
     splashOnlineStuck,
-    showingIdleHome,
     loadStuck,
     showingLibrary,
   } = input
@@ -87,11 +84,6 @@ export function resolveRoute(input: RouteInput): Route {
 
   // library navigation view (replaces idle/playing when in library mode)
   if (showingLibrary) return { kind: 'library' }
-  // issue #85: auto-home — like library it's navigation into the main menu
-  // (timer-triggered, not daemon state), so it sits above idle/player and
-  // below every system screen; a playing player clears the flag before this
-  // rung can be reached (see useIdleHome)
-  if (showingIdleHome) return { kind: 'idle-home' }
 
   if (!reconnecting && idleOrGone) return { kind: 'idle' }
 

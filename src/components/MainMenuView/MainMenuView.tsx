@@ -149,16 +149,6 @@ function buildRootSettingsRows(
       kind: 'open-link',
       section: 'Home Assistant',
     },
-    // issue #85: when ON, the UI auto-switches to this Home view while the
-    // player is idle (off/idle after ~3 s, paused after a 30 s grace); 'playing'
-    // always returns to the now-playing screen. APPENDED — row indices above
-    // stay stable (bug54)
-    {
-      id: 'set-auto-home',
-      title: 'Auto-switch to Home when idle',
-      value: settings.autoSwitchHomeWhenIdle ? 'On' : 'Off',
-      kind: 'toggle',
-    },
   ]
 }
 
@@ -1028,9 +1018,6 @@ export function MainMenuView({
       updateSettings({ karaokeLyrics: !settings.karaokeLyrics })
     } else if (card.id === 'set-mic') {
       updateSettings({ voiceMic: !settings.voiceMic })
-    } else if (card.id === 'set-auto-home') {
-      // issue #85: toggle the auto-switch-to-Home-when-idle behaviour
-      updateSettings({ autoSwitchHomeWhenIdle: !settings.autoSwitchHomeWhenIdle })
     } else if (card.id === 'set-devices') {
       onOpenDevices?.()
     } else if (card.id === 'set-bt') {
