@@ -1,0 +1,210 @@
+// issue #92: "Ausgabegeräte" modal — dark, rounded, semi-transparent backdrop
+// (same visual language as DefaultDeviceModal / the old device picker).
+.backdrop {
+  position: fixed;
+  @include inset-0;
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.62);
+  animation: outputFadeIn $dur-base $ease-standard both;
+}
+
+@keyframes outputFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card {
+  width: 520px;
+  max-width: calc(100% - #{$s-6});
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  @include hide-scrollbar;
+  @include column;
+  @include flex-gap-y($s-4);
+  padding: $s-5;
+  background: $bg;
+  border-radius: $r-2xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: outputSlideIn $dur-base $ease-emphasized both;
+}
+
+@keyframes outputSlideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: $fs-2xl;
+  font-weight: $fw-semibold;
+  letter-spacing: -0.01em;
+  color: $text-primary;
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: $r-md;
+  color: $text-secondary;
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: $text-primary;
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.empty {
+  padding: $s-3 $s-2 $s-2;
+  font-size: $fs-md;
+  color: $text-tertiary;
+  line-height: 1.4;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  @include flex-gap-y($s-2);
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+  min-height: 64px;
+  padding: $s-3 $s-4;
+  border: 1px solid transparent;
+  border-radius: $r-lg;
+  background: rgba(255, 255, 255, 0.06);
+  color: $text-secondary;
+  user-select: none;
+
+  // issue #92: the currently active routing option is clearly highlighted
+  &.activeRow {
+    border-color: rgba(30, 215, 96, 0.45);
+    background: rgba(30, 215, 96, 0.1);
+    color: $text-primary;
+
+    .sub {
+      color: $accent;
+    }
+  }
+
+  &.interactive {
+    cursor: pointer;
+    transition:
+      transform $dur-fast $ease-standard,
+      background-color $dur-fast $ease-standard;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    &:active {
+      transform: scale(0.985);
+    }
+  }
+
+  // bug31: the row the rotary dial is focused on
+  &.focused {
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  &.offline {
+    opacity: 0.5;
+  }
+}
+
+.icon {
+  flex: 0 0 auto;
+  display: flex;
+  color: inherit;
+}
+
+.texts {
+  @include column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.name {
+  font-size: $fs-lg;
+  font-weight: $fw-medium;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub {
+  font-size: $fs-xs;
+  color: $text-tertiary;
+}
+
+// issue #92: per-row star — filled + "Standard-Gerät" when this speaker is
+// the persisted default device, outline otherwise.
+.star {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-2);
+  flex: 0 0 auto;
+  padding: $s-1 $s-2;
+  border: none;
+  background: transparent;
+  color: $text-secondary;
+  cursor: pointer;
+  border-radius: $r-md;
+  transition:
+    color $dur-fast $ease-standard,
+    background-color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: $text-primary;
+  }
+
+  &:active {
+    transform: scale(0.94);
+  }
+
+  &.starFilled {
+    color: $accent;
+  }
+}
+
+.starLabel {
+  font-size: $fs-xs;
+  font-weight: $fw-medium;
+  white-space: nowrap;
+}

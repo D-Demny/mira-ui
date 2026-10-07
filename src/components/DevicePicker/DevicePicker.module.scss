@@ -1,7 +1,7 @@
 .cardInline {
   width: 320px;
   max-width: calc(100% - #{$s-7});
-  // unlike .cardModal this sits inside the idle screen's fixed chrome, so a long device
+  // unlike the old .cardModal this sits inside the idle screen's fixed chrome, so a long device
   // list on a shortened logical viewport would clip at both ends rather than scroll
   max-height: calc(100% - #{$s-6});
   overflow-y: auto;
@@ -12,81 +12,6 @@
   border-radius: $r-lg;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   text-align: left;
-}
-
-.backdrop {
-  position: fixed;
-  @include inset-0;
-  z-index: $z-menu;
-  @include flex-center;
-  background: rgba(0, 0, 0, 0.62);
-  animation: deviceFadeIn $dur-base $ease-standard both;
-}
-
-@keyframes deviceFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.cardModal {
-  width: 420px;
-  max-width: calc(100% - #{$s-6});
-  max-height: calc(100% - #{$s-6});
-  overflow-y: auto;
-  padding: $s-6;
-  background: $bg;
-  border-radius: $r-2xl;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
-  animation: deviceSlideIn $dur-slow $ease-emphasized both;
-
-  .list {
-    @include flex-gap-y($s-3);
-  }
-
-  .row {
-    min-height: 64px;
-    padding: 0 $s-4;
-    border-radius: $r-pill;
-    background: rgba(255, 255, 255, 0.07);
-
-    // bug31: the row the rotary dial is focused on
-    &.focused {
-      background: rgba(255, 255, 255, 0.14);
-    }
-  }
-
-  .name {
-    font-size: $fs-xl;
-  }
-
-  .interactive {
-    transition:
-      transform $dur-fast $ease-standard,
-      background-color $dur-fast $ease-standard;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.12);
-    }
-
-    &:active {
-      transform: scale(0.97);
-    }
-  }
-}
-
-@keyframes deviceSlideIn {
-  from {
-    transform: translateY(12px) scale(0.98);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
 }
 
 .empty {

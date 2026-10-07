@@ -9,7 +9,6 @@ import { IdleScreen } from '@/components/IdleScreen'
 import { LibraryView } from '@/components/LibraryView'
 import { Lyrics } from '@/components/Lyrics'
 import { MainMenuView } from '@/components/MainMenuView'
-import { Menu } from '@/components/Menu'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
 import { NoLyricsView } from '@/components/NoLyricsView'
 import { ReportDialog } from '@/components/ReportDialog'
@@ -79,7 +78,7 @@ export default function App() {
   // a forced screen shows its overlay without touching the real state
   const forcedOpen = useMemo(
     () => ({
-      menu: forced === 'menu' || undefined,
+      outputs: forced === 'outputs' || undefined,
       powerMenu: forced === 'power-menu' || undefined,
       btMenu: forced === 'bluetooth-menu' || undefined,
       settings: forced === 'settings' || undefined,
@@ -89,7 +88,10 @@ export default function App() {
   // closing a forced menu has to drop the override too, or it springs back
   const onOverlayClosed = useCallback(
     (id: OverlayId) => {
-      if ((id === 'menu' && forced === 'menu') || (id === 'powerMenu' && forced === 'power-menu')) {
+      if (
+        (id === 'outputs' && forced === 'outputs') ||
+        (id === 'powerMenu' && forced === 'power-menu')
+      ) {
         setForced('playing-lyrics')
       }
     },
@@ -136,11 +138,11 @@ function AppContent() {
   } = useConnectivity()
   const connectDevices = useConnectDevices()
 
-  const closeDeviceMenu = useCallback(() => overlays.close('deviceMenu'), [overlays])
+  const closeOutputs = useCallback(() => overlays.close('outputs'), [overlays])
   const onPickDevice = useDeviceSwitch({
     status: realStatus,
     notify,
-    onPicked: closeDeviceMenu,
+    onPicked: closeOutputs,
   })
   // issue #79: the default-device switch prompt. Every playback interaction
   // (player controls, hardware play/pause + presets, menu track selection) is
@@ -193,14 +195,6 @@ function AppContent() {
     updateSettings({ showLyrics: !getSettings().showLyrics })
   }, [])
 
-  const toggleKaraoke = useCallback(() => {
-    updateSettings({ karaokeLyrics: !getSettings().karaokeLyrics })
-  }, [])
-
-  const toggleVoiceMic = useCallback(() => {
-    updateSettings({ voiceMic: !getSettings().voiceMic })
-  }, [])
-
   // get settings from the daemon
   useEffect(() => {
     void initSettings()
@@ -223,7 +217,7 @@ function AppContent() {
     forced === 'playing-lyrics' ||
     forced === 'playing-no-lyrics' ||
     forced === 'pairing' ||
-    forced === 'menu' ||
+    forced === 'outputs' ||
     forced === 'power-menu' ||
     forced === 'bluetooth-menu' ||
     forced === 'reconnect-banner' ||
@@ -333,7 +327,6 @@ function AppContent() {
     setDiscoverable,
   })
 
-  const closeMenu = useCallback(() => overlays.close('menu'), [overlays])
   const closePowerMenu = useCallback(() => overlays.close('powerMenu'), [overlays])
 
   const onOpenScreensaver = useCallback(() => {
@@ -508,9 +501,8 @@ function AppContent() {
   // touch gestures
   const swipeEnabled =
     status?.active === true &&
-    !overlays.isOpen('menu') &&
+    !overlays.isOpen('outputs') &&
     !overlays.isOpen('powerMenu') &&
-    !overlays.isOpen('deviceMenu') &&
     !overlays.isOpen('btMenu') &&
     !overlays.isOpen('settings') &&
     !pairing
@@ -536,6 +528,8 @@ function AppContent() {
         online={online}
         connectDevices={connectDevices}
         onPickDevice={onPickDevice}
+        defaultDeviceId={settings.defaultDeviceId}
+        onSetDefault={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
         pairing={pairing}
         screensaverArt={screensaverArt}
         utcOffsetMin={utcOffsetMin}
@@ -878,7 +872,7 @@ function AppContent() {
               }
               phoneVolume={status?.active === true && status.volume_disabled === true}
               onOpenDefaultDevice={() => setDefaultDeviceModalOpen(true)}
-              onOpenDevices={() => overlays.open('deviceMenu')}
+              onOpenDevices={() => overlays.open('outputs')}
               onOpenBluetooth={() => overlays.open('btMenu')}
               // bug46: dimmable HA light cards open the control popup
               onOpenLightControl={(entityId, label) => setLightControl({ entityId, label })}
@@ -996,33 +990,9 @@ function AppContent() {
               onCycleRepeat={controls.onCycleRepeat}
               onRewind15={() => seekRelative(-15000)}
               onForward15={() => seekRelative(15000)}
-              onMore={() => overlays.open('menu')}
+              onOpenOutputs={() => overlays.open('outputs')}
             />
           </div>
-
-          <Menu
-            open={overlays.isOpen('menu')}
-            onClose={closeMenu}
-            showLyrics={showLyrics}
-            onToggleLyrics={toggleLyrics}
-            karaokeLyrics={settings.karaokeLyrics}
-            onToggleKaraoke={toggleKaraoke}
-            voiceMic={settings.voiceMic}
-            onToggleVoiceMic={toggleVoiceMic}
-            currentDevice={playerStatus.device_name}
-            onOpenDevices={() => {
-              overlays.close('menu')
-              overlays.open('deviceMenu')
-            }}
-            onOpenBluetooth={() => {
-              overlays.close('menu')
-              overlays.open('btMenu')
-            }}
-            onOpenSettings={() => {
-              overlays.close('menu')
-              overlays.open('settings')
-            }}
-          />
         </div>
       </div>
 

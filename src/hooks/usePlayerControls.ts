@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ObserverStatusActive } from '@/api/types'
-import type { RepeatMode } from '@/components/Menu'
 
 const PREV_DOUBLE_TAP_MS = 1500
 const TRANSITION_TIMEOUT_MS = 1200
@@ -29,6 +28,7 @@ export interface UsePlayerControlsParams {
   wrapActionWithTransfer?: (action: () => void) => void
 }
 
+export type RepeatMode = 'off' | 'context' | 'track'
 export type ShuffleMode = 'off' | 'on' | 'smart'
 
 export interface UsePlayerControlsResult {

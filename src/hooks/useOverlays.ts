@@ -1,22 +1,21 @@
 import { useCallback, useMemo, useState } from 'react'
 
 export type OverlayId =
-  'screensaver' | 'report' | 'debug' | 'deviceMenu' | 'btMenu' | 'settings' | 'powerMenu' | 'menu'
+  'screensaver' | 'report' | 'debug' | 'outputs' | 'btMenu' | 'settings' | 'powerMenu'
 
 /**
  * Back closes the first of these that is open. A fixed order rather than a
- * stack of open order: these open each other (menu opens settings, settings
- * opens debug), and this is the order a user can actually unwind them in.
+ * stack of open order: these can open on top of each other, and this is the
+ * order a user can actually unwind them in.
  */
 const BACK_ORDER: readonly OverlayId[] = [
   'screensaver',
   'report',
   'debug',
-  'deviceMenu',
+  'outputs',
   'btMenu',
   'settings',
   'powerMenu',
-  'menu',
 ]
 
 export type ScreensaverBy = 'manual' | 'auto'
@@ -55,11 +54,10 @@ const NONE: Record<OverlayId, boolean> = {
   screensaver: false,
   report: false,
   debug: false,
-  deviceMenu: false,
+  outputs: false,
   btMenu: false,
   settings: false,
   powerMenu: false,
-  menu: false,
 }
 
 /**

@@ -1,6 +1,6 @@
 import { BluetoothMenu } from '@/components/BluetoothMenu'
 import { DebugScreen } from '@/components/DebugScreen'
-import { DevicePicker } from '@/components/DevicePicker'
+import { OutputPicker } from '@/components/OutputPicker'
 import { PairingDialog } from '@/components/PairingDialog'
 import { PowerMenu } from '@/components/PowerMenu'
 import { ReportDialog } from '@/components/ReportDialog'
@@ -19,6 +19,10 @@ export interface OverlayHostProps {
   online: boolean | null
   connectDevices: ConnectDevice[]
   onPickDevice: (device: ConnectDevice) => void
+  // issue #92: the Standard-Gerät star in the "Ausgabegeräte" modal persists
+  // settings.defaultDeviceId; the player's #79 prompt reads it back
+  defaultDeviceId: string | null
+  onSetDefault: (deviceId: string) => void
   pairing: PairingPrompt | null
   screensaverArt: string | null
   utcOffsetMin: number | null
@@ -34,6 +38,8 @@ export function OverlayHost({
   online,
   connectDevices,
   onPickDevice,
+  defaultDeviceId,
+  onSetDefault,
   pairing,
   screensaverArt,
   utcOffsetMin,
@@ -49,12 +55,13 @@ export function OverlayHost({
         onClose={() => overlays.close('settings')}
         phoneVolume={phoneVolume}
       />
-      {overlays.isOpen('deviceMenu') ? (
-        <DevicePicker
+      {overlays.isOpen('outputs') ? (
+        <OutputPicker
           devices={connectDevices}
+          currentDefaultId={defaultDeviceId}
           onSelect={onPickDevice}
-          placement="modal"
-          onClose={() => overlays.close('deviceMenu')}
+          onSetDefault={onSetDefault}
+          onClose={() => overlays.close('outputs')}
         />
       ) : null}
       {overlays.isOpen('btMenu') ? (

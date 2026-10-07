@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, act } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { DevicePicker } from '../DevicePicker'
 import type { ConnectDevice } from '@/api/types'
 import { ListFocusContext } from '@/navigation/listFocusContext'
@@ -24,130 +24,47 @@ const devices: ConnectDevice[] = [
   makeDevice({ id: 'dev-003', name: 'Old Phone', is_offline: true }),
 ]
 
-function dialWheel(deltaX: number) {
-  act(() => {
-    ListFocusContext.entry.onWheel({
-      deltaX,
-      preventDefault: vi.fn(),
-    } as unknown as WheelEvent)
-  })
-}
-
-function dialConfirm() {
-  act(() => {
-    ListFocusContext.entry.onConfirm?.()
-  })
-}
-
 function makeParentEntry(): ListFocusEntry {
   return { onWheel: vi.fn(), onConfirm: null, active: true }
 }
 
-describe('bug31: DevicePicker dial + back', () => {
+// issue #92: the modal placement moved to OutputPicker; only the inline list
+// (embedded in the idle screen) is left.
+describe('DevicePicker (inline)', () => {
   afterEach(() => {
     ListFocusContext.setActive(null)
   })
 
-  it('the inline placement does not register a list focus entry', () => {
+  it('does not register a list focus entry', () => {
     const parent = makeParentEntry()
     ListFocusContext.setActive(parent)
 
-    render(<DevicePicker devices={devices} placement="inline" onSelect={vi.fn()} />)
+    render(<DevicePicker devices={devices} onSelect={vi.fn()} />)
 
     // the sentinel stays on top — the inline box must not grab the dial
     expect(ListFocusContext.entry).toBe(parent)
   })
 
-  it('the modal placement registers an entry on top of the parent', () => {
-    const parent = makeParentEntry()
-    ListFocusContext.setActive(parent)
+  it('renders the device names, and the empty text for an empty list', () => {
+    const { rerender } = render(<DevicePicker devices={devices} />)
+    expect(screen.getByText('Living Room')).toBeInTheDocument()
+    expect(screen.getByText('MacBook')).toBeInTheDocument()
+    expect(screen.getByText('Old Phone')).toBeInTheDocument()
 
-    render(
-      <DevicePicker devices={devices} placement="modal" onSelect={vi.fn()} onClose={vi.fn()} />,
-    )
-
-    expect(ListFocusContext.entry).not.toBe(parent)
-    expect(ListFocusContext.entry.active).toBe(true)
+    rerender(<DevicePicker devices={[]} />)
+    expect(screen.getByText('No active devices to select from for playback')).toBeInTheDocument()
   })
 
-  it('starts with the active device focused', () => {
-    render(
-      <DevicePicker devices={devices} placement="modal" onSelect={vi.fn()} onClose={vi.fn()} />,
-    )
-    const focused = document.querySelector('.row.focused')
-    expect(focused).toBeTruthy()
-    expect(focused?.textContent).toContain('MacBook')
-  })
-
-  it('moves the focus with the dial and confirms the focused device', () => {
+  it('routes a row click to onSelect, but offline rows are not buttons', () => {
     const onSelect = vi.fn()
-    render(
-      <DevicePicker devices={devices} placement="modal" onSelect={onSelect} onClose={vi.fn()} />,
-    )
+    render(<DevicePicker devices={devices} onSelect={onSelect} />)
 
-    // focus starts at 'MacBook' (index 1); turn up to 'Living Room' (index 0)
-    dialWheel(10)
-    const focused = document.querySelector('.row.focused')
-    expect(focused?.textContent).toContain('Living Room')
+    // 'Old Phone' is offline → no button role at all
+    const rows = screen.getAllByRole('button')
+    expect(rows).toHaveLength(2)
 
-    dialConfirm()
+    fireEvent.click(rows[0])
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith(devices[0])
-  })
-
-  it('turning down confirms a device below the active one', () => {
-    const onSelect = vi.fn()
-    render(
-      <DevicePicker devices={devices} placement="modal" onSelect={onSelect} onClose={vi.fn()} />,
-    )
-
-    // focus starts at 'MacBook' (index 1); turn down to 'Old Phone' (index 2)
-    dialWheel(-10)
-    const focused = document.querySelector('.row.focused')
-    expect(focused?.textContent).toContain('Old Phone')
-
-    // offline rows are not selectable, so the confirm is a no-op
-    dialConfirm()
-    expect(onSelect).not.toHaveBeenCalled()
-  })
-
-  it('the back button closes the modal and is consumed by the entry', () => {
-    const onClose = vi.fn()
-    render(
-      <DevicePicker devices={devices} placement="modal" onSelect={vi.fn()} onClose={onClose} />,
-    )
-
-    let consumed: boolean | undefined
-    act(() => {
-      consumed = ListFocusContext.entry.onBack?.()
-    })
-
-    expect(onClose).toHaveBeenCalledTimes(1)
-    expect(consumed).toBe(true)
-  })
-
-  it('restores the parent entry after the modal unmounts', () => {
-    const parent = makeParentEntry()
-    ListFocusContext.setActive(parent)
-
-    const { unmount } = render(
-      <DevicePicker devices={devices} placement="modal" onSelect={vi.fn()} onClose={vi.fn()} />,
-    )
-    expect(ListFocusContext.entry).not.toBe(parent)
-
-    unmount()
-    expect(ListFocusContext.entry).toBe(parent)
-  })
-
-  it('clamps the focus at the end of the list', () => {
-    render(
-      <DevicePicker devices={devices} placement="modal" onSelect={vi.fn()} onClose={vi.fn()} />,
-    )
-
-    // focus starts at index 1; turn down past the last row (index 2)
-    dialWheel(-10) // -> 2
-    dialWheel(-10) // clamped at 2
-    const focused = document.querySelector('.row.focused')
-    expect(focused?.textContent).toContain('Old Phone')
   })
 })
