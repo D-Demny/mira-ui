@@ -229,3 +229,59 @@ describe('epic10 task 2: remoteBlur artwork adapter', () => {
     expect(screen.getByRole('img', { name: 'Cover' })).toHaveAttribute('src', remoteArtUrl(CDN))
   })
 })
+
+describe('#90: loadDelayMs (entry-burst stagger gate)', () => {
+  // the epic10 describe above leaves a remoteBlur profile behind in the
+  // module-level server state — reset to standalone for these tests
+  beforeEach(() => {
+    __resetMiraServerState()
+    __resetSettings()
+  })
+  it('holds the src (placeholder only) until the delay has passed', () => {
+    vi.useFakeTimers()
+    const { container, unmount } = render(
+      <AlbumArt src="http://img/d.jpg" alt="Cover" size={100} loadDelayMs={500} />,
+    )
+
+    // no <img> before the delay — exactly the bug27 placeholder
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(container.querySelector('.placeholder svg')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(499)
+    })
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(screen.getByRole('img', { name: 'Cover' })).toHaveAttribute('src', 'http://img/d.jpg')
+
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('reveals immediately when the delay flips to 0 (the focus flush)', () => {
+    vi.useFakeTimers()
+    const { rerender, unmount } = render(
+      <AlbumArt src="http://img/d.jpg" alt="Cover" size={100} loadDelayMs={500} />,
+    )
+
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+
+    // the dial lands on this card: 0 now, no waiting out the remaining time
+    rerender(<AlbumArt src="http://img/d.jpg" alt="Cover" size={100} loadDelayMs={0} />)
+    expect(screen.getByRole('img', { name: 'Cover' })).toHaveAttribute('src', 'http://img/d.jpg')
+
+    unmount()
+    vi.useRealTimers()
+  })
+
+  it('without the prop the src is immediate (standalone behavior untouched)', () => {
+    render(<AlbumArt src="http://img/e.jpg" alt="Cover" size={100} />)
+    expect(screen.getByRole('img', { name: 'Cover' })).toHaveAttribute('src', 'http://img/e.jpg')
+  })
+})
