@@ -51,6 +51,9 @@ describe('DevicePicker (inline)', () => {
     expect(screen.getByText('MacBook')).toBeInTheDocument()
     expect(screen.getByText('Old Phone')).toBeInTheDocument()
 
+    // issue #98: the header reads "Spotify abspielen", exactly as written
+    expect(screen.getByText('Spotify abspielen')).toBeInTheDocument()
+
     rerender(<DevicePicker devices={[]} />)
     expect(screen.getByText('No active devices to select from for playback')).toBeInTheDocument()
   })

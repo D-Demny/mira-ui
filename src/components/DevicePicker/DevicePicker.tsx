@@ -55,7 +55,9 @@ function DevicePickerImpl({ devices, onSelect, compact = false }: Props) {
   // always render the box even if no items
   return (
     <div className={`${styles.cardInline}${compact ? ` ${styles.compact}` : ''}`}>
-      <div className={styles.header}>Devices</div>
+      {/* issue #98: the idle dashboard's device zone — titled by its purpose,
+          read exactly as written (no CSS uppercasing) */}
+      <div className={styles.header}>Spotify abspielen</div>
       {devices.length === 0 ? (
         empty
       ) : (
