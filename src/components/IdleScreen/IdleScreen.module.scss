@@ -93,8 +93,8 @@
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr)); // 2x2 of squarish tiles
-  grid-auto-rows: minmax(0, 1fr);
+  // issue #103: column/row templates are set inline per scene count
+  // (sceneLayout) so the tiles always fill this 2/3 cell evenly — no scrolling
   align-content: center;
   gap: $s-3;
 }
