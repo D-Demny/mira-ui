@@ -124,13 +124,35 @@
   border-radius: $r-lg;
   cursor: pointer;
 
-  // issue #102: the harsh green border went. Focus/hover reads as a lighter
-  // tint plus a subtle inner glow — the codebase's focus language (a light
-  // lift, never an accent ring)
+  // issue #102/#110: the harsh green border went, and the neutral white lift
+  // is gone too — focus/hover/tap reads as a WARM AMBER tint with a soft
+  // gold glow (no cool or green highlights anywhere on tile states). The
+  // gradient keeps the $surface-elev base dark enough for the icon/label to
+  // stay readable.
   &:hover,
   &:focus-visible {
-    background: rgba(255, 255, 255, 0.14);
-    box-shadow: inset 0 0 16px rgba(255, 255, 255, 0.1);
+    background: linear-gradient(160deg, rgba(255, 191, 0, 0.22) 0%, rgba(255, 191, 0, 0.08) 100%);
+    border-color: rgba(255, 191, 0, 0.4);
+    box-shadow: 0 0 12px rgba(255, 191, 0, 0.35);
+  }
+
+  // while the finger is down, the pressed card glows a touch harder
+  &:active {
+    background: linear-gradient(160deg, rgba(255, 191, 0, 0.3) 0%, rgba(255, 191, 0, 0.14) 100%);
+    border-color: rgba(255, 191, 0, 0.55);
+    box-shadow: 0 0 14px rgba(255, 191, 0, 0.5);
+  }
+
+  &:hover .sceneIcon,
+  &:focus-visible .sceneIcon,
+  &:active .sceneIcon {
+    color: rgba(255, 205, 96, 0.95);
+  }
+
+  &:hover .sceneLabel,
+  &:focus-visible .sceneLabel,
+  &:active .sceneLabel {
+    color: $text-primary;
   }
 }
 
