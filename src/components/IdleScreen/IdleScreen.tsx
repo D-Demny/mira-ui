@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, type CSSProperties } from 'react'
 import { MenuIcon } from '@/components/MainMenuView/MenuIcon'
 import { sceneMenuIcon } from '@/components/MainMenuView/homeDashboard'
 import { DevicePicker } from '@/components/DevicePicker'
@@ -21,6 +21,31 @@ import styles from './IdleScreen.module.scss'
 // $surface-elev surface, so legibility on both backgrounds is unchanged.
 // Scene tiles actuate via the shared entity store (scene/turn_on); no polling
 // while idle (pollActive=false) — only the one initial read per tile.
+// issue #103: the scene grid scales with its count so it always fills its
+// 2/3 cell evenly — no scrolling, never breaking out of the right column.
+//   1 scene        -> one large tile filling the whole cell (1x1)
+//   2 scenes       -> two tiles side by side (2 x 1)
+//   3 scenes       -> a 2-top / 1-wide-bottom podium: the third tile spans the
+//                     full width of the row below the first two (2 cols, 2 rows)
+//   4+ scenes      -> a denser 2-wide grid, one row per pair (2 x ceil(n/2))
+function sceneLayout(count: number): CSSProperties {
+  if (count <= 1)
+    return { gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)' }
+  if (count === 2)
+    return { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gridTemplateRows: 'minmax(0, 1fr)' }
+  if (count === 3) {
+    // the third tile spans both columns as the wide bottom row — its span is
+    // applied per tile in the render below
+    return {
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+      gridTemplateRows: 'repeat(2, minmax(0, 1fr))',
+    }
+  }
+  return {
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gridTemplateRows: `repeat(${Math.ceil(count / 2)}, minmax(0, 1fr))`,
+  }
+}
 
 interface Props {
   connected: boolean
@@ -65,13 +90,18 @@ function IdleScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId, a
           // section header on top, the grid filling the rest of the 2/3 cell
           <div className={styles.sceneCol}>
             <div className={styles.sectionHeader}>Beleuchtung</div>
-            <div className={styles.sceneGrid} aria-label="Scenes">
-              {scenes.map((scene) => (
+            <div
+              className={styles.sceneGrid}
+              style={sceneLayout(scenes.length)}
+              aria-label="Scenes"
+            >
+              {scenes.map((scene, index) => (
                 <div
                   key={scene.entityId}
                   className={styles.sceneTile}
                   role="button"
                   tabIndex={0}
+                  style={scenes.length === 3 && index === 2 ? { gridColumn: '1 / -1' } : undefined}
                   onClick={() => scene.actuate()}
                 >
                   <span className={styles.sceneIcon} aria-hidden>

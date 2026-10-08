@@ -181,6 +181,65 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
     expect(screen.getByText('Spotify abspielen')).toBeInTheDocument()
   })
 
+  it.each([
+    [1, 'minmax(0, 1fr)', 'minmax(0, 1fr)'],
+    [2, 'repeat(2, minmax(0, 1fr))', 'minmax(0, 1fr)'],
+    [3, 'repeat(2, minmax(0, 1fr))', 'repeat(2, minmax(0, 1fr))'],
+    [4, 'repeat(2, minmax(0, 1fr))', 'repeat(2, minmax(0, 1fr))'],
+  ])(
+    'issue #103: the scene grid template scales with the count (%i scenes)',
+    async (count, cols, rows) => {
+      const ids = ['scene.kino', 'scene.abendstimmung', 'scene.fokus', 'scene.nacht'].slice(
+        0,
+        count,
+      )
+      localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(ids))
+      server.use(
+        ...ids.map((id) =>
+          http.get(`*/ha-api/states/${id}`, () =>
+            HttpResponse.json({
+              entity_id: id,
+              state: 'none',
+              attributes: { friendly_name: id.split('.').pop() },
+            }),
+          ),
+        ),
+      )
+
+      const { container } = render(<IdleScreen connected devices={DEVICES} />)
+      const firstId = ids[0].split('.').pop()!
+      await screen.findByText(firstId.charAt(0).toUpperCase() + firstId.slice(1))
+
+      const grid = container.querySelector('[class*="sceneGrid"]') as HTMLElement
+      expect(grid.style.gridTemplateColumns).toBe(cols)
+      expect(grid.style.gridTemplateRows).toBe(rows)
+    },
+  )
+
+  it('issue #103: with three scenes the third tile spans the wide bottom row', async () => {
+    const ids = ['scene.kino', 'scene.abendstimmung', 'scene.fokus']
+    localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(ids))
+    server.use(
+      ...ids.map((id) =>
+        http.get(`*/ha-api/states/${id}`, () =>
+          HttpResponse.json({
+            entity_id: id,
+            state: 'none',
+            attributes: { friendly_name: id.split('.').pop() },
+          }),
+        ),
+      ),
+    )
+
+    const { container } = render(<IdleScreen connected devices={DEVICES} />)
+    await screen.findByText('Kino')
+
+    const tiles = container.querySelectorAll('[class*="sceneTile"]')
+    expect(tiles.length).toBe(3)
+    expect((tiles[2] as HTMLElement).style.gridColumn).toBe('1 / -1')
+    expect((tiles[0] as HTMLElement).style.gridColumn).toBe('')
+  })
+
   it('issue #99: blurred art background when artUrl is given, plain gradient otherwise', () => {
     const { container, rerender } = render(
       <IdleScreen connected devices={DEVICES} artUrl="http://cdn/cover.jpg" />,
