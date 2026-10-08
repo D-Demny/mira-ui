@@ -2448,6 +2448,32 @@ describe('MainMenuView', () => {
       )
     })
 
+    it('issue #100: Idle & Screensaver section toggles the idle dashboard', async () => {
+      render(<MainMenuView />)
+      fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))
+
+      // the new last section + its single toggle row (default On) with the
+      // description sub-line
+      const sectionHeader = await screen.findByText('Idle & Screensaver')
+      expect(sectionHeader).toBeInTheDocument()
+      const title = screen.getByText('Idle Screen aktivieren')
+      const row = title.closest('[class*="row"]') as HTMLElement
+      expect(row.textContent).toContain('On')
+      expect(
+        screen.getByText('Zeige Szenen und Lautsprecher-Auswahl bei Inaktivität'),
+      ).toBeInTheDocument()
+
+      // confirm on the focused row flips the setting (default ON → OFF) —
+      // 9 wheel steps down from 'Settings' (index 0) to the last row (9)
+      for (let i = 0; i < 9; i++) wheel(-10)
+      confirmDial()
+
+      expect(getSettings().idleScreenEnabled).toBe(false)
+      expect(
+        screen.getByText('Idle Screen aktivieren').closest('[class*="row"]')?.textContent,
+      ).toContain('Off')
+    })
+
     it('Settings opens the sub-level and back returns to the root rows', async () => {
       render(<MainMenuView />)
       fireEvent.click(screen.getByRole('button', { name: 'Einstellungen' }))

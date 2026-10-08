@@ -22,10 +22,10 @@
 }
 
 .header {
-  font-size: $fs-sm;
+  // issue #98: mixed-case title ("Spotify abspielen") — no uppercasing or
+  // wide letter-spacing, the text reads exactly as written
+  font-size: $fs-md;
   font-weight: $fw-semibold;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: $text-tertiary;
   padding: $s-1 $s-2 $s-2;
 }
@@ -71,7 +71,10 @@
 
 .compactRow {
   border-radius: 999px; // pill container
-  padding: $s-1 $s-3;
+  // issue #98: visibly taller rows — more vertical padding plus a 44px touch
+  // target floor so each device is an obvious, comfortably tappable row
+  padding: $s-2 $s-4;
+  min-height: 44px;
   gap: $s-2;
 }
 .icon {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import App from '../App'
+import { updateSettings } from '../settings'
 import { server } from './msw-server'
 import { baseWire } from './fixtures/observer'
 
@@ -84,5 +85,24 @@ describe('App', () => {
 
     await waitFor(() => expect(screen.getByText('waiting for sign-in...')).toBeInTheDocument())
     expect(screen.getByText('accounts.spotify.com/authorize?x=1')).toBeInTheDocument()
+  })
+
+  it('issue #100: with the toggle OFF the idle route shows the plain "Nothing playing" screen', async () => {
+    updateSettings({ idleScreenEnabled: false })
+    try {
+      server.use(
+        http.get('*/connect/devices', () => HttpResponse.json([])),
+        http.get('*/player/saved', () => HttpResponse.json({ saved: false })),
+      )
+
+      render(<App />)
+
+      // the pre-#95 idle screen, not the idle dashboard (which never renders
+      // the "Nothing playing" title)
+      await waitFor(() => expect(screen.getByText('Nothing playing')).toBeInTheDocument())
+    } finally {
+      // the settings store is module-level — restore the default for later tests
+      updateSettings({ idleScreenEnabled: true })
+    }
   })
 })

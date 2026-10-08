@@ -429,6 +429,42 @@ describe('settings store', () => {
     })
   })
 
+  describe('idleScreenEnabled (issue #100)', () => {
+    it('defaults to on on a fresh install', () => {
+      expect(getSettings().idleScreenEnabled).toBe(true)
+    })
+
+    it('coerces a missing field in an old blob to on (migration direction: ON default)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
+      )
+      __resetSettings()
+      expect(getSettings().idleScreenEnabled).toBe(true)
+    })
+
+    it.each([
+      ['explicit true', true, true],
+      ['explicit false (the only OFF)', false, false],
+      ['"on"', 'on', true],
+      ['"off"', 'off', true],
+      ['0', 0, true],
+      ['null', null, true],
+      ['an object', {}, true],
+    ])('inverted strict coercion: stored %s → %s', (_label, stored, expected) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ idleScreenEnabled: stored }))
+      __resetSettings()
+      expect(getSettings().idleScreenEnabled).toBe(expected)
+    })
+
+    it('round-trips false through localStorage (explicit OFF survives a restart)', () => {
+      updateSettings({ idleScreenEnabled: false })
+      expect(getSettings().idleScreenEnabled).toBe(false)
+      __resetSettings()
+      expect(getSettings().idleScreenEnabled).toBe(false)
+    })
+  })
+
   describe('ha (ticket 9.4)', () => {
     const DEFAULT_HA = {
       url: '',
