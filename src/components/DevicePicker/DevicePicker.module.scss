@@ -73,15 +73,23 @@
   width: 100%;
   max-width: 100%;
   padding: $s-2;
+
+  // issue #109: roomier spacing between the taller cards
+  .list {
+    gap: $s-2;
+  }
 }
 
 .compactRow {
   border-radius: 999px; // pill container
-  // issue #98: visibly taller rows — more vertical padding plus a 44px touch
-  // target floor so each device is an obvious, comfortably tappable row
-  padding: $s-2 $s-4;
-  min-height: 44px;
-  gap: $s-2;
+  // issue #98: visibly taller rows — more vertical padding plus a touch floor
+  // so each device is an obvious, comfortably tappable row
+  // issue #109: the old 44px pills read as flat and tiny — ~1.6x that height
+  // with 12px vertical / 16px horizontal inner padding for a substantial,
+  // finger-friendly two-line card (name + muted type subtitle)
+  padding: $s-3 $s-4;
+  min-height: 68px;
+  gap: $s-3;
 }
 .icon {
   display: flex;
@@ -89,10 +97,29 @@
   color: inherit;
 }
 
-.name {
+.textBlock {
+  // issue #109: stacks the device name over its small type subtitle
   flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.name {
   font-size: $fs-lg;
   font-weight: $fw-medium;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  // issue #109: small muted secondary line under the name — a device-type
+  // label (the ConnectDevice payload has no model field, so this is derived)
+  font-size: $fs-sm;
+  font-weight: $fw-regular;
+  color: $text-tertiary;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
