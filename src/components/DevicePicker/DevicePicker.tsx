@@ -63,8 +63,9 @@ function DeviceList({
               onClick={interactive ? () => onSelect?.(d) : undefined}
             >
               <span className={styles.icon}>
-                {/* issue #109: prominent left icon in the idle list */}
-                <DeviceTypeIcon type={d.type} size={compact ? 28 : 22} />
+                {/* issue #109: prominent left icon in the idle list;
+                    issue #114: scaled up to 32px with the enlarged type */}
+                <DeviceTypeIcon type={d.type} size={compact ? 32 : 22} />
               </span>
               <span className={styles.textBlock}>
                 <span className={styles.name}>{d.name}</span>

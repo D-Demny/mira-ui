@@ -103,8 +103,11 @@
 // their cards instead of floating detached near the top edge.
 .sectionHeader {
   flex: 0 0 auto;
-  font-size: $fs-xl;
-  font-weight: $fw-semibold;
+  // issue #114: section headers enlarged to 20px bold (within the 18-20px
+  // spec band) for legibility from a distance — same size/weight as the
+  // device card's "Spotify abspielen" header
+  font-size: 20px;
+  font-weight: $fw-bold;
   color: $text-tertiary;
   text-align: left;
   padding-top: $s-2;
@@ -132,26 +135,33 @@
   gap: $s-2;
   min-height: 0;
   padding: $s-3;
-  background: $surface-elev;
+  // issue #114: translucent glassmorphism — the tile fills its grid cell
+  // (issue #103) with a semi-transparent dark base + 12px backdrop blur so
+  // the blurred ambient background shines through
+  background: $glass-bg;
+  -webkit-backdrop-filter: blur($glass-blur);
+  backdrop-filter: blur($glass-blur);
   border: 1px solid $divider; // stays neutral — no accent ring (issue #102)
   border-radius: $r-lg;
   cursor: pointer;
 
   // issue #102/#110: the harsh green border went, and the neutral white lift
   // is gone too — focus/hover/tap reads as a WARM AMBER tint with a soft
-  // gold glow (no cool or green highlights anywhere on tile states). The
-  // gradient keeps the $surface-elev base dark enough for the icon/label to
-  // stay readable.
+  // gold glow (no cool or green highlights anywhere on tile states).
+  // issue #114: the amber gradient is layered OVER the glass base instead of
+  // replacing it, so the blur-through is preserved while engaged.
   &:hover,
   &:focus-visible {
-    background: linear-gradient(160deg, rgba(255, 191, 0, 0.22) 0%, rgba(255, 191, 0, 0.08) 100%);
+    background:
+      linear-gradient(160deg, rgba(255, 191, 0, 0.22) 0%, rgba(255, 191, 0, 0.08) 100%), $glass-bg;
     border-color: rgba(255, 191, 0, 0.4);
     box-shadow: 0 0 12px rgba(255, 191, 0, 0.35);
   }
 
   // while the finger is down, the pressed card glows a touch harder
   &:active {
-    background: linear-gradient(160deg, rgba(255, 191, 0, 0.3) 0%, rgba(255, 191, 0, 0.14) 100%);
+    background:
+      linear-gradient(160deg, rgba(255, 191, 0, 0.3) 0%, rgba(255, 191, 0, 0.14) 100%), $glass-bg;
     border-color: rgba(255, 191, 0, 0.55);
     box-shadow: 0 0 14px rgba(255, 191, 0, 0.5);
   }
@@ -175,8 +185,10 @@
 }
 
 .sceneLabel {
-  font-size: $fs-md;
-  font-weight: $fw-medium;
+  // issue #114: enlarged tile labels - 18px semi-bold, matching the device
+  // row names for consistent button typography across both zones
+  font-size: $fs-xl;
+  font-weight: $fw-semibold;
   color: $text-secondary;
   text-align: center;
   max-width: 100%;
