@@ -51,7 +51,10 @@
 .interactive {
   cursor: pointer;
 
-  &:hover {
+  // issue #102: keyboard focus gets the same subtle lift as hover — a light
+  // tint, never an accent ring
+  &:hover,
+  &:focus-visible {
     background: $surface;
     color: $text-primary;
   }
