@@ -80,11 +80,25 @@
 .compact {
   width: 100%;
   max-width: 100%;
+  // issue #124: inside the idle screen's full-height device column this card
+  // STRETCHES to fill it (flex:1 within its flex parent — a no-op wherever
+  // else .compact might be used), so it spans top-to-bottom exactly like the
+  // scene panel on the right. The base max-height shrink-wrap cap is lifted.
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
   padding: $s-2;
 
   // issue #109: roomier spacing between the taller cards
   .list {
     gap: $s-2;
+    // issue #124: the header pins to the card top and this list takes ALL the
+    // remaining card height — each device row stretches into a generous,
+    // easy-to-tap tile (spec: even a single "Alle" entry fills the card)
+    flex: 1 1 auto;
+    min-height: 0;
   }
 }
 
@@ -100,6 +114,9 @@
   background: rgba(255, 255, 255, 0.06);
   padding: $s-3 $s-4;
   min-height: 68px;
+  // issue #124: rows share the card's full remaining height — even a single
+  // "Alle" entry stretches into a generous, easy-to-tap tile
+  flex: 1 1 auto;
   gap: $s-3;
 }
 .icon {

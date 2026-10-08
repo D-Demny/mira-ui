@@ -23,9 +23,11 @@ import styles from './IdleScreen.module.scss'
 // while idle (pollActive=false) — only the one initial read per tile.
 // issue #103: the scene grid template scales with its count so tiles fill the
 // panel evenly. issue #122: the grid + "Beleuchtung" header are wrapped in a
-// content-sized glass panel (scenePanel) that is vertically centered in the
-// 2/3 column, mirroring the device card on the left — never breaking out of
-// the right column.
+// glass panel (scenePanel), mirroring the device card on the left — never
+// breaking out of the right column. issue #124: BOTH blocks stretch to the
+// FULL height of their columns (~90% of the display, top-to-bottom) instead
+// of floating as content-sized islands; the scene grid grows to fill what
+// remains under its header and device rows stretch into generous tap tiles.
 //   1 scene        -> one large tile filling the whole cell (1x1)
 //   2 scenes       -> two tiles side by side (2 x 1)
 //   3 scenes       -> a 2-top / 1-wide-bottom podium: the third tile spans the
