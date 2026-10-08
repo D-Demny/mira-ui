@@ -49,6 +49,10 @@
 }
 
 // the content layer sits above the background layers (position relative)
+// issue #108: ~90% screen coverage — the old $s-7 (32px) chrome left the
+// dashboard cramped and centered; 12px vertical / 16px horizontal outer
+// padding pushes the content almost edge-to-edge while keeping a consistent
+// frame around it
 .content {
   position: relative;
   width: 100%;
@@ -57,7 +61,7 @@
   flex-direction: column; // no scenes: single centered column
   align-items: center;
   justify-content: center;
-  padding: $s-7;
+  padding: $s-3 $s-4;
 }
 
 // issue #102: devices + scenes as a strict 1/3 / 2/3 split. A grid (not flex)
@@ -80,12 +84,18 @@
 // issue #102: section header of the scene zone — same typography and left
 // alignment as the device card's "Spotify abspielen" header (DevicePicker's
 // .header, which sits inside its card's padding)
+// issue #108: the two zone titles are the dashboard's primary anchors now —
+// enlarged to $fs-xl and given a 12px margin before the cards begin. The
+// 8px top offset mirrors the compact card's own 8px inner padding, so both
+// headers sit on the same horizontal line at the top of their columns
 .sectionHeader {
   flex: 0 0 auto;
-  font-size: $fs-md;
+  font-size: $fs-xl;
   font-weight: $fw-semibold;
   color: $text-tertiary;
   text-align: left;
+  padding-top: $s-2;
+  margin-bottom: $s-3;
 }
 
 .sceneGrid {
@@ -96,7 +106,8 @@
   // issue #103: column/row templates are set inline per scene count
   // (sceneLayout) so the tiles always fill this 2/3 cell evenly — no scrolling
   align-content: center;
-  gap: $s-3;
+  // issue #108: roomier grid gaps for a natural, room-filling flow
+  gap: $s-4;
 }
 
 .sceneTile {

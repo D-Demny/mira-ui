@@ -24,10 +24,13 @@
 .header {
   // issue #98: mixed-case title ("Spotify abspielen") — no uppercasing or
   // wide letter-spacing, the text reads exactly as written
-  font-size: $fs-md;
+  // issue #108: zone titles are the dashboard's primary anchors — $fs-xl with
+  // a 12px bottom margin before the cards begin, matching the scene zone's
+  // "Beleuchtung" header (same size, same baseline line at the column top)
+  font-size: $fs-xl;
   font-weight: $fw-semibold;
   color: $text-tertiary;
-  padding: $s-1 $s-2 $s-2;
+  padding: $s-1 $s-2 $s-3;
 }
 
 .list {
