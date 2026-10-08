@@ -421,6 +421,35 @@ function AppContent() {
       }
       return
     }
+    // issue #104: in TRUE idle, back opens the Home menu — and the menu's
+    // own sidebar back (useMainMenuFocus → onExit = setShowingLibrary(false))
+    // brings the user straight back to the Idle Screen, so the two toggle
+    // each other seamlessly. The guard RECOMPUTES the route exactly like the
+    // render does, so this fires only when the idle screen is what is
+    // actually on display — never during booting/auth/offline/spinner states
+    // (where `!statusActive` holds too), and never over a forced dev screen.
+    if (!forced && !showingLibrary) {
+      const route = resolveRoute({
+        offlineScreen,
+        auth,
+        status,
+        setupProgress,
+        loading,
+        online,
+        reconnecting,
+        playerStartingUp,
+        spotifyStuck,
+        splashOnlineStuck,
+        loadStuck,
+        showingLibrary,
+      })
+      if (route.kind === 'idle') {
+        setShowingLibrary(true)
+        navigation.resetStack()
+        navigation.setCurrentRoute('home')
+        return
+      }
+    }
     if (offline.active && offline.method !== 'chooser') {
       offline.setMethod('chooser')
       return
@@ -444,6 +473,18 @@ function AppContent() {
     statusActive,
     navigation,
     showingLibrary,
+    // issue #104's route recomputation inputs
+    offlineScreen,
+    auth,
+    status,
+    setupProgress,
+    loading,
+    online,
+    reconnecting,
+    playerStartingUp,
+    spotifyStuck,
+    splashOnlineStuck,
+    loadStuck,
     cancelDefaultDeviceTransfer,
   ])
 
