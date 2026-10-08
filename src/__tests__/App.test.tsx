@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import App from '../App'
 import { updateSettings } from '../settings'
@@ -104,5 +104,33 @@ describe('App', () => {
       // the settings store is module-level — restore the default for later tests
       updateSettings({ idleScreenEnabled: true })
     }
+  })
+
+  it('issue #104: in true idle, hardware Back toggles the Idle Screen and the Home menu', async () => {
+    server.use(
+      http.get('*/connect/devices', () => HttpResponse.json([])),
+      http.get('*/player/saved', () => HttpResponse.json({ saved: false })),
+    )
+
+    render(<App />)
+
+    // the daemon is idle → the idle dashboard
+    await waitFor(() =>
+      expect(screen.getByText('No active devices to select from for playback')).toBeInTheDocument(),
+    )
+
+    // hardware Back (Escape) opens the main menu with the "Home" sidebar item focused
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.getByText('Einstellungen')).toBeInTheDocument())
+    const homeItem = screen.getByText('Home').closest('button')!
+    expect(homeItem.className).toMatch(/itemFocused/)
+
+    // Back again — now the menu's OWN sidebar back (useMainMenuFocus → onExit)
+    // fires and returns straight to the Idle Screen: the two views toggle
+    // each other seamlessly
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() =>
+      expect(screen.getByText('No active devices to select from for playback')).toBeInTheDocument(),
+    )
   })
 })
