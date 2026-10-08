@@ -29,15 +29,15 @@
   // issue #98: mixed-case title ("Spotify abspielen") — no uppercasing or
   // wide letter-spacing, the text reads exactly as written
   // issue #108: zone titles are the dashboard's primary anchors
-  // issue #113: 8px bottom margin to the first card row - the same relative
-  // offset as the scene zone's "Beleuchtung" header above its grid, so both
-  // titles anchor identically to their content
-  // issue #114: section headers enlarged to 20px bold — same size/weight as
-  // the scene zone's "Beleuchtung" header
+  // issue #113: equal relative anchor to the scene zone's "Beleuchtung"
+  // header (both inside their glass blocks)
+  // issue #122: breathing room under the header — its bottom margin grows by
+  // exactly +50% on top of the issue-#113 value (8px -> 12px, $s-2 -> $s-3)
+  // to the first device row
   font-size: 20px;
   font-weight: $fw-bold;
   color: $text-tertiary;
-  padding: $s-1 $s-2 $s-2;
+  padding: $s-1 $s-2 $s-3;
 }
 
 .list {
