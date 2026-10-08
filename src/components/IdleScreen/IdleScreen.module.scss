@@ -95,10 +95,12 @@
 // issue #102: section header of the scene zone — same typography and left
 // alignment as the device card's "Spotify abspielen" header (DevicePicker's
 // .header, which sits inside its card's padding)
-// issue #108: the two zone titles are the dashboard's primary anchors now —
-// enlarged to $fs-xl and given a 12px margin before the cards begin. The
-// 8px top offset mirrors the compact card's own 8px inner padding, so both
-// headers sit on the same horizontal line at the top of their columns
+// issue #113: the title is anchored DIRECTLY above the scene grid - it lives
+// in the column wrapper (IdleScreen.tsx) immediately over the grid, with a
+// tight 8px bottom margin to the first row of tiles. That mirrors the
+// device card's header-to-first-row offset exactly (DevicePicker .header
+// bottom padding), so both zone titles sit at equal relative offsets above
+// their cards instead of floating detached near the top edge.
 .sectionHeader {
   flex: 0 0 auto;
   font-size: $fs-xl;
@@ -106,7 +108,7 @@
   color: $text-tertiary;
   text-align: left;
   padding-top: $s-2;
-  margin-bottom: $s-3;
+  margin-bottom: $s-2;
 }
 
 .sceneGrid {
