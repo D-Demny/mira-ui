@@ -69,6 +69,17 @@
 // ratio exactly — grid tracks divide the whole content width into thirds.
 .split {
   display: grid;
+  // issue #108: the grid must fill the FULL content box (12px padding frame) —
+  // as a flex child of .content an auto height would shrink-wrap to its
+  // shortest column and center vertically, which left the headers mid-screen.
+  // This element doubles as .content (flex props), so the grid items must be
+  // re-stretched: .content's align-items/justify-content are flex semantics
+  // that grid honors too — without the override each column stays at its
+  // content height and floats centered in its row.
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  justify-content: stretch;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
 }
 
@@ -179,7 +190,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  // issue #108: in split mode the column stretches to full height — start the
+  // card stack directly under its header instead of floating mid-column
+  // (without scenes .content still centers this auto-height column)
+  justify-content: flex-start;
   gap: $s-3;
 }
 
