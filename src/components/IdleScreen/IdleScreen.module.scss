@@ -1,9 +1,12 @@
 // issue #95: the idle dashboard. issue #97: an asymmetric split of the screen
-// with the device stack on the LEFT and the scenes on the RIGHT, separated by
-// a clearly visible wide gap:
-//   ~34% left  = the audio devices as a compact vertical pill stack
-//   ~62% right = the configured HA scenes as a 2-column grid of squarish
-//                tiles (icon above label) — hidden ENTIRELY without scenes
+// with the device stack on the LEFT and the scenes on the RIGHT. issue #102:
+// the split is STRICT — a 1fr / 2fr grid, so the device column takes exactly
+// one third of the content width and the scene column the remaining two
+// thirds (with scenes):
+//   1/3 left  = the audio devices as a compact vertical pill stack under the
+//               "Spotify abspielen" header (the DevicePicker card's own header)
+//   2/3 right = the "Beleuchtung" section header above the configured HA
+//               scenes grid — hidden ENTIRELY without scenes
 // issue #99: behind the content runs the screensaver's blurred-ambient
 // background (last known track art, or a plain gradient without art).
 // Without scenes the layout collapses to one centered column (the device
@@ -57,16 +60,38 @@
   padding: $s-7;
 }
 
-// issues #95/#97: devices + scenes side by side (~34 left / ~62 right), the
-// wide gap makes the two zones visually distinct
+// issue #102: devices + scenes as a strict 1/3 / 2/3 split. A grid (not flex)
+// because flex basis percentages share the row's gap and can never hit the
+// ratio exactly — grid tracks divide the whole content width into thirds.
 .split {
-  flex-direction: row;
-  gap: $s-8;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+}
+
+// issue #102: the right column — the "Beleuchtung" header above the scene
+// grid; the grid fills whatever height the header leaves behind
+.sceneCol {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+// issue #102: section header of the scene zone — same typography and left
+// alignment as the device card's "Spotify abspielen" header (DevicePicker's
+// .header, which sits inside its card's padding)
+.sectionHeader {
+  flex: 0 0 auto;
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  color: $text-tertiary;
+  text-align: left;
 }
 
 .sceneGrid {
-  flex: 0 1 62%; // ~62% zone (right)
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)); // 2x2 of squarish tiles
   grid-auto-rows: minmax(0, 1fr);
@@ -84,13 +109,17 @@
   min-height: 0;
   padding: $s-3;
   background: $surface-elev;
-  border: 1px solid $divider;
+  border: 1px solid $divider; // stays neutral — no accent ring (issue #102)
   border-radius: $r-lg;
   cursor: pointer;
 
-  &:hover {
-    background: $surface;
-    border-color: $accent;
+  // issue #102: the harsh green border went. Focus/hover reads as a lighter
+  // tint plus a subtle inner glow — the codebase's focus language (a light
+  // lift, never an accent ring)
+  &:hover,
+  &:focus-visible {
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 0 16px rgba(255, 255, 255, 0.1);
   }
 }
 
@@ -111,7 +140,8 @@
 }
 
 .deviceCol {
-  flex: 0 1 34%; // ~34% zone (left)
+  // issue #102: a grid track now, not a flex basis — the 1fr column of
+  // .split sizes it; the stack stays centered within its third
   min-width: 0;
   display: flex;
   flex-direction: column;

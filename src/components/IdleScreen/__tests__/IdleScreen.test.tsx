@@ -45,7 +45,7 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
   })
 
   it('shows the device stack without any scene zone when no scenes are configured', () => {
-    render(<IdleScreen connected devices={DEVICES} />)
+    const { container } = render(<IdleScreen connected devices={DEVICES} />)
 
     // old idle texts are gone (spec AC "texts removed")
     expect(screen.queryByText('Nothing playing')).not.toBeInTheDocument()
@@ -53,6 +53,11 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
 
     // the default selection is HOME_LIGHTS — no scene in it, so no scene zone
     expect(screen.queryByText('Abendstimmung')).not.toBeInTheDocument()
+    // issue #102: without scenes the "Beleuchtung" header is gone with the
+    // zone, and the content layer is not in split layout
+    expect(screen.queryByText('Beleuchtung')).not.toBeInTheDocument()
+    const content = container.querySelector('[class*="content"]')!
+    expect(content.className).not.toMatch(/split/)
     // the compact device stack is there instead, centered. issue #98: its
     // header now reads "Spotify abspielen" (mixed case, no CSS uppercasing)
     const header = screen.getByText('Spotify abspielen')
@@ -143,6 +148,37 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
     expect(
       sceneGrid!.compareDocumentPosition(deviceCol!) & Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy()
+  })
+
+  it('issue #102: the scene zone carries its "Beleuchtung" header above the tiles', async () => {
+    localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(['scene.abendstimmung']))
+    server.use(
+      http.get('*/ha-api/states/scene.abendstimmung', () =>
+        HttpResponse.json({
+          entity_id: 'scene.abendstimmung',
+          state: 'none',
+          attributes: { friendly_name: 'Abendstimmung' },
+        }),
+      ),
+    )
+
+    const { container } = render(<IdleScreen connected devices={DEVICES} />)
+
+    await screen.findByText('Abendstimmung')
+
+    // the section header sits in the scene column, BEFORE the tile grid
+    const sceneCol = container.querySelector('[class*="sceneCol"]')
+    expect(sceneCol).toBeTruthy()
+    const header = screen.getByText('Beleuchtung')
+    expect(header.parentElement === sceneCol).toBe(true)
+    const grid = container.querySelector('[class*="sceneGrid"]')!
+    // header comes BEFORE the grid (from the grid's view it PRECEDES it)
+    expect(grid.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+    // the content layer switches to the strict 1/3 / 2/3 split
+    const content = container.querySelector('[class*="content"]')!
+    expect(content.className).toMatch(/split/)
+    // both zone headers exist side by side, exactly as written
+    expect(screen.getByText('Spotify abspielen')).toBeInTheDocument()
   })
 
   it('issue #99: blurred art background when artUrl is given, plain gradient otherwise', () => {
