@@ -21,8 +21,11 @@ import styles from './IdleScreen.module.scss'
 // $surface-elev surface, so legibility on both backgrounds is unchanged.
 // Scene tiles actuate via the shared entity store (scene/turn_on); no polling
 // while idle (pollActive=false) — only the one initial read per tile.
-// issue #103: the scene grid scales with its count so it always fills its
-// 2/3 cell evenly — no scrolling, never breaking out of the right column.
+// issue #103: the scene grid template scales with its count so tiles fill the
+// panel evenly. issue #122: the grid + "Beleuchtung" header are wrapped in a
+// content-sized glass panel (scenePanel) that is vertically centered in the
+// 2/3 column, mirroring the device card on the left — never breaking out of
+// the right column.
 //   1 scene        -> one large tile filling the whole cell (1x1)
 //   2 scenes       -> two tiles side by side (2 x 1)
 //   3 scenes       -> a 2-top / 1-wide-bottom podium: the third tile spans the
@@ -86,30 +89,38 @@ function IdleScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId, a
           ) : null}
         </div>
         {scenes.length > 0 ? (
-          // issue #102: the scene zone as its own column — the "Beleuchtung"
-          // section header on top, the grid filling the rest of the 2/3 cell
+          // issue #102: the scene zone as its own column — and issues #113/#122:
+          // the "Beleuchtung" header + grid live TOGETHER inside a translucent
+          // glass panel (scenePanel), the same block styling as the device
+          // card on the left. The header therefore flows directly above the
+          // grid in one DOM unit and the whole group is vertically centered —
+          // no detached title at the top edge of the screen.
           <div className={styles.sceneCol}>
-            <div className={styles.sectionHeader}>Beleuchtung</div>
-            <div
-              className={styles.sceneGrid}
-              style={sceneLayout(scenes.length)}
-              aria-label="Scenes"
-            >
-              {scenes.map((scene, index) => (
-                <div
-                  key={scene.entityId}
-                  className={styles.sceneTile}
-                  role="button"
-                  tabIndex={0}
-                  style={scenes.length === 3 && index === 2 ? { gridColumn: '1 / -1' } : undefined}
-                  onClick={() => scene.actuate()}
-                >
-                  <span className={styles.sceneIcon} aria-hidden>
-                    <MenuIcon name={sceneMenuIcon(scene.icon ?? null, scene.label)} size={32} />
-                  </span>
-                  <span className={styles.sceneLabel}>{scene.label}</span>
-                </div>
-              ))}
+            <div className={styles.scenePanel}>
+              <div className={styles.sectionHeader}>Beleuchtung</div>
+              <div
+                className={styles.sceneGrid}
+                style={sceneLayout(scenes.length)}
+                aria-label="Scenes"
+              >
+                {scenes.map((scene, index) => (
+                  <div
+                    key={scene.entityId}
+                    className={styles.sceneTile}
+                    role="button"
+                    tabIndex={0}
+                    style={
+                      scenes.length === 3 && index === 2 ? { gridColumn: '1 / -1' } : undefined
+                    }
+                    onClick={() => scene.actuate()}
+                  >
+                    <span className={styles.sceneIcon} aria-hidden>
+                      <MenuIcon name={sceneMenuIcon(scene.icon ?? null, scene.label)} size={32} />
+                    </span>
+                    <span className={styles.sceneLabel}>{scene.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ) : null}

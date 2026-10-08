@@ -81,26 +81,53 @@
   align-items: stretch;
   justify-content: stretch;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  // issue #122: generous horizontal breathing room between the two container
+  // blocks so they read as separate panels, never visually merged
+  column-gap: $s-6;
 }
 
-// issue #102: the right column — the "Beleuchtung" header above the scene
-// grid; the grid fills whatever height the header leaves behind
+// issue #102: the right column — a full-height grid track like .deviceCol.
+// issues #113/#122: it centers its content-sized glass panel (scenePanel)
+// exactly like .deviceCol centers the device card, so both zones read as
+// matching floating blocks above the ambient background.
 .sceneCol {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
-// issue #102: section header of the scene zone — same typography and left
-// alignment as the device card's "Spotify abspielen" header (DevicePicker's
-// .header, which sits inside its card's padding)
-// issue #113: the title is anchored DIRECTLY above the scene grid - it lives
-// in the column wrapper (IdleScreen.tsx) immediately over the grid, with a
-// tight 8px bottom margin to the first row of tiles. That mirrors the
-// device card's header-to-first-row offset exactly (DevicePicker .header
-// bottom padding), so both zone titles sit at equal relative offsets above
-// their cards instead of floating detached near the top edge.
+// issues #113/#122: the "Beleuchtung" section block — IDENTICAL glass styling
+// to the device card (DevicePicker .cardInline): same translucent fill,
+// backdrop blur, border, radius, shadow. The header lives INSIDE this panel,
+// directly above the scene grid, so title + tiles flow as one DOM unit and
+// the group is no longer detached at the top edge of the screen. Content-sized
+// (shrink-wraps), with the same max-height/scroll guard as the device card.
+.scenePanel {
+  width: 100%;
+  max-width: calc(100% - #{$s-7});
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  @include hide-scrollbar;
+  display: flex;
+  flex-direction: column;
+  padding: $s-2;
+  background: $glass-bg;
+  -webkit-backdrop-filter: blur($glass-blur);
+  backdrop-filter: blur($glass-blur);
+  border: 1px solid $divider;
+  border-radius: $r-lg;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+// issues #102/#113/#122: the "Beleuchtung" title INSIDE the scene panel —
+// same typography, left alignment and edge insets as the device card's
+// "Spotify abspielen" header (DevicePicker .header): 4px/8px own padding on
+// top of the panel's $s-2 padding, a tight 8px bottom margin to the first
+// row of tiles. Living inside the panel it can never sit detached at the
+// top edge of the screen (issue #113 re-open).
 .sectionHeader {
   flex: 0 0 auto;
   // issue #114: section headers enlarged to 20px bold (within the 18-20px
@@ -110,19 +137,19 @@
   font-weight: $fw-bold;
   color: $text-tertiary;
   text-align: left;
-  padding-top: $s-2;
+  padding: $s-1 $s-2 0;
   margin-bottom: $s-2;
 }
 
 .sceneGrid {
-  flex: 1 1 auto;
+  // issue #122: content-sized inside the shrink-wrapping panel (the panel —
+  // not the grid — is what fills its column) so header + tiles flow as one
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 0;
   display: grid;
   // issue #103: column/row templates are set inline per scene count
-  // (sceneLayout) so the tiles always fill this 2/3 cell evenly — no scrolling
-  align-content: center;
-  // issue #108: roomier grid gaps for a natural, room-filling flow
+  // (sceneLayout) so the tile pairs fill the panel width evenly
   gap: $s-4;
 }
 
