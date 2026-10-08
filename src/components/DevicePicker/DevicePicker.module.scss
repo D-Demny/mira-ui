@@ -109,7 +109,8 @@
 }
 
 .textBlock {
-  // issue #109: stacks the device name over its small type subtitle
+  // issue #115: single-line text block - the secondary type subtitle was
+  // removed, the name alone fills the row and stays centered on the icon
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -121,17 +122,6 @@
   // issue #114: enlarged for legibility from a distance - 18px semi-bold
   font-size: $fs-xl;
   font-weight: $fw-semibold;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.meta {
-  // issue #109: small muted secondary line under the name — a device-type
-  // label (the ConnectDevice payload has no model field, so this is derived)
-  font-size: $fs-sm;
-  font-weight: $fw-regular;
-  color: $text-tertiary;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
