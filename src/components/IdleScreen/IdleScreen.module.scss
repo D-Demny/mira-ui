@@ -107,7 +107,6 @@
 // (shrink-wraps), with the same max-height/scroll guard as the device card.
 .scenePanel {
   width: 100%;
-  max-width: calc(100% - #{$s-7});
   max-height: calc(100% - #{$s-6});
   overflow-y: auto;
   @include hide-scrollbar;
