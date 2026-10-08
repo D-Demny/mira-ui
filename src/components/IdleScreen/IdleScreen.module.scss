@@ -190,10 +190,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  // issue #108: in split mode the column stretches to full height — start the
-  // card stack directly under its header instead of floating mid-column
-  // (without scenes .content still centers this auto-height column)
-  justify-content: flex-start;
+  // issue #112: the card stack (header + rows + status) is VERTICALLY CENTERED
+  // inside the full-height column and grows/shrinks symmetrically from the
+  // midpoint as devices are added or removed - no longer pinned to the top
+  // edge. The .content padding (12px) keeps it off the display borders even
+  // when maxed out; without scenes .content centers this auto-height column
+  // the same way
+  justify-content: center;
   gap: $s-3;
 }
 
