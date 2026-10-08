@@ -78,6 +78,12 @@ export interface Settings {
   // predating the field coerce to 'on' — additive field, no schema version
   // bump (old builds ignore unknown keys, same as hybridDisabled).
   autoCollapseSidebar: 'off' | 'on'
+  // issue #100: the idle dashboard (scenes + device picker, issues #95/#96) —
+  // ON by default: the feature was requested explicitly and pre-#95 behavior
+  // (the plain "Nothing playing" screen) is only the OFF state. Additive
+  // field, no schema version bump: blobs predating the key coerce to true
+  // (see coerce — only an EXPLICIT false disables it).
+  idleScreenEnabled: boolean
   // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
   ha: HaSettingsValue
 }
@@ -140,6 +146,8 @@ const DEFAULTS: Settings = {
   // defaults apply (the modal pre-fills the default URL from the
   // POST /api/ha/test response, task 7)
   ha: { url: '', username: '', password: '', token: '', tokenSource: 'default' },
+  // issue #100: the idle dashboard is ON by default (see the interface note)
+  idleScreenEnabled: true,
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -337,6 +345,11 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     // key (every blob predating v3) coerces to the empty defaults, which is
     // the whole v2→v3 migration (idempotent, no separate step)
     ha: coerceHa(partial?.ha),
+    // issue #100: ON by default — the migration direction is inverted from
+    // the usual "missing → default false" pattern: blobs predating the field
+    // (every stored blob) must stay ON, so only an EXPLICIT false disables
+    // the idle dashboard. Additive field, no schema version bump.
+    idleScreenEnabled: partial?.idleScreenEnabled !== false,
   }
 }
 

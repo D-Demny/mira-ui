@@ -149,6 +149,18 @@ function buildRootSettingsRows(
       kind: 'open-link',
       section: 'Home Assistant',
     },
+    // issue #100: the idle dashboard toggle — own 'Idle & Screensaver'
+    // section, appended LAST (same principle as bug54: keep every existing
+    // row index stable). OFF restores the plain "Nothing playing" screen
+    // (App.tsx gates the idle route on settings.idleScreenEnabled)
+    {
+      id: 'set-idle-screen',
+      title: 'Idle Screen aktivieren',
+      value: settings.idleScreenEnabled ? 'On' : 'Off',
+      kind: 'toggle',
+      section: 'Idle & Screensaver',
+      description: 'Zeige Szenen und Lautsprecher-Auswahl bei Inaktivität',
+    },
   ]
 }
 
@@ -1031,6 +1043,10 @@ export function MainMenuView({
     } else if (card.id === 'set-home') {
       // ticket 9.5: the home entity picker (selection + carousel order)
       onOpenEntityPicker?.()
+    } else if (card.id === 'set-idle-screen') {
+      // issue #100: toggle the idle dashboard (On ↔ Off) — OFF restores the
+      // plain "Nothing playing" screen on the idle route (gated in App.tsx)
+      updateSettings({ idleScreenEnabled: !settings.idleScreenEnabled })
     } else if (card.id === 'set-default-device') {
       onOpenDefaultDevice?.()
     } else if (card.id === 'set-brightness') {

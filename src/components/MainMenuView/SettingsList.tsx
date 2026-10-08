@@ -33,6 +33,9 @@ export interface SettingsRow {
   // the first row whose section differs from the previous row's (headers are
   // plain divs, NOT dial rows — focus indices stay aligned with this array)
   section?: string
+  // issue #100: optional muted sub-line under the title (e.g. what the
+  // toggle controls); plain text, not a dial target
+  description?: string
 }
 
 interface Props {
@@ -142,6 +145,9 @@ function SettingsListImpl({
                   <span className={styles.title}>{row.title}</span>
                   <span className={styles.value}>{row.value}</span>
                 </div>
+                {row.description ? (
+                  <div className={styles.description}>{row.description}</div>
+                ) : null}
                 {row.slider ? (
                   // bug35: slider interactions (drag / step buttons) must not
                   // bubble to the row tap — on the brightness row the row tap

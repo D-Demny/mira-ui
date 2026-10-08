@@ -11,6 +11,7 @@ import { Lyrics } from '@/components/Lyrics'
 import { MainMenuView } from '@/components/MainMenuView'
 import { NeedsNetwork } from '@/components/NeedsNetwork'
 import { NoLyricsView } from '@/components/NoLyricsView'
+import { NothingPlayingScreen } from '@/components/NothingPlayingScreen'
 import { ReportDialog } from '@/components/ReportDialog'
 import { PcConnect } from '@/components/PcConnect'
 import { PlaylistsView } from '@/components/PlaylistsView'
@@ -513,12 +514,15 @@ function AppContent() {
     enabled: swipeEnabled,
   })
 
-  // ambient screensaver background
-  let screensaverArt: string | null = null
-  if (overlays.isOpen('screensaver') || forced === 'screensaver') {
-    screensaverArt =
-      (status?.active === true ? status.track_image : '') || heldStatus?.track_image || lastArtUrl
-  }
+  // ambient background art — the last known track art (the live status while
+  // playing, otherwise the held / last-seen cover); shared by the screensaver
+  // overlay and the idle dashboard's blurred background (issue #99)
+  const ambientArt =
+    (status?.active === true ? status.track_image : '') || heldStatus?.track_image || lastArtUrl
+  // ambient screensaver background (only while it is open/forced — the
+  // Screensaver's fade-in then runs from this value)
+  const screensaverArt =
+    overlays.isOpen('screensaver') || forced === 'screensaver' ? ambientArt : null
 
   const globalOverlays = (
     <>
@@ -732,12 +736,25 @@ function AppContent() {
   if (forced === 'idle') {
     return (
       <div className={styles.app}>
-        <IdleScreen
-          connected={connected}
-          devices={connectDevices}
-          onSelectDevice={onPickDevice}
-          defaultDeviceId={settings.defaultDeviceId}
-        />
+        {/* issue #100: OFF bypasses the idle dashboard and shows the plain
+            "Nothing playing" screen (the pre-#95 default) */}
+        {settings.idleScreenEnabled ? (
+          <IdleScreen
+            connected={connected}
+            devices={connectDevices}
+            onSelectDevice={onPickDevice}
+            defaultDeviceId={settings.defaultDeviceId}
+            // issue #99: blurred last-known-track background
+            artUrl={ambientArt || null}
+          />
+        ) : (
+          <NothingPlayingScreen
+            connected={connected}
+            devices={connectDevices}
+            onSelectDevice={onPickDevice}
+            defaultDeviceId={settings.defaultDeviceId}
+          />
+        )}
         {globalOverlays}
       </div>
     )
@@ -889,12 +906,25 @@ function AppContent() {
       case 'idle':
         return (
           <div className={styles.app}>
-            <IdleScreen
-              connected={connected}
-              devices={connectDevices}
-              onSelectDevice={onPickDevice}
-              defaultDeviceId={settings.defaultDeviceId}
-            />
+            {/* issue #100: OFF bypasses the idle dashboard and shows the plain
+                "Nothing playing" screen (the pre-#95 default) */}
+            {settings.idleScreenEnabled ? (
+              <IdleScreen
+                connected={connected}
+                devices={connectDevices}
+                onSelectDevice={onPickDevice}
+                defaultDeviceId={settings.defaultDeviceId}
+                // issue #99: blurred last-known-track background
+                artUrl={ambientArt || null}
+              />
+            ) : (
+              <NothingPlayingScreen
+                connected={connected}
+                devices={connectDevices}
+                onSelectDevice={onPickDevice}
+                defaultDeviceId={settings.defaultDeviceId}
+              />
+            )}
             {globalOverlays}
           </div>
         )

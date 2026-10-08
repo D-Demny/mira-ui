@@ -112,6 +112,13 @@
   gap: $s-4;
 }
 
+.description {
+  // issue #100: muted sub-line under the row title
+  font-size: $fs-sm;
+  color: $text-tertiary;
+  line-height: 1.4;
+}
+
 .title {
   font-size: $fs-lg;
   font-weight: $fw-medium;
