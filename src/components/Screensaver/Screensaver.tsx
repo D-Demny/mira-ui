@@ -2,7 +2,7 @@ import { memo, useEffect, useState } from 'react'
 import styles from './Screensaver.module.scss'
 
 // double press of the power button opens this screensaver w clock
-// also auto opens from the idle after 10 mins
+// also auto opens from the idle after 20 s (issue #96)
 
 interface Props {
   artUrl?: string | null
@@ -66,7 +66,9 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
     return () => window.clearTimeout(t)
   }, [prevArt])
 
-  // swallow every key
+  // swallow every input — issue #96: tap, any key AND dial scroll all wake the
+  // screensaver immediately; capture-phase + preventDefault so the first wake
+  // input is consumed and cannot trigger a button underneath
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === POWER_KEY_CODE) return
@@ -79,11 +81,23 @@ function ScreensaverImpl({ artUrl, utcOffsetMin, onClose }: Props) {
       e.preventDefault()
       e.stopPropagation()
     }
+    const onWheel = (e: Event) => {
+      e.preventDefault()
+      e.stopPropagation()
+      onClose()
+    }
     window.addEventListener('keydown', onKeyDown, { capture: true })
     window.addEventListener('keyup', onKeyUp, { capture: true })
+    // explicit non-passive, so preventDefault is honored (Chrome makes
+    // window-level wheel listeners passive by default); the object is passed
+    // via a variable because this TS lib's EventListenerOptions type predates
+    // the `passive` field
+    const wheelOptions = { capture: true, passive: false }
+    window.addEventListener('wheel', onWheel, wheelOptions)
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true })
       window.removeEventListener('keyup', onKeyUp, { capture: true })
+      window.removeEventListener('wheel', onWheel, wheelOptions)
     }
   }, [onClose])
 

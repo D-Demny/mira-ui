@@ -26,4 +26,17 @@ describe('Screensaver', () => {
     fireEvent.keyDown(window, { code: 'ArrowLeft' })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('wakes on dial scroll (wheel) and consumes the event, so nothing underneath reacts (issue #96)', () => {
+    const onClose = vi.fn()
+    render(<Screensaver onClose={onClose} utcOffsetMin={0} />)
+
+    // a real cancellable event: the capture-phase handler must both wake and
+    // mark it handled (non-passive listener) so the first wake input is eaten
+    const wheel = new MouseEvent('wheel', { bubbles: true, cancelable: true })
+    window.dispatchEvent(wheel)
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(wheel.defaultPrevented).toBe(true)
+  })
 })

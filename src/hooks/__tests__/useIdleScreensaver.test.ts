@@ -68,7 +68,7 @@ describe('useIdleScreensaver', () => {
     }
   }
 
-  it('opens after ten quiet minutes', () => {
+  it('opens after twenty quiet seconds (issue #96)', () => {
     const onOpen = vi.fn()
     renderHook(() => useIdleScreensaver(params({ onOpen })))
 
