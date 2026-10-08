@@ -145,9 +145,17 @@
 .sceneGrid {
   // issue #124: grows to fill the full-height panel — the header sits at the
   // top, and this grid takes all remaining vertical space so the tiles
+  // stretch into their row tracks. The explicit definite height is required:
+  // the device kiosk (Chrome 69) does not resolve the fr row tracks when the
+  // grid's size comes from flex participation alone (verified live via CDP —
+  // tiles stay at content height without it, fill their rows with it). It is
+  // the panel's content box minus the section header block: $s-1 + 20px x
+  // line-height 1.4 + $s-2 = 40px exactly (line-height is an em multiple, so
+  // the value is font-independent).
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  height: calc(100% - 40px);
   display: grid;
   // issue #103: column/row templates are set inline per scene count
   // (sceneLayout) so the tile pairs fill the panel width evenly

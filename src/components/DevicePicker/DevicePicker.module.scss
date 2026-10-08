@@ -95,10 +95,20 @@
   .list {
     gap: $s-2;
     // issue #124: the header pins to the card top and this list takes ALL the
-    // remaining card height — each device row stretches into a generous,
+    // remaining card height — each device stretches into a generous,
     // easy-to-tap tile (spec: even a single "Alle" entry fills the card)
     flex: 1 1 auto;
     min-height: 0;
+
+    // issue #124: the <li> is .list's ACTUAL flex item — the .row div nested
+    // inside it could never stretch on its own. Grow each li to share the
+    // list height; the li lays the pill out as a flex row, so .compactRow's
+    // own flex fill stretches it across (height via cross-axis stretch).
+    > li {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
   }
 }
 
