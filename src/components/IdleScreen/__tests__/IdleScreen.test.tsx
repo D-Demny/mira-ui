@@ -1,8 +1,8 @@
 // issue #95: the idle dashboard. The old "Nothing playing" chrome is gone;
-// left ~65% = the scenes configured in the entity picker (the SAME selection
-// store as the Home dashboard), right ~35% = the compact device stack. With no
-// scenes configured the scene zone must be absent ENTIRELY and the devices
-// center instead.
+// issue #97: left ~34% = the compact device stack, right ~62% = the scenes
+// configured in the entity picker (the SAME selection store as the Home
+// dashboard), with a wide gap between the zones. With no scenes configured
+// the scene zone must be absent ENTIRELY and the devices center instead.
 import { describe, expect, it, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
@@ -53,9 +53,9 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
 
     // the default selection is HOME_LIGHTS — no scene in it, so no scene zone
     expect(screen.queryByText('Abendstimmung')).not.toBeInTheDocument()
-
-    // the compact device stack is there instead, centered
-    const header = screen.getByText('Devices')
+    // the compact device stack is there instead, centered. issue #98: its
+    // header now reads "Spotify abspielen" (mixed case, no CSS uppercasing)
+    const header = screen.getByText('Spotify abspielen')
     expect(header).toBeInTheDocument()
   })
 
@@ -118,5 +118,48 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
     // the compact modifier must reach the root card element
     const root = container.firstElementChild as HTMLElement
     expect(root.className).toMatch(/compact/)
+  })
+
+  it('issue #97: the device stack sits LEFT of (before) the scene grid in DOM order', async () => {
+    localStorage.setItem(SELECTION_LS_KEY, JSON.stringify(['scene.abendstimmung']))
+    server.use(
+      http.get('*/ha-api/states/scene.abendstimmung', () =>
+        HttpResponse.json({
+          entity_id: 'scene.abendstimmung',
+          state: 'none',
+          attributes: { friendly_name: 'Abendstimmung' },
+        }),
+      ),
+    )
+
+    const { container } = render(<IdleScreen connected devices={DEVICES} />)
+
+    await screen.findByText('Abendstimmung')
+    const deviceCol = container.querySelector('[class*="deviceCol"]')
+    const sceneGrid = container.querySelector('[class*="sceneGrid"]')
+    expect(deviceCol).toBeTruthy()
+    expect(sceneGrid).toBeTruthy()
+    // DOM order is left-to-right: the device column comes FIRST
+    expect(
+      sceneGrid!.compareDocumentPosition(deviceCol!) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy()
+  })
+
+  it('issue #99: blurred art background when artUrl is given, plain gradient otherwise', () => {
+    const { container, rerender } = render(
+      <IdleScreen connected devices={DEVICES} artUrl="http://cdn/cover.jpg" />,
+    )
+    // exactly one layer carries the art as an inline background-image
+    const artLayers = [...container.querySelectorAll('div')].filter((el) =>
+      el.style.backgroundImage.includes('cover.jpg'),
+    )
+    expect(artLayers.length).toBe(1)
+
+    // no known art → the plain ambient gradient stands in (no inline art at all)
+    rerender(<IdleScreen connected devices={DEVICES} />)
+    const withInlineBg = [...container.querySelectorAll('div')].filter(
+      (el) => el.style.backgroundImage !== '',
+    )
+    expect(withInlineBg.length).toBe(0)
   })
 })
