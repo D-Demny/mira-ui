@@ -70,4 +70,21 @@ describe('DevicePicker (inline)', () => {
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith(devices[0])
   })
+
+  it('issue #109: compact rows stack a muted type subtitle under the name', () => {
+    const list = [
+      makeDevice({ id: 'dev-a', name: 'WiiM Amp', type: 'SPEAKER_AMP' }),
+      makeDevice({ id: 'dev-b', name: 'Living Room', type: 'SMARTPHONE' }),
+      makeDevice({ id: 'dev-c', name: 'Mystery', type: '' }),
+    ]
+    render(<DevicePicker devices={list} compact />)
+
+    // known types map to their German label, unknown types are humanized
+    expect(screen.getByText('Smartphone')).toBeInTheDocument()
+    expect(screen.getByText('Speaker Amp')).toBeInTheDocument()
+
+    // an empty type renders NO subtitle line — the row is just its name
+    const mysteryLi = screen.getByText('Mystery').closest('li')
+    expect(mysteryLi?.textContent).toBe('Mystery')
+  })
 })

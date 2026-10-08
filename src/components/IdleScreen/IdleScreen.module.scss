@@ -49,6 +49,10 @@
 }
 
 // the content layer sits above the background layers (position relative)
+// issue #108: ~90% screen coverage — the old $s-7 (32px) chrome left the
+// dashboard cramped and centered; 12px vertical / 16px horizontal outer
+// padding pushes the content almost edge-to-edge while keeping a consistent
+// frame around it
 .content {
   position: relative;
   width: 100%;
@@ -57,7 +61,7 @@
   flex-direction: column; // no scenes: single centered column
   align-items: center;
   justify-content: center;
-  padding: $s-7;
+  padding: $s-3 $s-4;
 }
 
 // issue #102: devices + scenes as a strict 1/3 / 2/3 split. A grid (not flex)
@@ -65,6 +69,17 @@
 // ratio exactly — grid tracks divide the whole content width into thirds.
 .split {
   display: grid;
+  // issue #108: the grid must fill the FULL content box (12px padding frame) —
+  // as a flex child of .content an auto height would shrink-wrap to its
+  // shortest column and center vertically, which left the headers mid-screen.
+  // This element doubles as .content (flex props), so the grid items must be
+  // re-stretched: .content's align-items/justify-content are flex semantics
+  // that grid honors too — without the override each column stays at its
+  // content height and floats centered in its row.
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  justify-content: stretch;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
 }
 
@@ -80,12 +95,18 @@
 // issue #102: section header of the scene zone — same typography and left
 // alignment as the device card's "Spotify abspielen" header (DevicePicker's
 // .header, which sits inside its card's padding)
+// issue #108: the two zone titles are the dashboard's primary anchors now —
+// enlarged to $fs-xl and given a 12px margin before the cards begin. The
+// 8px top offset mirrors the compact card's own 8px inner padding, so both
+// headers sit on the same horizontal line at the top of their columns
 .sectionHeader {
   flex: 0 0 auto;
-  font-size: $fs-md;
+  font-size: $fs-xl;
   font-weight: $fw-semibold;
   color: $text-tertiary;
   text-align: left;
+  padding-top: $s-2;
+  margin-bottom: $s-3;
 }
 
 .sceneGrid {
@@ -96,7 +117,8 @@
   // issue #103: column/row templates are set inline per scene count
   // (sceneLayout) so the tiles always fill this 2/3 cell evenly — no scrolling
   align-content: center;
-  gap: $s-3;
+  // issue #108: roomier grid gaps for a natural, room-filling flow
+  gap: $s-4;
 }
 
 .sceneTile {
@@ -113,13 +135,35 @@
   border-radius: $r-lg;
   cursor: pointer;
 
-  // issue #102: the harsh green border went. Focus/hover reads as a lighter
-  // tint plus a subtle inner glow — the codebase's focus language (a light
-  // lift, never an accent ring)
+  // issue #102/#110: the harsh green border went, and the neutral white lift
+  // is gone too — focus/hover/tap reads as a WARM AMBER tint with a soft
+  // gold glow (no cool or green highlights anywhere on tile states). The
+  // gradient keeps the $surface-elev base dark enough for the icon/label to
+  // stay readable.
   &:hover,
   &:focus-visible {
-    background: rgba(255, 255, 255, 0.14);
-    box-shadow: inset 0 0 16px rgba(255, 255, 255, 0.1);
+    background: linear-gradient(160deg, rgba(255, 191, 0, 0.22) 0%, rgba(255, 191, 0, 0.08) 100%);
+    border-color: rgba(255, 191, 0, 0.4);
+    box-shadow: 0 0 12px rgba(255, 191, 0, 0.35);
+  }
+
+  // while the finger is down, the pressed card glows a touch harder
+  &:active {
+    background: linear-gradient(160deg, rgba(255, 191, 0, 0.3) 0%, rgba(255, 191, 0, 0.14) 100%);
+    border-color: rgba(255, 191, 0, 0.55);
+    box-shadow: 0 0 14px rgba(255, 191, 0, 0.5);
+  }
+
+  &:hover .sceneIcon,
+  &:focus-visible .sceneIcon,
+  &:active .sceneIcon {
+    color: rgba(255, 205, 96, 0.95);
+  }
+
+  &:hover .sceneLabel,
+  &:focus-visible .sceneLabel,
+  &:active .sceneLabel {
+    color: $text-primary;
   }
 }
 
@@ -146,7 +190,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  // issue #108: in split mode the column stretches to full height — start the
+  // card stack directly under its header instead of floating mid-column
+  // (without scenes .content still centers this auto-height column)
+  justify-content: flex-start;
   gap: $s-3;
 }
 
