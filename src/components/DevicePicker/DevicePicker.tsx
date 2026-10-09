@@ -50,7 +50,11 @@ function DeviceList({
   return (
     <ul className={styles.list}>
       {devices.map((d) => {
-        const interactive = Boolean(onSelect) && d.can_transfer && !d.is_offline
+        // issue #127: interactivity follows can_transfer only — the daemon's
+        // merged list marks idle speakers (not in the live cluster) offline
+        // yet transferable, and tapping one re-registers it with Spotify,
+        // exactly like the official clients
+        const interactive = Boolean(onSelect) && d.can_transfer
         const typeLabel = deviceTypeLabel(d.type)
         return (
           <li key={d.id}>

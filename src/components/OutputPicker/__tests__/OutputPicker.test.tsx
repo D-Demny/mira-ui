@@ -126,15 +126,17 @@ describe('issue #92: OutputPicker (Ausgabegeräte)', () => {
     expect(p.onSelect).toHaveBeenCalledWith(devices[1])
   })
 
-  it('confirming an offline row does nothing', () => {
+  it('issue #127: confirming an offline-but-transferable row still transfers', () => {
     const p = props()
     render(<OutputPicker {...p} />)
 
-    // focus 0 → turn down twice to 'Old Phone' (offline, index 2)
+    // focus 0 → turn down twice to 'Old Phone' (offline, index 2) — it is
+    // transferable (can_transfer: true), so confirm must select it
     dialWheel(-10)
     dialWheel(-10)
     dialConfirm()
-    expect(p.onSelect).not.toHaveBeenCalled()
+    expect(p.onSelect).toHaveBeenCalledTimes(1)
+    expect(p.onSelect).toHaveBeenCalledWith(devices[2])
   })
 
   it('the back button closes the modal and is consumed by the entry', () => {
