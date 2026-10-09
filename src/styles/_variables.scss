@@ -42,6 +42,12 @@ $lyric-unsynced: rgba(255, 255, 255, 0.6);
 $accent: #1ed760;
 $accent-dim: rgba(30, 215, 96, 0.32);
 
+// issue #114: translucent glassmorphism surfaces (idle dashboard) — a
+// semi-transparent dark fill over the blurred ambient background with a
+// 12px backdrop blur so the wallpaper/art gradient shines through the cards
+$glass-bg: rgba(30, 35, 45, 0.45);
+$glass-blur: 12px;
+
 $menu-bg: rgba(28, 28, 30, 0.96);
 $menu-border: rgba(255, 255, 255, 0.08);
 

@@ -7,7 +7,11 @@
   overflow-y: auto;
   @include hide-scrollbar;
   padding: $s-3;
-  background: $surface-elev;
+  // issue #114: translucent glassmorphism - semi-transparent fill + backdrop
+  // blur so the blurred ambient background shines through the card
+  background: $glass-bg;
+  -webkit-backdrop-filter: blur($glass-blur);
+  backdrop-filter: blur($glass-blur);
   border: 1px solid $divider;
   border-radius: $r-lg;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -24,11 +28,14 @@
 .header {
   // issue #98: mixed-case title ("Spotify abspielen") — no uppercasing or
   // wide letter-spacing, the text reads exactly as written
-  // issue #108: zone titles are the dashboard's primary anchors — $fs-xl with
-  // a 12px bottom margin before the cards begin, matching the scene zone's
-  // "Beleuchtung" header (same size, same baseline line at the column top)
-  font-size: $fs-xl;
-  font-weight: $fw-semibold;
+  // issue #108: zone titles are the dashboard's primary anchors
+  // issue #113: equal relative anchor to the scene zone's "Beleuchtung"
+  // header (both inside their glass blocks)
+  // issue #122: breathing room under the header — its bottom margin grows by
+  // exactly +50% on top of the issue-#113 value (8px -> 12px, $s-2 -> $s-3)
+  // to the first device row
+  font-size: 20px;
+  font-weight: $fw-bold;
   color: $text-tertiary;
   padding: $s-1 $s-2 $s-3;
 }
@@ -55,10 +62,11 @@
   cursor: pointer;
 
   // issue #102: keyboard focus gets the same subtle lift as hover — a light
-  // tint, never an accent ring
+  // tint, never an accent ring. issue #114: translucent over the glass card,
+  // never a solid block
   &:hover,
   &:focus-visible {
-    background: $surface;
+    background: rgba(255, 255, 255, 0.12);
     color: $text-primary;
   }
 }
@@ -85,8 +93,11 @@
   // issue #98: visibly taller rows — more vertical padding plus a touch floor
   // so each device is an obvious, comfortably tappable row
   // issue #109: the old 44px pills read as flat and tiny — ~1.6x that height
-  // with 12px vertical / 16px horizontal inner padding for a substantial,
-  // finger-friendly two-line card (name + muted type subtitle)
+  // with 12px vertical / 16px horizontal inner padding for a substantial
+  // finger-friendly card
+  // issue #114: subtle translucent fill so each row reads as a glass chip on
+  // the glass card
+  background: rgba(255, 255, 255, 0.06);
   padding: $s-3 $s-4;
   min-height: 68px;
   gap: $s-3;
@@ -98,7 +109,8 @@
 }
 
 .textBlock {
-  // issue #109: stacks the device name over its small type subtitle
+  // issue #115: single-line text block - the secondary type subtitle was
+  // removed, the name alone fills the row and stays centered on the icon
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -107,19 +119,9 @@
 }
 
 .name {
-  font-size: $fs-lg;
-  font-weight: $fw-medium;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.meta {
-  // issue #109: small muted secondary line under the name — a device-type
-  // label (the ConnectDevice payload has no model field, so this is derived)
-  font-size: $fs-sm;
-  font-weight: $fw-regular;
-  color: $text-tertiary;
+  // issue #114: enlarged for legibility from a distance - 18px semi-bold
+  font-size: $fs-xl;
+  font-weight: $fw-semibold;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
