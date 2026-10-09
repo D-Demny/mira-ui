@@ -21,7 +21,10 @@ const makeDevice = (overrides: Partial<ConnectDevice> = {}): ConnectDevice => ({
 const devices: ConnectDevice[] = [
   makeDevice({ id: 'dev-001', name: 'Living Room' }),
   makeDevice({ id: 'dev-002', name: 'MacBook', type: 'COMPUTER', is_active: true }),
+  // issue #127: offline but transferable — idle speakers from the merged
+  // account-wide list must stay selectable (tapping re-registers them)
   makeDevice({ id: 'dev-003', name: 'Old Phone', is_offline: true }),
+  makeDevice({ id: 'dev-004', name: 'Blocked Box', can_transfer: false }),
 ]
 
 function makeParentEntry(): ListFocusEntry {
@@ -58,17 +61,18 @@ describe('DevicePicker (inline)', () => {
     expect(screen.getByText('No active devices to select from for playback')).toBeInTheDocument()
   })
 
-  it('routes a row click to onSelect, but offline rows are not buttons', () => {
+  it('routes row clicks to onSelect; offline-but-transferable rows stay tappable (issue #127)', () => {
     const onSelect = vi.fn()
     render(<DevicePicker devices={devices} onSelect={onSelect} />)
 
-    // 'Old Phone' is offline → no button role at all
+    // 'Blocked Box' (can_transfer: false) gets no button role; the offline
+    // 'Old Phone' does — interactivity follows can_transfer, not is_offline
     const rows = screen.getAllByRole('button')
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
 
-    fireEvent.click(rows[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Old Phone' }))
     expect(onSelect).toHaveBeenCalledTimes(1)
-    expect(onSelect).toHaveBeenCalledWith(devices[0])
+    expect(onSelect).toHaveBeenCalledWith(devices[2])
   })
 
   it('issue #109: compact rows stack a muted type subtitle under the name', () => {

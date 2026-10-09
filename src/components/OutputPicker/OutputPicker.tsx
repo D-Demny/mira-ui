@@ -51,7 +51,9 @@ function OutputPickerImpl({
     itemCount: devices.length,
     onConfirm: (index) => {
       const device = devices[index]
-      if (device && device.can_transfer && !device.is_offline) onSelect(device)
+      // issue #127: offline-but-transferable rows (idle speakers from the
+      // merged account-wide list) transfer like any other row
+      if (device && device.can_transfer) onSelect(device)
     },
     onBack: onClose,
     // start where the playback currently is, like the old device picker did
@@ -90,7 +92,10 @@ function OutputPickerImpl({
           <ul className={styles.list}>
             {devices.map((device, index) => {
               const isDefault = currentDefaultId !== null && device.id === currentDefaultId
-              const interactive = device.can_transfer && !device.is_offline
+              // issue #127: tappable whenever the daemon says a transfer is
+              // possible — is_offline only drives the dimmed "offline" look,
+              // not interactivity (tapping re-registers the device)
+              const interactive = device.can_transfer
               const focused = focusedIndex === index
               return (
                 <li key={device.id}>

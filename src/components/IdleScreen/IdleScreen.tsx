@@ -1,8 +1,9 @@
-import { memo, type CSSProperties } from 'react'
+import { memo, type CSSProperties, useEffect } from 'react'
 import { MenuIcon } from '@/components/MainMenuView/MenuIcon'
 import { sceneMenuIcon } from '@/components/MainMenuView/homeDashboard'
 import { DevicePicker } from '@/components/DevicePicker'
 import { useHomeSelectedEntities } from '@/hooks/useHomeEntities'
+import { refreshConnectDevices } from '@/api/client'
 import type { ConnectDevice } from '@/api/types'
 import styles from './IdleScreen.module.scss'
 
@@ -61,6 +62,13 @@ function IdleScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId, a
   // only scenes reach the idle dashboard — lights/covers/switches stay in the
   // Home dashboard's zone layout
   const scenes = selectedEntities.filter((e) => e.domain === 'scene')
+
+  // issue #127: the live cluster only lists currently registered devices, so
+  // ask the daemon for a fresh account-wide list when this screen shows up
+  // (fire-and-forget; the daemon also polls periodically).
+  useEffect(() => {
+    void refreshConnectDevices().catch(() => {})
+  }, [])
 
   const filteredDevices =
     defaultDeviceId && defaultDeviceId !== ''
