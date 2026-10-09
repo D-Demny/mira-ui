@@ -52,7 +52,11 @@
 // issue #108: ~90% screen coverage — the old $s-7 (32px) chrome left the
 // dashboard cramped and centered; 12px vertical / 16px horizontal outer
 // padding pushes the content almost edge-to-edge while keeping a consistent
-// frame around it
+// frame around it.
+// issue #126 (partially reversing #108/#124): 12px top/bottom felt crammed
+// against the physical bezels — restore a 24px vertical outer margin (the
+// requested 24–32px band) while keeping the 16px horizontal frame, so the
+// dashboard stays large but gets breathing room top and bottom.
 .content {
   position: relative;
   width: 100%;
@@ -61,7 +65,7 @@
   flex-direction: column; // no scenes: single centered column
   align-items: center;
   justify-content: center;
-  padding: $s-3 $s-4;
+  padding: $s-6 $s-4;
 }
 
 // issue #102: devices + scenes as a strict 1/3 / 2/3 split. A grid (not flex)
@@ -81,6 +85,11 @@
   align-items: stretch;
   justify-content: stretch;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  // issue #126: explicit single row — an implicit auto-sized row would grow to the
+  // tallest column's CONTENT (a long device list), overflowing past the screen top
+  // and bottom instead of scrolling; minmax(0, 1fr) pins the row to the content
+  // box so the capped columns can contain their lists.
+  grid-template-rows: minmax(0, 1fr);
 }
 
 // issue #102: the right column — the "Beleuchtung" header above the scene
@@ -187,6 +196,12 @@
   // issue #102: a grid track now, not a flex basis — the 1fr column of
   // .split sizes it; the stack stays centered within its third
   min-width: 0;
+  // issue #126: cap the column at the content box — with many devices the card's
+  // percentage max-height needs a definite parent height, otherwise the list
+  // overflows the screen instead of scrolling inside the card. In no-scene mode
+  // .content centers this capped column; in split mode .split's row already is.
+  min-height: 0;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
