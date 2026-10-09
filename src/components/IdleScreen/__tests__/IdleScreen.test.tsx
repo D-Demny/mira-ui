@@ -166,12 +166,15 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
 
     await screen.findByText('Abendstimmung')
 
-    // the section header sits in the scene column, BEFORE the tile grid
-    const sceneCol = container.querySelector('[class*="sceneCol"]')
-    expect(sceneCol).toBeTruthy()
+    // issues #113/#122: the "Beleuchtung" header lives INSIDE the scene zone's
+    // glass panel (scenePanel) as the direct sibling immediately before the
+    // tile grid — one unified DOM block, never detached in the bare column
+    const scenePanel = container.querySelector('[class*="scenePanel"]')
+    expect(scenePanel).toBeTruthy()
     const header = screen.getByText('Beleuchtung')
-    expect(header.parentElement === sceneCol).toBe(true)
+    expect(header.parentElement === scenePanel).toBe(true)
     const grid = container.querySelector('[class*="sceneGrid"]')!
+    expect(grid.parentElement === scenePanel).toBe(true)
     // header comes BEFORE the grid (from the grid's view it PRECEDES it)
     expect(grid.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
     // the content layer switches to the strict 1/3 / 2/3 split

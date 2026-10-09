@@ -14,30 +14,6 @@ interface Props {
   compact?: boolean
 }
 
-// issue #109: small muted subtitle under the device name — derived from the
-// known type (the ConnectDevice payload carries no model field), humanized
-// for unknown types; null hides the line entirely.
-function deviceTypeLabel(type: string): string | null {
-  switch (type) {
-    case 'SMARTPHONE':
-      return 'Smartphone'
-    case 'TABLET':
-      return 'Tablet'
-    case 'COMPUTER':
-      return 'Computer'
-    case 'CHROMEBOOK':
-      return 'Chromebook'
-    default:
-      if (type === '') return null
-      return type
-        .toLowerCase()
-        .split(/[_\s-]+/)
-        .filter(Boolean)
-        .map((w) => w[0].toUpperCase() + w.slice(1))
-        .join(' ')
-  }
-}
-
 function DeviceList({
   devices,
   onSelect,
@@ -55,7 +31,6 @@ function DeviceList({
         // yet transferable, and tapping one re-registers it with Spotify,
         // exactly like the official clients
         const interactive = Boolean(onSelect) && d.can_transfer
-        const typeLabel = deviceTypeLabel(d.type)
         return (
           <li key={d.id}>
             <div
@@ -67,12 +42,12 @@ function DeviceList({
               onClick={interactive ? () => onSelect?.(d) : undefined}
             >
               <span className={styles.icon}>
-                {/* issue #109: prominent left icon in the idle list */}
-                <DeviceTypeIcon type={d.type} size={compact ? 28 : 22} />
+                {/* issue #109: prominent left icon in the idle list;
+                    issue #114: scaled up to 32px with the enlarged type */}
+                <DeviceTypeIcon type={d.type} size={compact ? 32 : 22} />
               </span>
               <span className={styles.textBlock}>
                 <span className={styles.name}>{d.name}</span>
-                {compact && typeLabel ? <span className={styles.meta}>{typeLabel}</span> : null}
               </span>
               {d.is_active ? <span className={styles.activeDot} aria-label="active" /> : null}
             </div>

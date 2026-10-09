@@ -85,6 +85,9 @@
   align-items: stretch;
   justify-content: stretch;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  // issue #122: generous horizontal breathing room between the two container
+  // blocks so they read as separate panels, never visually merged
+  column-gap: $s-6;
   // issue #126: explicit single row — an implicit auto-sized row would grow to the
   // tallest column's CONTENT (a long device list), overflowing past the screen top
   // and bottom instead of scrolling; minmax(0, 1fr) pins the row to the content
@@ -92,41 +95,69 @@
   grid-template-rows: minmax(0, 1fr);
 }
 
-// issue #102: the right column — the "Beleuchtung" header above the scene
-// grid; the grid fills whatever height the header leaves behind
+// issue #102: the right column — a full-height grid track like .deviceCol.
+// issues #113/#122: it centers its content-sized glass panel (scenePanel)
+// exactly like .deviceCol centers the device card, so both zones read as
+// matching floating blocks above the ambient background.
 .sceneCol {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
-// issue #102: section header of the scene zone — same typography and left
-// alignment as the device card's "Spotify abspielen" header (DevicePicker's
-// .header, which sits inside its card's padding)
-// issue #108: the two zone titles are the dashboard's primary anchors now —
-// enlarged to $fs-xl and given a 12px margin before the cards begin. The
-// 8px top offset mirrors the compact card's own 8px inner padding, so both
-// headers sit on the same horizontal line at the top of their columns
+// issues #113/#122: the "Beleuchtung" section block — IDENTICAL glass styling
+// to the device card (DevicePicker .cardInline): same translucent fill,
+// backdrop blur, border, radius, shadow. The header lives INSIDE this panel,
+// directly above the scene grid, so title + tiles flow as one DOM unit and
+// the group is no longer detached at the top edge of the screen. Content-sized
+// (shrink-wraps), with the same max-height/scroll guard as the device card.
+.scenePanel {
+  width: 100%;
+  max-height: calc(100% - #{$s-6});
+  overflow-y: auto;
+  @include hide-scrollbar;
+  display: flex;
+  flex-direction: column;
+  padding: $s-2;
+  background: $glass-bg;
+  -webkit-backdrop-filter: blur($glass-blur);
+  backdrop-filter: blur($glass-blur);
+  border: 1px solid $divider;
+  border-radius: $r-lg;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+// issues #102/#113/#122: the "Beleuchtung" title INSIDE the scene panel —
+// same typography, left alignment and edge insets as the device card's
+// "Spotify abspielen" header (DevicePicker .header): 4px/8px own padding on
+// top of the panel's $s-2 padding, a tight 8px bottom margin to the first
+// row of tiles. Living inside the panel it can never sit detached at the
+// top edge of the screen (issue #113 re-open).
 .sectionHeader {
   flex: 0 0 auto;
-  font-size: $fs-xl;
-  font-weight: $fw-semibold;
+  // issue #114: section headers enlarged to 20px bold (within the 18-20px
+  // spec band) for legibility from a distance — same size/weight as the
+  // device card's "Spotify abspielen" header
+  font-size: 20px;
+  font-weight: $fw-bold;
   color: $text-tertiary;
   text-align: left;
-  padding-top: $s-2;
-  margin-bottom: $s-3;
+  padding: $s-1 $s-2 0;
+  margin-bottom: $s-2;
 }
 
 .sceneGrid {
-  flex: 1 1 auto;
+  // issue #122: content-sized inside the shrink-wrapping panel (the panel —
+  // not the grid — is what fills its column) so header + tiles flow as one
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 0;
   display: grid;
   // issue #103: column/row templates are set inline per scene count
-  // (sceneLayout) so the tiles always fill this 2/3 cell evenly — no scrolling
-  align-content: center;
-  // issue #108: roomier grid gaps for a natural, room-filling flow
+  // (sceneLayout) so the tile pairs fill the panel width evenly
   gap: $s-4;
 }
 
@@ -139,26 +170,32 @@
   gap: $s-2;
   min-height: 0;
   padding: $s-3;
-  background: $surface-elev;
+  // issue #114: translucent glassmorphism — a semi-transparent dark base +
+  // 12px backdrop blur so the blurred ambient background shines through
+  background: $glass-bg;
+  -webkit-backdrop-filter: blur($glass-blur);
+  backdrop-filter: blur($glass-blur);
   border: 1px solid $divider; // stays neutral — no accent ring (issue #102)
   border-radius: $r-lg;
   cursor: pointer;
 
   // issue #102/#110: the harsh green border went, and the neutral white lift
   // is gone too — focus/hover/tap reads as a WARM AMBER tint with a soft
-  // gold glow (no cool or green highlights anywhere on tile states). The
-  // gradient keeps the $surface-elev base dark enough for the icon/label to
-  // stay readable.
+  // gold glow (no cool or green highlights anywhere on tile states).
+  // issue #114: the amber gradient is layered OVER the glass base instead of
+  // replacing it, so the blur-through is preserved while engaged.
   &:hover,
   &:focus-visible {
-    background: linear-gradient(160deg, rgba(255, 191, 0, 0.22) 0%, rgba(255, 191, 0, 0.08) 100%);
+    background:
+      linear-gradient(160deg, rgba(255, 191, 0, 0.22) 0%, rgba(255, 191, 0, 0.08) 100%), $glass-bg;
     border-color: rgba(255, 191, 0, 0.4);
     box-shadow: 0 0 12px rgba(255, 191, 0, 0.35);
   }
 
   // while the finger is down, the pressed card glows a touch harder
   &:active {
-    background: linear-gradient(160deg, rgba(255, 191, 0, 0.3) 0%, rgba(255, 191, 0, 0.14) 100%);
+    background:
+      linear-gradient(160deg, rgba(255, 191, 0, 0.3) 0%, rgba(255, 191, 0, 0.14) 100%), $glass-bg;
     border-color: rgba(255, 191, 0, 0.55);
     box-shadow: 0 0 14px rgba(255, 191, 0, 0.5);
   }
@@ -182,8 +219,10 @@
 }
 
 .sceneLabel {
-  font-size: $fs-md;
-  font-weight: $fw-medium;
+  // issue #114: enlarged tile labels - 18px semi-bold, matching the device
+  // row names for consistent button typography across both zones
+  font-size: $fs-xl;
+  font-weight: $fw-semibold;
   color: $text-secondary;
   text-align: center;
   max-width: 100%;
@@ -205,10 +244,12 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  // issue #108: in split mode the column stretches to full height — start the
-  // card stack directly under its header instead of floating mid-column
-  // (without scenes .content still centers this auto-height column)
-  justify-content: flex-start;
+  // issue #112: the card stack (header + rows + status) is VERTICALLY CENTERED
+  // inside the full-height column and grows/shrinks symmetrically from the
+  // midpoint as devices are added or removed — no longer pinned to the top
+  // edge. The #126 max-height cap above still contains long lists; in
+  // no-scene mode .content centers this capped column the same way.
+  justify-content: center;
   gap: $s-3;
 }
 
