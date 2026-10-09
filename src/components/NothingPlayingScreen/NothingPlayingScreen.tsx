@@ -1,6 +1,7 @@
-import { memo } from 'react'
+import { memo, useEffect } from 'react'
 import { PlayIcon } from '@/components/Controls/icons'
 import { DevicePicker } from '@/components/DevicePicker'
+import { refreshConnectDevices } from '@/api/client'
 import type { ConnectDevice } from '@/api/types'
 import styles from './NothingPlayingScreen.module.scss'
 
@@ -18,6 +19,12 @@ interface Props {
 }
 
 function NothingPlayingScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId }: Props) {
+  // issue #127: the live cluster only lists currently registered devices, so
+  // ask the daemon for a fresh account-wide list when this screen shows up
+  // (fire-and-forget; the daemon also polls periodically).
+  useEffect(() => {
+    void refreshConnectDevices().catch(() => {})
+  }, [])
   const filteredDevices =
     defaultDeviceId && defaultDeviceId !== ''
       ? devices.filter((d) => d.id === defaultDeviceId)

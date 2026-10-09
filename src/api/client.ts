@@ -106,6 +106,22 @@ export async function fetchConnectDevices(signal?: AbortSignal): Promise<Connect
   return Array.isArray(body?.devices) ? (body.devices as ConnectDevice[]) : []
 }
 
+// issue #127: on-demand re-fetch of the account-wide Connect device list
+// (daemon calls GET /me/player/devices and merges it into the picker list).
+// Fired when a screen showing devices mounts so idle speakers that aged out
+// of the live cluster view show up; failures keep the previous list and the
+// daemon's periodic poll still refreshes it.
+export async function refreshConnectDevices(signal?: AbortSignal): Promise<ConnectDevice[]> {
+  const res = await fetch(`${API_BASE}/connect/refresh`, {
+    method: 'POST',
+    signal,
+    cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`connect/refresh ${res.status}`)
+  const body = await res.json()
+  return Array.isArray(body?.devices) ? (body.devices as ConnectDevice[]) : []
+}
+
 // resume playback on the last active device (used from the idle screen). Throws
 // on non-OK (404 = no remembered/available device) so the caller can banner it.
 export async function resumeLastDevice(): Promise<void> {
