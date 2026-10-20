@@ -4,7 +4,8 @@ import { sceneMenuIcon } from '@/components/MainMenuView/homeDashboard'
 import { DevicePicker } from '@/components/DevicePicker'
 import { useHomeSelectedEntities } from '@/hooks/useHomeEntities'
 import { refreshConnectDevices } from '@/api/client'
-import type { ConnectDevice } from '@/api/types'
+import type { ConnectDevice, MaDevice } from '@/api/types'
+import { useMaDevices } from '@/hooks/useConnectDevices'
 import styles from './IdleScreen.module.scss'
 
 // issue #95: the idle dashboard replaces the old "Nothing playing" screen.
@@ -56,28 +57,51 @@ interface Props {
   devices: ConnectDevice[]
   onSelectDevice?: (device: ConnectDevice) => void
   defaultDeviceId?: string | null
+  // issue #134: 'ma' switches the picker zone to the Music Assistant list —
+  // fetched by this component via useMaDevices (mount-time freshness like the
+  // connect refresh below, issue #127); taps route to onSelectMaDevice. The
+  // default 'spotify' path is untouched.
+  source?: 'spotify' | 'ma'
+  onSelectMaDevice?: (device: MaDevice) => void
   // issue #99: last known track art for the blurred background (''/null = none)
   artUrl?: string | null
 }
 
-function IdleScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId, artUrl }: Props) {
+function IdleScreenImpl({
+  connected,
+  devices,
+  onSelectDevice,
+  defaultDeviceId,
+  source = 'spotify',
+  onSelectMaDevice,
+  artUrl,
+}: Props) {
   const selectedEntities = useHomeSelectedEntities(false)
   // only scenes reach the idle dashboard — lights/covers/switches stay in the
   // Home dashboard's zone layout
   const scenes = selectedEntities.filter((e) => e.domain === 'scene')
 
+  // issue #134: fetch the MA list only while the MA source is selected (no
+  // request at all on the Spotify path); the hook also refetches after
+  // websocket reconnect.
+  const maMode = source === 'ma'
+  const maDevices = useMaDevices(maMode)
+
   // issue #127: the live cluster only lists currently registered devices, so
   // ask the daemon for a fresh account-wide list when this screen shows up
-  // (fire-and-forget; the daemon also polls periodically).
+  // (fire-and-forget; the daemon also polls periodically). The MA source
+  // skips it — its list comes from useMaDevices above.
   useEffect(() => {
-    void refreshConnectDevices().catch(() => {})
-  }, [])
+    if (!maMode) void refreshConnectDevices().catch(() => {})
+  }, [maMode])
 
+  // issue #134: the default-device filter only applies to the Connect list —
+  // its id space is disjoint from MA player ids (those arrive separately via
+  // maDevices, which DevicePicker renders while source === 'ma').
   const filteredDevices =
     defaultDeviceId && defaultDeviceId !== ''
       ? devices.filter((d) => d.id === defaultDeviceId)
       : devices
-
   return (
     <div className={styles.idle}>
       {artUrl ? (
@@ -88,7 +112,14 @@ function IdleScreenImpl({ connected, devices, onSelectDevice, defaultDeviceId, a
       <div className={styles.scrim} aria-hidden />
       <div className={`${styles.content}${scenes.length > 0 ? ` ${styles.split}` : ''}`}>
         <div className={styles.deviceCol}>
-          <DevicePicker devices={filteredDevices} onSelect={onSelectDevice} compact />
+          <DevicePicker
+            devices={filteredDevices}
+            onSelect={onSelectDevice}
+            compact
+            source={source}
+            maDevices={maDevices}
+            onMaSelect={onSelectMaDevice}
+          />
           {!connected ? (
             <div className={styles.status}>
               <span className={`${styles.dot} ${styles.dotOff}`} aria-hidden />

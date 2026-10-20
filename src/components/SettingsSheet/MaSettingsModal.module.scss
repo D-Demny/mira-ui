@@ -1,0 +1,244 @@
+// issue #134: the Wiedergabequelle (playback source) settings view — 1:1 the
+// HaSettingsModal styles (Bug10-1/Bug51 scroll chain, CR69 margin-based
+// spacing), plus the two-option .segmented source control.
+.backdrop {
+  position: fixed;
+  @include inset-0;
+  z-index: $z-menu;
+  @include flex-center;
+  background: rgba(0, 0, 0, 0.62);
+  animation: fadeIn $dur-base $ease-standard both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+// Bug10-1: the card is the FIXED SHELL of the modal (size, background,
+// border, shadow). It does not scroll itself — the .content block below is
+// the vertical scroll container.
+.card {
+  width: 540px;
+  max-width: calc(100% - #{$s-6});
+  max-height: calc(100% - #{$s-6});
+  @include column;
+  padding: $s-5;
+  background: $bg;
+  border-radius: $r-2xl;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  animation: slideIn $dur-base $ease-emphasized both;
+}
+
+// Bug10-1: the vertical scroll container — fixed card shell + scrolling
+// content block (the established SettingsList pattern). CR69/Bug49: no flex
+// gap — the spacing is margin-based via the flex-gap-y mixin. Bug51: direct
+// children must not shrink (flex-shrink: 0 on every child, same as
+// SettingsList rows) so the menu scrolls instead of collapsing on the 800x480
+// device.
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  @include hide-scrollbar;
+  @include column;
+  @include flex-gap-y($s-4);
+
+  > * {
+    flex-shrink: 0;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.header {
+  @include column;
+  @include flex-gap-y($s-2);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-size: $fs-2xl;
+  font-weight: $fw-semibold;
+  letter-spacing: -0.01em;
+  color: $text-primary;
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: $r-md;
+  color: $text-secondary;
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    color $dur-fast $ease-standard;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: $text-primary;
+  }
+
+  &:active {
+    transform: scale(0.92);
+  }
+}
+
+.status {
+  font-size: $fs-md;
+  font-weight: $fw-medium;
+}
+
+.statusOn {
+  color: $accent;
+}
+
+.statusOff {
+  color: $text-tertiary;
+}
+
+// issue #134: the two-option source selector — CR69: no flex gap, margin-based
+// via flex-gap-x. The selected option carries the accent fill (the same
+// treatment as .btnPrimary below); the dial focus highlight is a plain
+// brightness lift (issue #59: no colored border).
+.segmented {
+  display: flex;
+  align-items: center;
+  @include flex-gap-x($s-3);
+}
+
+.segmentBtn {
+  flex: 1 1 0;
+  padding: $s-3 $s-4;
+  border-radius: $r-lg;
+  border: none;
+  background: rgba(255, 255, 255, 0.09);
+  color: $text-primary;
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  cursor: pointer;
+  transition:
+    background-color $dur-fast $ease-standard,
+    transform $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  // the dial focus highlight (same pattern as the inputs — pure CSS, no
+  // el.focus() per tick)
+  &.focused {
+    background: rgba(255, 255, 255, 0.16);
+  }
+}
+
+.segmentOn {
+  background: $accent;
+  color: #000;
+
+  &.focused {
+    background: $accent;
+  }
+}
+
+// Bug10-1/CR69: margin-based label/input spacing (flex-gap-y mixin)
+.field {
+  @include column;
+  @include flex-gap-y($s-2);
+
+  // the Token field keeps its hint OUTSIDE the wrapping label (accessible-name
+  // hygiene, same as the HA modal) — the inner label repeats the same column
+  // flow for its label/input pair
+  label {
+    @include column;
+    @include flex-gap-y($s-2);
+  }
+}
+
+.fieldLabel {
+  font-size: $fs-sm;
+  color: $text-secondary;
+}
+
+// the hint line under the Token field (same treatment as the HA modal's)
+.fieldHint {
+  font-size: $fs-sm;
+  color: $text-tertiary;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: $s-3 $s-4;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: $r-md;
+  background: rgba(255, 255, 255, 0.05);
+  color: $text-primary;
+  font-size: $fs-md;
+  outline: none;
+  transition: background-color $dur-fast $ease-standard;
+
+  // issue #59: no green border — focus (keyboard or dial) is a plain
+  // brightness lift above the base (0.05).
+  &:focus {
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  // the dial focus highlight (pure CSS, no el.focus() per tick)
+  &.focused {
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+.btn {
+  flex: 0 0 auto;
+  padding: $s-3 $s-4;
+  border-radius: $r-lg;
+  border: none;
+  background: rgba(255, 255, 255, 0.09);
+  color: $text-primary;
+  font-size: $fs-md;
+  font-weight: $fw-semibold;
+  cursor: pointer;
+  transition:
+    transform $dur-fast $ease-standard,
+    opacity $dur-fast $ease-standard;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.btnPrimary {
+  width: 100%;
+  background: $accent;
+  color: #000;
+}

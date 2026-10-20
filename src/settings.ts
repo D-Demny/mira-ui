@@ -41,6 +41,27 @@ export interface HaSettingsValue {
   tokenSource: 'default' | 'manual' | 'login'
 }
 
+// issue #134: which backend the daemon's /player/* transport controls route
+// to — 'spotify' (the default, every blob predating the field) or 'ma'
+// (Music Assistant). The selection is persisted with the rest of the
+// settings; the daemon reads it from the same opaque blob.
+export type PlaybackSource = 'spotify' | 'ma'
+
+// issue #134: the Music Assistant connection — the daemon's /ma/* endpoints
+// (device list + player selection) read this from the settings blob (the
+// same opaque-blob pattern as HaSettingsValue; see the daemon's ma config).
+// The user may type a bare host:port — the daemon normalizes (trim, default
+// scheme http, ws(s)→http(s), trailing slash stripped); an empty url means
+// "MA backend disabled" (the endpoints answer empty/400).
+// SECURITY (documented trade-off, same as HaSettingsValue.token and
+// PiProfile.password): the token is stored in plain text so the daemon keeps
+// working across restarts. It is NEVER logged — not in the UI console and
+// not in error strings/toasts (hard constraint, issue #134).
+export interface MaSettingsValue {
+  url: string
+  token: string
+}
+
 export interface Settings {
   showLyrics: boolean
   karaokeLyrics: boolean
@@ -86,6 +107,18 @@ export interface Settings {
   idleScreenEnabled: boolean
   // ticket 9.4: the Home Assistant connection (see HaSettingsValue)
   ha: HaSettingsValue
+  // issue #134: the Music Assistant connection (see MaSettingsValue).
+  // OPTIONAL on purpose: a blob that never configured MA carries no `ma` key
+  // at all — the coercion drops it again (see coerceMa), and the serialization
+  // omits undefined keys, so old blobs round-trip without gaining the key.
+  // Missing or url-less entry = "MA backend disabled" in the daemon. Additive
+  // field, no schema version bump (old builds ignore the unknown key).
+  ma?: MaSettingsValue
+  // issue #134: which backend the /player/* controls route to (see
+  // PlaybackSource). Strict coercion like autoCollapseSidebar: only the exact
+  // strings pass, blobs predating the field coerce to 'spotify'. Additive
+  // field, no schema version bump.
+  playbackSource: PlaybackSource
 }
 
 export const VOLUME_STEP_MIN = 1
@@ -106,6 +139,10 @@ export const UI_SCALE_DEFAULT = 110
 // coerceHa), so no separate migration step is needed. An old build reading a
 // v3 blob ignores the unknown `ha` key (no crash — compat matrix, ticket
 // 9.4 design §5: new UI + old daemon keeps running on the config.yml values).
+// issue #134: `ma` + `playbackSource` are ADDITIVE on v3 as well — blobs
+// gain the keys only when the user saves the MA settings, and a missing
+// playbackSource coerces to 'spotify'. No version bump (old builds ignore
+// unknown keys; new UI coerces the absent field).
 const SCHEMA_VERSION = 3
 // NOTE (ticket10-5A): the localStorage key stays at v1 ON PURPOSE — the
 // one-time migration of the legacy piServer entry must still find the old
@@ -148,6 +185,9 @@ const DEFAULTS: Settings = {
   ha: { url: '', username: '', password: '', token: '', tokenSource: 'default' },
   // issue #100: the idle dashboard is ON by default (see the interface note)
   idleScreenEnabled: true,
+  // issue #134: Spotify stays the default source; no `ma` key on a fresh
+  // install (the optional field stays absent until the user saves MA settings)
+  playbackSource: 'spotify',
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -291,6 +331,26 @@ function coerceHa(raw: unknown): HaSettingsValue {
   }
 }
 
+// issue #134: strict ma coercion (same pattern as coerceHa). url is trimmed
+// (trailing whitespace from the onscreen keyboard is the realistic source);
+// the token is kept VERBATIM — a stray space is part of the credential, and
+// "fixing" it client-side would silently break authentication (the daemon's
+// normalization covers only the url, see MaSettingsValue). A missing or
+// non-object `ma` yields undefined — the key stays OUT of the store (and out
+// of the serialized blob), which is the daemon's "MA disabled" state; blobs
+// predating the field therefore migrate to nothing.
+function coerceMa(raw: unknown): MaSettingsValue | undefined {
+  if (typeof raw !== 'object' || raw === null) {
+    return undefined
+  }
+  const obj = raw as Partial<MaSettingsValue>
+  return {
+    url: typeof obj.url === 'string' ? obj.url.trim() : '',
+    // verbatim — never trim (see above)
+    token: typeof obj.token === 'string' ? obj.token : '',
+  }
+}
+
 function coerce(partial: Partial<Settings> | null | undefined): Settings {
   const piProfiles = coercePiProfiles(partial)
   return {
@@ -345,6 +405,15 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     // key (every blob predating v3) coerces to the empty defaults, which is
     // the whole v2→v3 migration (idempotent, no separate step)
     ha: coerceHa(partial?.ha),
+    // issue #134: see coerceMa — a blob without the `ma` key (every blob
+    // predating the field) stays WITHOUT the key; the coercion is the whole
+    // migration (idempotent, no separate step, no schema version bump)
+    ma: coerceMa(partial?.ma),
+    // issue #134: strict like autoCollapseSidebar — only the exact string
+    // 'ma' passes; anything else (hand-edited blobs with foreign values,
+    // blobs predating the field) coerces to the default 'spotify'. Additive
+    // field, so no schema version bump; the coercion is the null-op migration.
+    playbackSource: partial?.playbackSource === 'ma' ? 'ma' : 'spotify',
     // issue #100: ON by default — the migration direction is inverted from
     // the usual "missing → default false" pattern: blobs predating the field
     // (every stored blob) must stay ON, so only an EXPLICIT false disables

@@ -32,6 +32,17 @@ export interface ConnectDevice {
   can_transfer: boolean
 }
 
+// issue #134: one selectable Music Assistant player (a GET /ma/devices item —
+// the daemon answers 200 with an EMPTY array when MA is unconfigured or
+// unreachable, so this type never has to model error states)
+export interface MaDevice {
+  id: string
+  name: string
+  // available = currently reachable; the picker renders unavailable players
+  // non-interactive (the same role can_transfer plays for Connect devices)
+  available: boolean
+}
+
 export interface QueueTrack {
   uri: string
   track_id: string

@@ -3,6 +3,7 @@ import type {
   ConnectDevice,
   DebugStatus,
   LyricsResult,
+  MaDevice,
   ObserverStatus,
   ObserverStatusActive,
   RemoteStateWire,
@@ -137,6 +138,33 @@ export async function transferToDevice(deviceId: string): Promise<void> {
     body: JSON.stringify({ device_id: deviceId }),
   })
   if (!res.ok) throw new Error(`connect/transfer ${res.status}`)
+}
+
+// issue #134: the Music Assistant backend (playbackSource 'ma'). The daemon
+// serves its MA player list here — 200 with an EMPTY array when MA is
+// unconfigured or unreachable, so a failed fetch (network/daemon) throws like
+// its siblings and the caller keeps the previous list.
+// SECURITY: the UI never sends the MA token itself — the daemon reads it from
+// the settings blob (settings.ts MaSettingsValue) — so these calls carry no
+// credential, and neither may an error message derived from them.
+export async function fetchMaDevices(signal?: AbortSignal): Promise<MaDevice[]> {
+  const res = await fetch(`${API_BASE}/ma/devices`, { signal, cache: 'no-store' })
+  if (!res.ok) throw new Error(`ma/devices ${res.status}`)
+  const body = await res.json()
+  return Array.isArray(body?.devices) ? (body.devices as MaDevice[]) : []
+}
+
+// issue #134: start playback on the given MA player (the daemon routes this
+// to Music Assistant). Throws on non-OK (400 = unknown player or MA
+// unconfigured) so the caller can surface it in the same error style as a
+// failed Connect transfer (see useDeviceSwitch).
+export async function selectMaPlayer(playerId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/ma/player/select`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ player_id: playerId }),
+  })
+  if (!res.ok) throw new Error(`ma/player/select ${res.status}`)
 }
 
 // issue #25: some lyrics sources answer instrumental tracks with a bare

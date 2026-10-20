@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { DevicePicker } from '../DevicePicker'
-import type { ConnectDevice } from '@/api/types'
+import type { ConnectDevice, MaDevice } from '@/api/types'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 import type { ListFocusEntry } from '@/navigation/listFocusContext'
 
@@ -73,5 +73,51 @@ describe('DevicePicker (inline)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Old Phone' }))
     expect(onSelect).toHaveBeenCalledTimes(1)
     expect(onSelect).toHaveBeenCalledWith(devices[2])
+  })
+})
+
+// issue #134: the Music Assistant variant (source='ma') — same row anatomy as
+// the spotify list above; interactivity follows `available` exactly like
+// `can_transfer`, and the header/empty copy switches with the source
+describe('DevicePicker (MA source, issue #134)', () => {
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+  })
+
+  const maDevices: MaDevice[] = [
+    { id: 'ma-001', name: 'Stereoanlage', available: true },
+    { id: 'ma-002', name: 'Kitchen Speaker', available: false },
+    { id: 'ma-003', name: 'Beamer', available: true },
+  ]
+
+  it('renders the MA player names under the MA header (the spotify list is ignored)', () => {
+    render(<DevicePicker devices={devices} source="ma" maDevices={maDevices} />)
+    expect(screen.getByText('Music Assistant abspielen')).toBeInTheDocument()
+    expect(screen.queryByText('Spotify abspielen')).not.toBeInTheDocument()
+    expect(screen.getByText('Stereoanlage')).toBeInTheDocument()
+    expect(screen.getByText('Kitchen Speaker')).toBeInTheDocument()
+    expect(screen.getByText('Beamer')).toBeInTheDocument()
+    // the spotify rows are not rendered in ma mode
+    expect(screen.queryByText('Living Room')).not.toBeInTheDocument()
+  })
+
+  it('shows the MA empty text for an empty player list', () => {
+    render(<DevicePicker devices={devices} source="ma" maDevices={[]} />)
+    expect(screen.getByText('Keine verfügbaren Wiedergabegeräte')).toBeInTheDocument()
+  })
+
+  it('routes row clicks to onMaSelect; unavailable rows get no button role', () => {
+    const onMaSelect = vi.fn()
+    render(
+      <DevicePicker devices={devices} source="ma" maDevices={maDevices} onMaSelect={onMaSelect} />,
+    )
+    // only the two available players are interactive — 'Kitchen Speaker'
+    // (available: false) gets no role, same convention as can_transfer above
+    const rows = screen.getAllByRole('button')
+    expect(rows).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stereoanlage' }))
+    expect(onMaSelect).toHaveBeenCalledTimes(1)
+    expect(onMaSelect).toHaveBeenCalledWith(maDevices[0])
   })
 })

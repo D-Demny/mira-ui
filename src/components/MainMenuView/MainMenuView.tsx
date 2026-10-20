@@ -161,6 +161,18 @@ function buildRootSettingsRows(
       section: 'Idle & Screensaver',
       description: 'Zeige Szenen und Lautsprecher-Auswahl bei Inaktivität',
     },
+    // issue #134: the playback source ('Wiedergabequelle' section) — own row,
+    // appended LAST (same principle as bug54 / issue #100 above: keep every
+    // existing row index stable). The value mirrors the persisted selection;
+    // the row opens the MA settings view (App-level modal).
+    {
+      id: 'set-playback-source',
+      title: 'Quelle',
+      value: settings.playbackSource === 'ma' ? 'Music Assistant' : 'Spotify Connect',
+      kind: 'open-link',
+      section: 'Wiedergabequelle',
+      description: 'Streaming-Hintergrund für Wiedergabe und Gerätauswahl',
+    },
   ]
 }
 
@@ -321,6 +333,9 @@ export interface MainMenuViewProps {
   // ticket 9.4: the 'Home Assistant' settings row opens the connection
   // settings modal (rendered by the App's globalOverlays)
   onOpenHaSettings?: () => void
+  // issue #134: the 'Wiedergabequelle' settings row opens the playback-source
+  // (Music Assistant) settings modal (rendered by the App's globalOverlays)
+  onOpenMaSettings?: () => void
 }
 
 // Nocturne-style main menu (tickets 8.4a1-8.4a3, 8.4b, 8.4c).
@@ -337,6 +352,7 @@ export function MainMenuView({
   onOpenEntityPicker,
   onOpenPiServer,
   onOpenHaSettings,
+  onOpenMaSettings,
 }: MainMenuViewProps) {
   const [activeCategoryId, setActiveCategoryId] = useState('home')
   // bug4: non-null while a playlist's track list is open as a sub-menu
@@ -1040,6 +1056,10 @@ export function MainMenuView({
     } else if (card.id === 'set-ha') {
       // ticket 9.4: the Home Assistant connection settings view
       onOpenHaSettings?.()
+    } else if (card.id === 'set-playback-source') {
+      // issue #134: the Wiedergabequelle row opens the playback-source (MA)
+      // settings view
+      onOpenMaSettings?.()
     } else if (card.id === 'set-home') {
       // ticket 9.5: the home entity picker (selection + carousel order)
       onOpenEntityPicker?.()
