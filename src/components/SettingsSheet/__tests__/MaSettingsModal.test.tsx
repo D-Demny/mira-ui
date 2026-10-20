@@ -3,6 +3,7 @@ import { act, render, screen, fireEvent } from '@testing-library/react'
 import { MaSettingsModal } from '../MaSettingsModal'
 import * as settingsModule from '@/settings'
 import { __resetSettings, getSettings, updateSettings } from '@/settings'
+import { MA_TOKEN_DEFAULT, MA_URL_DEFAULT } from '@/maDefaults'
 import { ListFocusContext } from '@/navigation/listFocusContext'
 
 // issue #134: the "Wiedergabequelle" (playback source) settings modal — the
@@ -76,8 +77,10 @@ describe('MaSettingsModal: defaults (fresh install)', () => {
       'aria-pressed',
       'false',
     )
-    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toBeInTheDocument()
-    expect(tokenInput()).toHaveValue('')
+    // fresh install (no `ma` key): the fields open with the baked-in
+    // defaults — the 376-char token is not keyboard-typable on the device
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue(MA_URL_DEFAULT)
+    expect(tokenInput()).toHaveValue(MA_TOKEN_DEFAULT)
     // switching sources never persists (the draft model — only Speichern
     // may write the store)
     expect(storeWrites).toHaveLength(0)
@@ -98,6 +101,13 @@ describe('MaSettingsModal: prefill from the saved ma config', () => {
     // the daemon normalizes (MaSettingsValue in settings.ts)
     expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('http://10.0.0.9:8097')
     expect(tokenInput()).toHaveValue('tok-123')
+  })
+  it('a saved empty url/token (explicit clear) stays empty — no default resurrection', () => {
+    updateSettings({ ma: { url: '', token: '' } })
+    render(<MaSettingsModal onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Music Assistant' }))
+    expect(screen.getByRole('textbox', { name: 'URL/IP:Port' })).toHaveValue('')
+    expect(tokenInput()).toHaveValue('')
   })
 })
 
