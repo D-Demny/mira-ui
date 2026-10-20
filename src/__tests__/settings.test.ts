@@ -606,4 +606,106 @@ describe('settings store', () => {
       expect(stored.ha).toEqual(DEFAULT_HA)
     })
   })
+
+  describe('ma + playbackSource (issue #134)', () => {
+    it('defaults to spotify with no ma key on a fresh install', () => {
+      const s = getSettings()
+      expect(s.playbackSource).toBe('spotify')
+      // the optional key stays absent — an unconfigured install never gets a
+      // materialized empty ma object (JSON.stringify drops undefined)
+      expect(s.ma).toBeUndefined()
+    })
+
+    it('coerces a pre-v3 blob without the keys to spotify (no ma key materialized)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({ showLyrics: false, piProfiles: [], activePiId: null }),
+      )
+      __resetSettings()
+      const s = getSettings()
+      expect(s.playbackSource).toBe('spotify')
+      expect(s.ma).toBeUndefined()
+    })
+
+    it('coerces a complete ma object 1:1 (url trimmed, token verbatim)', () => {
+      localStorage.setItem(
+        'mira.settings.v1',
+        JSON.stringify({
+          playbackSource: 'ma',
+          ma: { url: '  http://10.10.1.104:8097  ', token: '  tok  en  ' },
+        }),
+      )
+      __resetSettings()
+      const s = getSettings()
+      expect(s.playbackSource).toBe('ma')
+      expect(s.ma).toEqual({
+        url: 'http://10.10.1.104:8097',
+        // verbatim — a secret with stray spaces is part of the value, never
+        // "fixed" client-side (same convention as HaSettingsValue.token)
+        token: '  tok  en  ',
+      })
+    })
+
+    it('coerces a non-object ma (hand-edited blob) to undefined', () => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ ma: 'http://x' }))
+      __resetSettings()
+      expect(getSettings().ma).toBeUndefined()
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ ma: null }))
+      __resetSettings()
+      expect(getSettings().ma).toBeUndefined()
+    })
+
+    it('coerces missing url/token in the ma object to empty strings', () => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify({ ma: { url: 'http://x' } }))
+      __resetSettings()
+      expect(getSettings().ma).toEqual({ url: 'http://x', token: '' })
+    })
+
+    it.each([
+      ['a foreign enum value', { playbackSource: 'MA' }],
+      ['the wrong-case enum value', { playbackSource: 'Spotify' }],
+      ['a numeric value', { playbackSource: 1 }],
+      ['a null value', { playbackSource: null }],
+    ])('coerces %s to spotify', (_label, blob) => {
+      localStorage.setItem('mira.settings.v1', JSON.stringify(blob))
+      __resetSettings()
+      expect(getSettings().playbackSource).toBe('spotify')
+    })
+
+    it('round-trips updateSettings({ playbackSource, ma }) through localStorage (v3 blob)', () => {
+      updateSettings({ playbackSource: 'ma', ma: { url: 'http://10.0.0.9:8097', token: 'tok' } })
+      const s = getSettings()
+      expect(s.playbackSource).toBe('ma')
+      expect(s.ma).toEqual({ url: 'http://10.0.0.9:8097', token: 'tok' })
+      __resetSettings() // reload the persisted blob
+      expect(getSettings().playbackSource).toBe('ma')
+      expect(getSettings().ma).toEqual({ url: 'http://10.0.0.9:8097', token: 'tok' })
+      // the persisted blob carries the additive keys (SCHEMA_VERSION stays 3 —
+      // the daemon-facing PUT body alone stamps { v }, see putSettings in
+      // settings.ts; localStorage holds the raw object, issue #134)
+      const stored = JSON.parse(String(localStorage.getItem('mira.settings.v1'))) as {
+        playbackSource?: string
+        ma?: Record<string, unknown>
+      }
+      expect(stored.playbackSource).toBe('ma')
+      expect(stored.ma?.token).toBe('tok')
+    })
+
+    it('initSettings adopts a daemon v3 blob with playbackSource ma + an ma object', async () => {
+      vi.useRealTimers() // the fetch round-trip needs the real clock
+      server.use(
+        http.get('*/settings', () =>
+          HttpResponse.json({
+            v: 3,
+            showLyrics: false,
+            playbackSource: 'ma',
+            ma: { url: 'http://10.10.1.104:8097', token: 'tok' },
+          }),
+        ),
+      )
+      await initSettings()
+      expect(getSettings().playbackSource).toBe('ma')
+      expect(getSettings().ma).toEqual({ url: 'http://10.10.1.104:8097', token: 'tok' })
+    })
+  })
 })

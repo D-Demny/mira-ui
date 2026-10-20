@@ -182,4 +182,10 @@ export const server = setupServer(
   // test opts in with server.use
   http.post('*/api/ha/login', () => new HttpResponse('404 page not found', { status: 404 })),
   http.post('*/api/ha/test', () => new HttpResponse('404 page not found', { status: 404 })),
+  // issue #134: the Music Assistant endpoints — the defaults mirror an
+  // UNCONFIGURED daemon (verified live in mira-daemon): GET /ma/devices
+  // answers 200 with an EMPTY array (never an error), POST /ma/player/select
+  // answers 400. Tests opt in with server.use
+  http.get('*/ma/devices', () => HttpResponse.json({ devices: [] })),
+  http.post('*/ma/player/select', () => new HttpResponse(null, { status: 400 })),
 )

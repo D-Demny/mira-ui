@@ -25,6 +25,7 @@ import { HomeEntityPickerModal } from '@/components/MainMenuView/HomeEntityPicke
 import { DefaultDeviceModal } from '@/components/SettingsSheet/DefaultDeviceModal'
 import { TransferPromptModal } from '@/components/SettingsSheet/TransferPromptModal'
 import { HaSettingsModal } from '@/components/SettingsSheet/HaSettingsModal'
+import { MaSettingsModal } from '@/components/SettingsSheet/MaSettingsModal'
 import {
   PiKeyboardOverlay,
   type PiKeyboardField,
@@ -62,8 +63,8 @@ import { useSavedTrack } from '@/hooks/useSavedTrack'
 import { useSwipeGestures } from '@/hooks/useSwipeGestures'
 import { useUtcOffset } from '@/hooks/useUtcOffset'
 import { useNavigation } from '@/navigation/context'
-import { resumeLastDevice } from '@/api/client'
-import type { ObserverStatusActive, PlayOffset } from '@/api/types'
+import { resumeLastDevice, selectMaPlayer } from '@/api/client'
+import type { MaDevice, ObserverStatusActive, PlayOffset } from '@/api/types'
 import { getSettings, initSettings, updateSettings, useSettings } from '@/settings'
 import { artSizeFor, heroArtSizeFor, registerUiScaleTarget, usePlayerViewport } from '@/uiScale'
 import styles from './App.module.scss'
@@ -145,6 +146,20 @@ function AppContent() {
     notify,
     onPicked: closeOutputs,
   })
+  // issue #134: Music Assistant player selection from the idle picker — the
+  // same feedback style as the Connect switch (info on start; warn log +
+  // error toast on failure). The daemon answers 400 for an unknown player or
+  // unconfigured MA; nothing credential-shaped may leak into that error.
+  const onPickMaDevice = useCallback(
+    (device: MaDevice) => {
+      notify(`Switching to ${device.name}...`, { variant: 'info' })
+      void selectMaPlayer(device.id).catch((err) => {
+        console.warn('ma player select failed', err)
+        notify(`Couldn't switch to ${device.name}`, { variant: 'error' })
+      })
+    },
+    [notify],
+  )
   // issue #79: the default-device switch prompt. Every playback interaction
   // (player controls, hardware play/pause + presets, menu track selection) is
   // wrapped through wrapWithDefaultDevicePrompt: when a default device is set
@@ -180,6 +195,9 @@ function AppContent() {
   // keyboard is rendered inside the modal's own backdrop — no App-level
   // keyboard state)
   const [haSettingsOpen, setHaSettingsOpen] = useState(false)
+  // issue #134: the playback-source (Music Assistant) settings view — same
+  // App-level overlay pattern as the HA settings view above
+  const [maSettingsOpen, setMaSettingsOpen] = useState(false)
   // ticket10-2: the on-screen keyboard for the Pi credential fields (null = closed)
   const [piKeyboardField, setPiKeyboardField] = useState<PiKeyboardField | null>(null)
   // bug46: the dimmable HA light control popup (entity + label while open)
@@ -404,6 +422,11 @@ function AppContent() {
       setHaSettingsOpen(false)
       return
     }
+    // issue #134: MA settings modal (App-level fallback)
+    if (maSettingsOpen) {
+      setMaSettingsOpen(false)
+      return
+    }
     // library navigation: back from playing → open library
     if (statusActive && !showingLibrary) {
       setShowingLibrary(true)
@@ -470,6 +493,7 @@ function AppContent() {
     setForced,
     piServerModalOpen,
     haSettingsOpen,
+    maSettingsOpen,
     statusActive,
     navigation,
     showingLibrary,
@@ -611,6 +635,7 @@ function AppContent() {
         />
       ) : null}
       {haSettingsOpen ? <HaSettingsModal onClose={() => setHaSettingsOpen(false)} /> : null}
+      {maSettingsOpen ? <MaSettingsModal onClose={() => setMaSettingsOpen(false)} /> : null}
       {piKeyboardField ? (
         <PiKeyboardOverlay field={piKeyboardField} onClose={() => setPiKeyboardField(null)} />
       ) : null}
@@ -769,6 +794,8 @@ function AppContent() {
           onOpenPiServer={() => setPiServerModalOpen(true)}
           // ticket 9.4: the dev screen also gets the HA settings view
           onOpenHaSettings={() => setHaSettingsOpen(true)}
+          // issue #134: the dev screen also gets the playback-source (MA) settings view
+          onOpenMaSettings={() => setMaSettingsOpen(true)}
         />
         {globalOverlays}
       </div>
@@ -785,6 +812,9 @@ function AppContent() {
             devices={connectDevices}
             onSelectDevice={onPickDevice}
             defaultDeviceId={settings.defaultDeviceId}
+            // issue #134: the picker zone follows the selected playback source
+            source={settings.playbackSource}
+            onSelectMaDevice={onPickMaDevice}
             // issue #99: blurred last-known-track background
             artUrl={ambientArt || null}
           />
@@ -794,6 +824,9 @@ function AppContent() {
             devices={connectDevices}
             onSelectDevice={onPickDevice}
             defaultDeviceId={settings.defaultDeviceId}
+            // issue #134: the picker zone follows the selected playback source
+            source={settings.playbackSource}
+            onSelectMaDevice={onPickMaDevice}
           />
         )}
         {globalOverlays}
@@ -940,6 +973,8 @@ function AppContent() {
               onOpenPiServer={() => setPiServerModalOpen(true)}
               // ticket 9.4: the Home Assistant row opens the settings view
               onOpenHaSettings={() => setHaSettingsOpen(true)}
+              // issue #134: the Einstellungen → Wiedergabequelle row opens the MA settings view
+              onOpenMaSettings={() => setMaSettingsOpen(true)}
             />
             {globalOverlays}
           </div>
@@ -955,6 +990,9 @@ function AppContent() {
                 devices={connectDevices}
                 onSelectDevice={onPickDevice}
                 defaultDeviceId={settings.defaultDeviceId}
+                // issue #134: the picker zone follows the selected playback source
+                source={settings.playbackSource}
+                onSelectMaDevice={onPickMaDevice}
                 // issue #99: blurred last-known-track background
                 artUrl={ambientArt || null}
               />
@@ -964,6 +1002,9 @@ function AppContent() {
                 devices={connectDevices}
                 onSelectDevice={onPickDevice}
                 defaultDeviceId={settings.defaultDeviceId}
+                // issue #134: the picker zone follows the selected playback source
+                source={settings.playbackSource}
+                onSelectMaDevice={onPickMaDevice}
               />
             )}
             {globalOverlays}
