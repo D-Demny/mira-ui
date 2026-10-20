@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import type { ConnectDevice } from '@/api/types'
+import type { ConnectDevice, MaDevice } from '@/api/types'
 import { DeviceTypeIcon } from '@/components/DeviceTypeIcon'
 import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import styles from './OutputPicker.module.scss'
@@ -36,6 +36,12 @@ export interface OutputPickerProps {
   // tapping a star only persists the Standard-Gerät, no transfer
   onSetDefault: (deviceId: string) => void
   onClose: () => void
+  // issue #134: 'ma' switches the list to Music Assistant players — the row
+  // tap selects that player as observed/controlled from then on; there is
+  // no star, the Standard-Gerät concept only exists for Connect devices.
+  source?: 'spotify' | 'ma'
+  maDevices?: MaDevice[]
+  onSelectMaDevice?: (device: MaDevice) => void
 }
 
 function OutputPickerImpl({
@@ -44,23 +50,32 @@ function OutputPickerImpl({
   onSelect,
   onSetDefault,
   onClose,
+  source = 'spotify',
+  maDevices,
+  onSelectMaDevice,
 }: OutputPickerProps) {
+  const isMa = source === 'ma'
+  const maList = isMa ? (maDevices ?? []) : []
   // bug31 pattern: while the modal is open, the hardware dial and back are
   // routed to its list; confirm selects the focused row.
   const { focusedIndex, tapItem, setFocusRef } = useOverlayListFocus({
-    itemCount: devices.length,
+    itemCount: isMa ? maList.length : devices.length,
     onConfirm: (index) => {
+      if (isMa) {
+        const device = maList[index]
+        // unavailable players are inert rows; confirm mirrors tap
+        if (device && device.available) onSelectMaDevice?.(device)
+        return
+      }
       const device = devices[index]
       // issue #127: offline-but-transferable rows (idle speakers from the
       // merged account-wide list) transfer like any other row
       if (device && device.can_transfer) onSelect(device)
     },
     onBack: onClose,
-    // start where the playback currently is, like the old device picker did
-    initialIndex: Math.max(
-      0,
-      devices.findIndex((d) => d.is_active),
-    ),
+    // start where the playback currently is, like the old device picker did;
+    // MA has no active-connect notion - top of the list
+    initialIndex: isMa ? 0 : Math.max(0, devices.findIndex((d) => d.is_active)),
   })
 
   return (
@@ -86,7 +101,54 @@ function OutputPickerImpl({
           </button>
         </header>
 
-        {devices.length === 0 ? (
+        {isMa ? (
+          maList.length === 0 ? (
+            <p className={styles.empty}>Keine Audioausgaben verfügbar</p>
+          ) : (
+            <ul className={styles.list}>
+              {maList.map((device, index) => {
+                // unavailable players render dimmed and inert, like offline rows
+                const interactive = device.available
+                const focused = focusedIndex === index
+                return (
+                  <li key={device.id}>
+                    <div
+                      className={[
+                        styles.row,
+                        !device.available ? styles.offline : '',
+                        interactive ? styles.interactive : '',
+                        focused ? styles.focused : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      ref={focused ? setFocusRef : undefined}
+                      role={interactive || focused ? 'button' : undefined}
+                      tabIndex={interactive || focused ? 0 : undefined}
+                      onClick={
+                        interactive
+                          ? () => {
+                              tapItem(index)
+                              onSelectMaDevice?.(device)
+                            }
+                          : undefined
+                      }
+                    >
+                      <span className={styles.icon}>
+                        {/* MA players carry no Connect device type; the default
+                            speaker icon applies (same as the idle picker) */}
+                        <DeviceTypeIcon type="" />
+                      </span>
+                      <span className={styles.texts}>
+                        <span className={styles.name}>{device.name}</span>
+                        {!device.available && <span className={styles.sub}>offline</span>}
+                      </span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )
+        ) : devices.length === 0 ? (
           <p className={styles.empty}>Keine Audioausgaben verfügbar</p>
         ) : (
           <ul className={styles.list}>

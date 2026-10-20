@@ -36,7 +36,7 @@ import { resolveRoute } from '@/app/routes'
 import { useDevScreen } from '@/dev/devContext'
 import { makeMockStatus } from '@/dev/mockStatus'
 import { useAuth } from '@/hooks/useAuth'
-import { useConnectDevices } from '@/hooks/useConnectDevices'
+import { useConnectDevices, useMaDevices } from '@/hooks/useConnectDevices'
 import { useConnectivity } from '@/hooks/useConnectivity'
 import { useControls } from '@/hooks/useControls'
 import { useDelayedFlag } from '@/hooks/useDelayedFlag'
@@ -179,6 +179,9 @@ function AppContent() {
   })
 
   const settings = useSettings()
+  // issue #134: the "Ausgabegeräte" modal follows the selected playback source;
+  // fetch the MA players only while the MA source is active
+  const maDevices = useMaDevices(settings.playbackSource === 'ma')
   const showLyricsReal = settings.showLyrics
   const artSize = artSizeFor(settings.uiScalePct)
   const heroArtSize = heroArtSizeFor(settings.uiScalePct)
@@ -597,6 +600,11 @@ function AppContent() {
         online={online}
         connectDevices={connectDevices}
         onPickDevice={onPickDevice}
+        // issue #134: the modal follows the selected playback source — MA mode
+        // lists the Music Assistant players (row tap = select that player)
+        source={settings.playbackSource}
+        maDevices={maDevices}
+        onSelectMaDevice={onPickMaDevice}
         defaultDeviceId={settings.defaultDeviceId}
         onSetDefault={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
         pairing={pairing}
