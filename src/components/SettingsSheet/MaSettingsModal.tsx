@@ -2,6 +2,7 @@ import { memo, useState } from 'react'
 import { getSettings, updateSettings, useSettings, type PlaybackSource } from '@/settings'
 import { useOverlayListFocus } from '@/hooks/useOverlayListFocus'
 import { HaKeyboardOverlay } from './HaKeyboardOverlay'
+import { MA_TOKEN_DEFAULT, MA_URL_DEFAULT } from '@/maDefaults'
 import styles from './MaSettingsModal.module.scss'
 
 // issue #134: the "Wiedergabequelle" (playback source) settings view — 1:1
@@ -63,10 +64,16 @@ function MaSettingsModalImpl({ onClose }: Props) {
   const settings = useSettings()
   // the draft — initialized ONCE from the saved settings (the store is the
   // only source of pre-fill values; same DRAFT MODEL as the HA modal). An
-  // unconfigured install has no `ma` key at all → empty fields.
+  // unconfigured install has no `ma` key at all → the fields open with the
+  // baked-in defaults (src/maDefaults.ts, issue #134: the 376-char token is
+  // not keyboard-typable); a saved empty value stays empty.
   const [draft, setDraft] = useState<DraftState>(() => {
     const s = getSettings()
-    return { source: s.playbackSource, url: s.ma?.url ?? '', token: s.ma?.token ?? '' }
+    return {
+      source: s.playbackSource,
+      url: s.ma?.url ?? MA_URL_DEFAULT,
+      token: s.ma?.token ?? MA_TOKEN_DEFAULT,
+    }
   })
   const [keyboardField, setKeyboardField] = useState<'url' | 'token' | null>(null)
 
