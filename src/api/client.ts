@@ -4,11 +4,15 @@ import type {
   DebugStatus,
   LyricsResult,
   MaDevice,
+  MaPlaylistItem,
+  MaTrackCard,
   ObserverStatus,
   ObserverStatusActive,
   RemoteStateWire,
   SpotifyPlaylist,
   SpotifyPlaylistResponse,
+  SpotifyPlaylistTrack,
+  SpotifyPlaylistTrackItem,
   SpotifyPlaylistTracksResponse,
   SpotifyRecentlyPlayedItem,
   SpotifyRecentlyPlayedResponse,
@@ -165,6 +169,107 @@ export async function selectMaPlayer(playerId: string): Promise<void> {
     body: JSON.stringify({ player_id: playerId }),
   })
   if (!res.ok) throw new Error(`ma/player/select ${res.status}`)
+}
+
+// issue #138: the Music Assistant content menus (playbackSource 'ma'). The
+// daemon serves the flattened library playlists, one playlist's tracks and
+// the play-log here - each answers 200 with an EMPTY list when MA is
+// unconfigured or unreachable (never an error), so a network/daemon failure
+// throws like its siblings and the hook keeps the previous list. SECURITY:
+// same convention as fetchMaDevices - no MA token ever crosses this boundary.
+export async function fetchMaPlaylists(
+  signal?: AbortSignal,
+): Promise<{ items: SpotifyPlaylist[]; total: number }> {
+  try {
+    const res = await fetch(`${API_BASE}/ma/playlists`, { signal, cache: 'no-store' })
+    if (!res.ok) throw new Error(`ma/playlists ${res.status}`)
+    const body = (await safeJson(res)) as { playlists?: MaPlaylistItem[] }
+    const items: SpotifyPlaylist[] = (body.playlists ?? []).map((p) => ({
+      id: p.item_id,
+      name: p.name,
+      owner: { display_name: '' },
+      images: p.image_url ? [{ url: p.image_url }] : [],
+      // the daemon does not serve per-playlist track counts
+      tracks: { total: 0 },
+      collaborative: false,
+      uri: p.uri,
+    }))
+    return { items, total: items.length }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`ma/playlists: ${message}`, { cause: err })
+  }
+}
+
+// issue #138: one playlist's track cards in playlist order (the daemon serves
+// the FULL list - no paging, so offset/limit are ignored and total equals the
+// item count). The MaTrackCard wire shape is adapted to the Spotify track
+// item so usePlaylistTracks pages it through the same code path.
+export async function fetchMaPlaylistTracks(
+  playlistId: string,
+  signal?: AbortSignal,
+): Promise<SpotifyPlaylistTracksResponse> {
+  try {
+    const res = await fetch(`${API_BASE}/ma/playlist-items?id=${encodeURIComponent(playlistId)}`, {
+      signal,
+      cache: 'no-store',
+    })
+    if (!res.ok) throw new Error(`ma/playlist-items ${res.status}`)
+    const body = (await safeJson(res)) as { tracks?: MaTrackCard[] }
+    const items: SpotifyPlaylistTrackItem[] = (body.tracks ?? []).map((t) => ({
+      is_local: false,
+      track: maTrackToSpotifyTrack(t),
+    }))
+    return { items, total: items.length, limit: items.length, offset: 0, next: null }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`ma/playlist-items: ${message}`, { cause: err })
+  }
+}
+
+// issue #138: the play-log track cards (MA limitation: title and artwork only,
+// no artists/context - the daemon already filters non-track and uri-less rows).
+export async function fetchMaRecentlyPlayed(
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<SpotifyRecentlyPlayedItem[]> {
+  try {
+    const res = await fetch(`${API_BASE}/ma/recent?limit=${limit}`, { signal, cache: 'no-store' })
+    if (!res.ok) throw new Error(`ma/recent ${res.status}`)
+    const body = (await safeJson(res)) as { tracks?: MaTrackCard[] }
+    // SpotifyRecentlyPlayedItem.track requires a concrete album object (the
+    // Web API always ships one) - fill empty fallbacks, never undefined
+    return (body.tracks ?? []).map((t) => ({
+      track: {
+        id: t.id,
+        name: t.name,
+        uri: t.uri,
+        artists: (t.artists ?? []).map((name) => ({ name })),
+        album: { name: t.album ?? '', images: t.image_url ? [{ url: t.image_url }] : [] },
+      },
+      // no played_at in the MA play-log mapping - the consumers only read it
+      // for sorting hints, and the list already arrives in recency order
+      played_at: '',
+    }))
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`ma/recent: ${message}`, { cause: err })
+  }
+}
+
+// issue #138: shared MaTrackCard -> Spotify track field adaptation (artists
+// are flat strings on the MA wire; absent image_url yields no artwork entry,
+// which pickArtUrl degrades to a placeholder exactly like missing images)
+function maTrackToSpotifyTrack(t: MaTrackCard): SpotifyPlaylistTrack {
+  return {
+    id: t.id,
+    name: t.name,
+    uri: t.uri,
+    artists: (t.artists ?? []).map((name) => ({ name })),
+    album: t.album || t.image_url ? { name: t.album ?? '', images: t.image_url ? [{ url: t.image_url }] : [] } : undefined,
+    duration_ms: t.duration_ms,
+    position: t.position,
+  }
 }
 
 // issue #25: some lyrics sources answer instrumental tracks with a bare

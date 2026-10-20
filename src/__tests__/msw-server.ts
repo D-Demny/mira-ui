@@ -188,4 +188,9 @@ export const server = setupServer(
   // answers 400. Tests opt in with server.use
   http.get('*/ma/devices', () => HttpResponse.json({ devices: [] })),
   http.post('*/ma/player/select', () => new HttpResponse(null, { status: 400 })),
+  // issue #138: the MA content endpoints — same UNCONFIGURED-daemon defaults
+  // (200 with an EMPTY list, never an error) as /ma/devices above
+  http.get('*/ma/playlists', () => HttpResponse.json({ playlists: [] })),
+  http.get('*/ma/playlist-items', () => HttpResponse.json({ tracks: [] })),
+  http.get('*/ma/recent', () => HttpResponse.json({ tracks: [] })),
 )

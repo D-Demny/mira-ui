@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
-import { usePlaylists, clearCache } from '../usePlaylists'
+import { usePlaylists, clearCache, __playlistsCacheStats } from '../usePlaylists'
 import { server } from '../../__tests__/msw-server'
 import type { SpotifyPlaylist } from '@/api/types'
+import { __resetSettings, updateSettings } from '@/settings'
 
 beforeEach(() => {
+  localStorage.clear()
+  __resetSettings()
   clearCache()
 })
 
@@ -125,5 +128,72 @@ describe('usePlaylists', () => {
     })
     await waitFor(() => expect(result.current.items.length).toBe(3))
     expect(callCount).toBe(2)
+  })
+})
+
+describe('usePlaylists - Music Assistant source (issue #138)', () => {
+  const maPlaylists = [
+    { item_id: '61', name: 'Rock', uri: 'library://playlist/61', image_url: 'http://10.0.0.4:8095/static/image/a.jpg' },
+    { item_id: '62', name: 'Jazz', uri: 'library://playlist/62' },
+  ]
+
+  it('fetches the flattened MA library playlists and never touches the Spotify endpoint', async () => {
+    updateSettings({ playbackSource: 'ma' })
+    let spotifyCalls = 0
+    server.use(
+      http.get('*/web-api/me/playlists', () => {
+        spotifyCalls++
+        return HttpResponse.json({ items: mockPlaylists, total: 2, limit: 50, offset: 0 })
+      }),
+      http.get('*/ma/playlists', () => HttpResponse.json({ playlists: maPlaylists })),
+    )
+
+    const { result } = renderHook(() => usePlaylists())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(spotifyCalls).toBe(0)
+    expect(result.current.items.map((p) => p.id)).toEqual(['61', '62'])
+    expect(result.current.items[0]).toMatchObject({
+      id: '61',
+      name: 'Rock',
+      uri: 'library://playlist/61',
+      images: [{ url: 'http://10.0.0.4:8095/static/image/a.jpg' }],
+    })
+  })
+
+  it('a live source switch clears the old list while the MA fetch is in flight', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    server.use(
+      http.get('*/web-api/me/playlists', () =>
+        HttpResponse.json({ items: mockPlaylists, total: 2, limit: 50, offset: 0 }),
+      ),
+      http.get('*/ma/playlists', async () => {
+        await gate
+        return HttpResponse.json({ playlists: maPlaylists.slice(0, 1) })
+      }),
+    )
+
+    // start on spotify and settle
+    const { result } = renderHook(() => usePlaylists())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.items.map((p) => p.id)).toEqual(['pl1', 'pl2'])
+
+    // flip the playback source while mounted (the MA fetch is gated -> in flight)
+    await act(async () => {
+      updateSettings({ playbackSource: 'ma' })
+    })
+    // the spotify list must not linger on screen while the MA fetch is in flight
+    expect(result.current.items).toEqual([])
+
+    release()
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.items.map((p) => p.id)).toEqual(['61'])
+
+    // both sources stay cached under their own keys: the spotify entry is
+    // still there (stats read the 'playlists' key), the MA entry under its own
+    expect(__playlistsCacheStats().items).toBe(2)
   })
 })

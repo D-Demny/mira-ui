@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchPlaylistTracks, fetchSavedTracks } from '@/api/client'
+import { fetchMaPlaylistTracks, fetchPlaylistTracks, fetchSavedTracks } from '@/api/client'
 import type { SpotifyPlaylistTrack } from '@/api/types'
+import { useSettings } from '@/settings'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 const PAGE_SIZE = 50
@@ -111,10 +112,16 @@ export interface UsePlaylistTracksResult {
 // 500-track playlist never blocks the menu (bug5). Results are cached for
 // CACHE_TTL_MS per playlist id (bug7).
 export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksResult {
-  const cached = playlistId ? cache.get(playlistId) : undefined
+  const settings = useSettings()
+  // issue #138: MA library playlist ids (numbers) and Spotify playlist uuids
+  // share this bounded cache - namespace the key per source so a live source
+  // switch never serves or evicts the other source's list.
+  const isMa = settings.playbackSource === 'ma'
+  const key = playlistId ? (isMa ? `ma:${playlistId}` : playlistId) : null
+  const cached = key ? cache.get(key) : undefined
   const [tracks, setTracks] = useState<SpotifyPlaylistTrack[]>(() => cached?.tracks ?? [])
   const [total, setTotal] = useState(() => cached?.total ?? 0)
-  const [loading, setLoading] = useState(() => (playlistId ? !cached : false))
+  const [loading, setLoading] = useState(() => (key ? !cached : false))
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -137,11 +144,15 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
       setLoadingMore(true)
     }
     try {
-      // bug22: Liked Songs pages from me/tracks, everything else from playlists/<id>/tracks
+      // bug22: Liked Songs pages from me/tracks, everything else from playlists/<id>/tracks.
+      // issue #138: MA serves the FULL track list in one call (offset ignored)
+      // and the 'ma:' cache-key prefix is stripped for the daemon request.
       const page =
         id === LIKED_SONGS_ID
           ? await fetchSavedTracks(offset, PAGE_SIZE, controller.signal)
-          : await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
+          : isMa
+            ? await fetchMaPlaylistTracks(id.startsWith('ma:') ? id.slice(3) : id, controller.signal)
+            : await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
       if (controller.signal.aborted) return
       const seen = new Set(listRef.current.map((track) => track.id))
       const next = [...listRef.current]
@@ -169,7 +180,7 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
         setLoadingMore(false)
       }
     }
-  }, [])
+  }, [isMa])
 
   // bug37: silent revalidation of a STALE cached list — fetches page 0 in the
   // background WITHOUT touching the loading flags (the stale list stays
@@ -185,10 +196,14 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
       abortRef.current = controller
       let resumeTail = false
       try {
+        // issue #138: MA serves the FULL list (offset ignored) - same
+        // branch and 'ma:' prefix strip as appendPage above.
         const page =
           id === LIKED_SONGS_ID
             ? await fetchSavedTracks(0, PAGE_SIZE, controller.signal)
-            : await fetchPlaylistTracks(id, 0, PAGE_SIZE, controller.signal)
+            : isMa
+              ? await fetchMaPlaylistTracks(id.startsWith('ma:') ? id.slice(3) : id, controller.signal)
+              : await fetchPlaylistTracks(id, 0, PAGE_SIZE, controller.signal)
         if (controller.signal.aborted) return
         const freshTracks: SpotifyPlaylistTrack[] = []
         const seen = new Set<string>()
@@ -231,14 +246,14 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
         void appendPage(id, listRef.current.length, false)
       }
     },
-    [appendPage],
+    [appendPage, isMa],
   )
 
   // (re)load when the requested playlist changes
   useEffect(() => {
     abortRef.current?.abort()
     inFlightRef.current = false
-    if (!playlistId) {
+    if (!key) {
       listRef.current = []
       totalRef.current = 0
       setTracks([])
@@ -248,11 +263,11 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
       setError(null)
       return
     }
-    const entry = cache.get(playlistId)
+    const entry = cache.get(key)
     // bug45 option C: the read path bounds the cache too — every other entry
     // older than the TTL is dropped now (the requested entry is excepted: it
     // is served below and silently revalidated, which refreshes its fetchedAt)
-    evictStale(playlistId)
+    evictStale(key)
     // issue #15 (liked only) → issue #56 (T14, generalized): every playlist —
     // Liked Songs AND normal playlists alike — is edited out-of-band from any
     // device at any time (likes, unlikes, tracks added or removed), so a warm
@@ -269,32 +284,32 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
       setTracks(entry.tracks)
       setTotal(entry.total)
       setError(null)
-      void refreshFirstPage(playlistId)
+      void refreshFirstPage(key)
       return
     }
-    cache.delete(playlistId)
+    cache.delete(key)
     listRef.current = []
     totalRef.current = 0
     setTracks([])
     setTotal(0)
-    void appendPage(playlistId, 0, true)
-  }, [playlistId, appendPage, refreshFirstPage])
+    void appendPage(key, 0, true)
+  }, [key, appendPage, refreshFirstPage])
 
   const loadMore = useCallback(() => {
-    if (!playlistId || inFlightRef.current) return
+    if (!key || inFlightRef.current) return
     if (listRef.current.length >= totalRef.current) return
-    void appendPage(playlistId, listRef.current.length, false)
-  }, [playlistId, appendPage])
+    void appendPage(key, listRef.current.length, false)
+  }, [key, appendPage])
 
   const refetch = useCallback(() => {
-    if (!playlistId) return
-    cache.delete(playlistId)
+    if (!key) return
+    cache.delete(key)
     listRef.current = []
     totalRef.current = 0
     setTracks([])
     setTotal(0)
-    void appendPage(playlistId, 0, true)
-  }, [playlistId, appendPage])
+    void appendPage(key, 0, true)
+  }, [key, appendPage])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 

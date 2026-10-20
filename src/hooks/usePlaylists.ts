@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchUserPlaylists } from '@/api/client'
+import { fetchMaPlaylists, fetchUserPlaylists } from '@/api/client'
 import type { SpotifyPlaylist } from '@/api/types'
+import { useSettings } from '@/settings'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -28,8 +29,16 @@ export function __playlistsCacheStats() {
 }
 
 export function usePlaylists() {
-  const [items, setItems] = useState<SpotifyPlaylist[]>(() => cache.get('playlists')?.items ?? [])
-  const [loading, setLoading] = useState(() => !cache.has('playlists'))
+  // issue #138: with playbackSource 'ma' the pane shows MA's flattened library
+  // playlists instead of the Spotify user playlists - namespaced cache keys
+  // let both sources coexist, and a source switch re-fetches without serving
+  // the other list.
+  const settings = useSettings()
+  const isMa = settings.playbackSource === 'ma'
+  const cacheKey = isMa ? 'playlists:ma' : 'playlists'
+
+  const [items, setItems] = useState<SpotifyPlaylist[]>(() => cache.get(cacheKey)?.items ?? [])
+  const [loading, setLoading] = useState(() => !cache.has(cacheKey))
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -39,7 +48,7 @@ export function usePlaylists() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    const cached = cache.get('playlists')
+    const cached = cache.get(cacheKey)
     const now = Date.now()
     if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
       setItems(cached.items)
@@ -50,10 +59,14 @@ export function usePlaylists() {
     setLoading(true)
     setError(null)
     try {
-      const { items, total } = await fetchUserPlaylists(0, 50, controller.signal)
+      // issue #138: MA serves the full flattened list in one call (no paging),
+      // Spotify keeps its offset page
+      const result = isMa
+        ? await fetchMaPlaylists(controller.signal)
+        : await fetchUserPlaylists(0, 50, controller.signal)
       if (!controller.signal.aborted) {
-        cache.set('playlists', { items, total, fetchedAt: now })
-        setItems(items)
+        cache.set(cacheKey, { items: result.items, total: result.total, fetchedAt: now })
+        setItems(result.items)
         setLoading(false)
       }
     } catch (err: unknown) {
@@ -64,19 +77,22 @@ export function usePlaylists() {
         setLoading(false)
       }
     }
-  }, [])
+  }, [cacheKey, isMa])
 
   useEffect(() => {
+    // issue #138: a source switch must not render the other source's list
+    // while the fetch is in flight - clear it when the new key has no entry
+    if (!cache.has(cacheKey)) setItems([])
     void fetchPlaylists()
     return () => {
       abortRef.current?.abort()
     }
-  }, [fetchPlaylists])
+  }, [fetchPlaylists, cacheKey])
 
   const refetch = useCallback(() => {
-    cache.delete('playlists')
+    cache.delete(cacheKey)
     void fetchPlaylists()
-  }, [fetchPlaylists])
+  }, [fetchPlaylists, cacheKey])
 
   return { items, loading, error, refetch }
 }

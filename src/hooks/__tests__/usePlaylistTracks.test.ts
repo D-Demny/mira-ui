@@ -10,6 +10,7 @@ import {
   MAX_CACHED_PLAYLISTS,
   MAX_TRACKS_PER_ENTRY,
 } from '../usePlaylistTracks'
+import { __resetSettings, updateSettings } from '@/settings'
 
 const PAGE = 50
 
@@ -37,6 +38,8 @@ function trackPage(id: string, offset: number, total: number) {
 
 describe('usePlaylistTracks', () => {
   beforeEach(() => {
+    localStorage.clear()
+    __resetSettings()
     clearTracksCache()
     vi.useRealTimers()
   })
@@ -824,5 +827,85 @@ describe('usePlaylistTracks — bug45 option C cache bounds', () => {
     expect(again.current.total).toBe(TOTAL)
     expect(__playlistTracksCacheStats().tracks).toBe(MAX_TRACKS_PER_ENTRY)
     againUnmount()
+  })
+})
+
+describe('usePlaylistTracks - Music Assistant source (issue #138)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    __resetSettings()
+    clearTracksCache()
+  })
+
+  afterEach(() => {
+    server.resetHandlers()
+  })
+
+  const maTracks = [
+    { id: 't0', name: 'A', uri: 'spotify:track:t0', artists: ['X'], position: 0, album: 'Al', image_url: 'http://10.0.0.4:8095/static/image/a.jpg' },
+    { id: 't1', name: 'B', uri: 'spotify:track:t1', artists: [], position: 1 },
+  ]
+
+  it('fetches the full MA track list in one call and never touches the Spotify endpoint', async () => {
+    updateSettings({ playbackSource: 'ma' })
+    let spotifyHits = 0
+    server.use(
+      http.get('*/web-api/playlists/61/tracks', () => {
+        spotifyHits++
+        return trackPage('61', 0, 5)
+      }),
+      http.get('*/ma/playlist-items', ({ request }) => {
+        const url = new URL(request.url)
+        expect(url.searchParams.get('id')).toBe('61')
+        return HttpResponse.json({ tracks: maTracks })
+      }),
+    )
+
+    const { result } = renderHook(() => usePlaylistTracks('61'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(spotifyHits).toBe(0)
+    expect(result.current.tracks.map((t) => t.id)).toEqual(['t0', 't1'])
+    // total equals the item count -> loadMore is a no-op after one page
+    expect(result.current.total).toBe(2)
+    act(() => {
+      result.current.loadMore()
+    })
+    await act(async () => {})
+    expect(result.current.tracks).toHaveLength(2)
+  })
+
+  it('namespaces the cache key per source: a live switch re-fetches for the same id', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    server.use(
+      http.get('*/web-api/playlists/61/tracks', ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        return trackPage('61', offset, 60)
+      }),
+      http.get('*/ma/playlist-items', async () => {
+        await gate
+        return HttpResponse.json({ tracks: maTracks })
+      }),
+    )
+
+    // start on spotify for playlist id 61 (a real uuid in spotify mode)
+    const { result } = renderHook(() => usePlaylistTracks('61'))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.tracks).toHaveLength(50)
+
+    // flip the playback source while mounted: the spotify list must be
+    // replaced by the MA list for the same id (no cross-source serving)
+    await act(async () => {
+      updateSettings({ playbackSource: 'ma' })
+    })
+    expect(result.current.tracks).toEqual([])
+
+    release()
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.tracks.map((t) => t.id)).toEqual(['t0', 't1'])
+    expect(result.current.total).toBe(2)
   })
 })

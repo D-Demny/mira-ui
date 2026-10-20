@@ -43,6 +43,28 @@ export interface MaDevice {
   available: boolean
 }
 
+// issue #138: one flattened Music Assistant library playlist (GET /ma/playlists
+// entry) — the daemon already serves only remotely accessible artwork
+export interface MaPlaylistItem {
+  item_id: string
+  name: string
+  uri: string
+  image_url?: string
+}
+
+// issue #138: one track card from GET /ma/playlist-items or GET /ma/recent
+// (the shared daemon track shape)
+export interface MaTrackCard {
+  id: string
+  name: string
+  uri: string
+  album?: string
+  artists?: string[]
+  duration_ms?: number
+  position?: number
+  image_url?: string
+}
+
 export interface QueueTrack {
   uri: string
   track_id: string
