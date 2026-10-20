@@ -4,8 +4,11 @@ import { http, HttpResponse } from 'msw'
 import { useRecent, clearRecentCache } from '../useRecent'
 import { server } from '../../__tests__/msw-server'
 import type { SpotifyRecentlyPlayedItem } from '@/api/types'
+import { __resetSettings, updateSettings } from '@/settings'
 
 beforeEach(() => {
+  localStorage.clear()
+  __resetSettings()
   clearRecentCache()
 })
 
@@ -224,5 +227,75 @@ describe('useRecent', () => {
       expect(result.current.items).toEqual([])
       expect(result.current.error).not.toBeNull()
     })
+  })
+})
+
+describe('useRecent - Music Assistant source (issue #138)', () => {
+  it('fetches the MA play log and never touches the Spotify endpoint', async () => {
+    updateSettings({ playbackSource: 'ma' })
+    let spotifyCalls = 0
+    server.use(
+      http.get('*/web-api/me/player/recently-played', () => {
+        spotifyCalls++
+        return HttpResponse.json({ items: mockRecent })
+      }),
+      http.get('*/ma/recent', ({ request }) => {
+        const url = new URL(request.url)
+        expect(url.searchParams.get('limit')).toBe('20')
+        return HttpResponse.json({
+          tracks: [
+            {
+              id: 't9',
+              name: 'Recently Played',
+              uri: 'spotify:track:t9',
+              album: 'Some Album',
+              artists: [],
+              image_url: 'http://10.0.0.4:8095/static/image/9.jpg',
+            },
+          ],
+        })
+      }),
+    )
+
+    const { result } = renderHook(() => useRecent())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(spotifyCalls).toBe(0)
+    expect(result.current.items).toHaveLength(1)
+    expect(result.current.items[0].track.name).toBe('Recently Played')
+    // MA limitation: title + artwork only, no artists / played_at
+    expect(result.current.items[0].track.artists).toEqual([])
+    expect(result.current.items[0].played_at).toBe('')
+    expect(result.current.items[0].track.album?.images).toEqual([
+      { url: 'http://10.0.0.4:8095/static/image/9.jpg' },
+    ])
+  })
+
+  it('a live source switch clears the old history while the MA fetch is in flight', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    server.use(
+      http.get('*/web-api/me/player/recently-played', () => HttpResponse.json({ items: mockRecent })),
+      http.get('*/ma/recent', async () => {
+        await gate
+        return HttpResponse.json({ tracks: [{ id: 't9', name: 'MA Track', uri: 'spotify:track:t9' }] })
+      }),
+    )
+
+    const { result } = renderHook(() => useRecent())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.items.map((e) => e.track.id)).toEqual(['t1'])
+
+    await act(async () => {
+      updateSettings({ playbackSource: 'ma' })
+    })
+    // the spotify history must not linger while the MA fetch is in flight
+    expect(result.current.items).toEqual([])
+
+    release()
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.items.map((e) => e.track.id)).toEqual(['t9'])
   })
 })

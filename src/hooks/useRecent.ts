@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchRecentlyPlayed } from '@/api/client'
+import { fetchMaRecentlyPlayed, fetchRecentlyPlayed } from '@/api/client'
 import type { SpotifyRecentlyPlayedItem } from '@/api/types'
+import { useSettings } from '@/settings'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 const RECENT_LIMIT = 20
@@ -28,10 +29,17 @@ export function __recentCacheStats() {
 }
 
 export function useRecent() {
+  const settings = useSettings()
+  // issue #138: with playbackSource 'ma' the pane shows MA's play log (title +
+  // artwork only) - namespaced cache keys keep the two sources from clobbering
+  // each other when the source switches at runtime.
+  const isMa = settings.playbackSource === 'ma'
+  const sourceKey = isMa ? 'recent:ma' : 'recent'
+
   const [items, setItems] = useState<SpotifyRecentlyPlayedItem[]>(
-    () => cache.get('recent')?.items ?? [],
+    () => cache.get(sourceKey)?.items ?? [],
   )
-  const [loading, setLoading] = useState(() => !cache.has('recent'))
+  const [loading, setLoading] = useState(() => !cache.has(sourceKey))
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // bug37: render-time mirror of `items` so the silent-refresh decision below
@@ -47,7 +55,7 @@ export function useRecent() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    const cached = cache.get('recent')
+    const cached = cache.get(sourceKey)
     const now = Date.now()
     if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
       setItems(cached.items)
@@ -58,9 +66,11 @@ export function useRecent() {
     setLoading(true)
     setError(null)
     try {
-      const result = await fetchRecentlyPlayed(RECENT_LIMIT, controller.signal)
+      const result = isMa
+        ? await fetchMaRecentlyPlayed(RECENT_LIMIT, controller.signal)
+        : await fetchRecentlyPlayed(RECENT_LIMIT, controller.signal)
       if (!controller.signal.aborted) {
-        cache.set('recent', { items: result, fetchedAt: now })
+        cache.set(sourceKey, { items: result, fetchedAt: now })
         setItems(result)
         setLoading(false)
       }
@@ -72,7 +82,7 @@ export function useRecent() {
         setLoading(false)
       }
     }
-  }, [])
+  }, [sourceKey, isMa])
 
   // bug37: silent background revalidation (cache-first). The currently
   // rendered items stay on screen — no loading-state flip, no 'Lade…' flash,
@@ -85,15 +95,17 @@ export function useRecent() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    const hasItems = (cache.get('recent')?.items.length ?? 0) > 0 || itemsRef.current.length > 0
+    const hasItems = (cache.get(sourceKey)?.items.length ?? 0) > 0 || itemsRef.current.length > 0
     if (!hasItems) {
       setLoading(true)
       setError(null)
     }
     try {
-      const result = await fetchRecentlyPlayed(RECENT_LIMIT, controller.signal)
+      const result = isMa
+        ? await fetchMaRecentlyPlayed(RECENT_LIMIT, controller.signal)
+        : await fetchRecentlyPlayed(RECENT_LIMIT, controller.signal)
       if (!controller.signal.aborted) {
-        cache.set('recent', { items: result, fetchedAt: Date.now() })
+        cache.set(sourceKey, { items: result, fetchedAt: Date.now() })
         setItems(result)
         setError(null)
         setLoading(false)
@@ -109,19 +121,22 @@ export function useRecent() {
         // stale items on screen: keep them, the pane stays usable
       }
     }
-  }, [])
+  }, [sourceKey, isMa])
 
   useEffect(() => {
+    // issue #138: a source switch must not render the other source's history
+    // while the fetch is in flight - clear it when the new key has no entry
+    if (!cache.has(sourceKey)) setItems([])
     void fetchRecent()
     return () => {
       abortRef.current?.abort()
     }
-  }, [fetchRecent])
+  }, [fetchRecent, sourceKey])
 
   const refetch = useCallback(() => {
-    cache.delete('recent')
+    cache.delete(sourceKey)
     void fetchRecent()
-  }, [fetchRecent])
+  }, [fetchRecent, sourceKey])
 
   return { items, loading, error, refetch, refresh }
 }

@@ -895,10 +895,18 @@ export function MainMenuView({
   ) => {
     if (category.id !== 'playlists' || openTracklist) return
     const match = /^spotify:playlist:([^/]+)/.exec(card.uri ?? '')
+    // issue #138: an MA library playlist card ('library://playlist/<id>') —
+    // the id is the numeric library item id of GET /ma/playlist-items and the
+    // uri doubles as the playback context (the daemon replaces the queue from
+    // it and starts at the confirmed track)
+    const maMatch = /^library:\/\/playlist\/([^/]+)$/.exec(card.uri ?? '')
     let playlistId = ''
     let contextUri = ''
     if (match) {
       playlistId = match[1]
+      contextUri = card.uri ?? ''
+    } else if (maMatch) {
+      playlistId = maMatch[1]
       contextUri = card.uri ?? ''
     } else if (card.uri === LIKED_SONGS_ID) {
       // bug22: Liked Songs is a pseudo-playlist (me/tracks) with its own
@@ -993,7 +1001,9 @@ export function MainMenuView({
     if (
       category.id === 'playlists' &&
       !openTracklist &&
-      (card.uri?.startsWith('spotify:playlist:') || card.uri === LIKED_SONGS_ID)
+      (card.uri?.startsWith('spotify:playlist:') ||
+        card.uri?.startsWith('library://playlist/') ||
+        card.uri === LIKED_SONGS_ID)
     ) {
       // bug4/bug22: playlist / Liked Songs card opens the track sub-menu
       // instead of playing
