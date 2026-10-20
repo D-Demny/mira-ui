@@ -9,7 +9,7 @@ import { SettingsSheet } from '@/components/SettingsSheet'
 import { VolumeOverlay } from '@/components/VolumeOverlay'
 import type { VolumeOverlayState } from '@/hooks/useHardwareButtons'
 import type { PairingPrompt } from '@/hooks/useBluetooth'
-import type { ConnectDevice } from '@/api/types'
+import type { ConnectDevice, MaDevice } from '@/api/types'
 import { useOverlayState } from './overlayContext'
 
 export interface OverlayHostProps {
@@ -19,6 +19,11 @@ export interface OverlayHostProps {
   online: boolean | null
   connectDevices: ConnectDevice[]
   onPickDevice: (device: ConnectDevice) => void
+  // issue #134: 'ma' switches the "Ausgabegeräte" modal to the Music Assistant
+  // player list (row tap = select that player); same props as the idle picker
+  source?: 'spotify' | 'ma'
+  maDevices?: MaDevice[]
+  onSelectMaDevice?: (device: MaDevice) => void
   // issue #92: the Standard-Gerät star in the "Ausgabegeräte" modal persists
   // settings.defaultDeviceId; the player's #79 prompt reads it back
   defaultDeviceId: string | null
@@ -38,6 +43,9 @@ export function OverlayHost({
   online,
   connectDevices,
   onPickDevice,
+  source,
+  maDevices,
+  onSelectMaDevice,
   defaultDeviceId,
   onSetDefault,
   pairing,
@@ -61,6 +69,9 @@ export function OverlayHost({
           currentDefaultId={defaultDeviceId}
           onSelect={onPickDevice}
           onSetDefault={onSetDefault}
+          source={source}
+          maDevices={maDevices}
+          onSelectMaDevice={onSelectMaDevice}
           onClose={() => overlays.close('outputs')}
         />
       ) : null}
