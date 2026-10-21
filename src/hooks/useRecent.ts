@@ -5,6 +5,10 @@ import { useSettings } from '@/settings'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 const RECENT_LIMIT = 20
+// issue #138: delay before re-asking the daemon after a failed MA content
+// fetch (the daemon 503s until the player session is up, which can take
+// minutes right after boot/flash) - same rationale as useMaDevices
+const MA_CONTENT_RETRY_MS = 15_000
 
 interface CacheEntry {
   items: SpotifyRecentlyPlayedItem[]
@@ -42,6 +46,12 @@ export function useRecent() {
   const [loading, setLoading] = useState(() => !cache.has(sourceKey))
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // issue #138: pending MA error retry (fixed delay until the daemon answers)
+  const retryTimerRef = useRef<number | undefined>(undefined)
+  // stable handles for the scheduled MA error retries - a self-reference
+  // inside the useCallback bodies is a temporal-dead-zone hazard
+  const fetchRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  const refreshRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // bug37: render-time mirror of `items` so the silent-refresh decision below
   // never reads a stale closure value
   const itemsRef = useRef(items)
@@ -73,6 +83,8 @@ export function useRecent() {
         cache.set(sourceKey, { items: result, fetchedAt: now })
         setItems(result)
         setLoading(false)
+        // a fresh answer voids any pending MA error retry
+        window.clearTimeout(retryTimerRef.current)
       }
     } catch (err: unknown) {
       if (!controller.signal.aborted) {
@@ -80,9 +92,21 @@ export function useRecent() {
         console.warn('useRecent error:', message)
         setError(message)
         setLoading(false)
+        // issue #138: 503 while the MA player session is still coming up -
+        // retry on a fixed delay until the daemon answers (a one-shot fetch
+        // would otherwise leave the pane blank for the whole app session)
+        if (isMa) {
+          window.clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = window.setTimeout(() => {
+            void fetchRef.current()
+          }, MA_CONTENT_RETRY_MS)
+        }
       }
     }
   }, [sourceKey, isMa])
+  useEffect(() => {
+    fetchRef.current = fetchRecent
+  }, [fetchRecent])
 
   // bug37: silent background revalidation (cache-first). The currently
   // rendered items stay on screen — no loading-state flip, no 'Lade…' flash,
@@ -109,6 +133,8 @@ export function useRecent() {
         setItems(result)
         setError(null)
         setLoading(false)
+        // a fresh answer voids any pending MA error retry
+        window.clearTimeout(retryTimerRef.current)
       }
     } catch (err: unknown) {
       if (!controller.signal.aborted) {
@@ -118,10 +144,22 @@ export function useRecent() {
           setError(message)
           setLoading(false)
         }
+        // issue #138: nothing rendered yet -> same fixed-delay MA retry as
+        // the initial fetch (stale items on screen need no retry: they stay
+        // visible and this silent revalidation will run again next focus)
+        if (!hasItems && isMa) {
+          window.clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = window.setTimeout(() => {
+            void refreshRef.current()
+          }, MA_CONTENT_RETRY_MS)
+        }
         // stale items on screen: keep them, the pane stays usable
       }
     }
   }, [sourceKey, isMa])
+  useEffect(() => {
+    refreshRef.current = refresh
+  }, [refresh])
 
   useEffect(() => {
     // issue #138: a source switch must not render the other source's history
@@ -130,6 +168,7 @@ export function useRecent() {
     void fetchRecent()
     return () => {
       abortRef.current?.abort()
+      window.clearTimeout(retryTimerRef.current)
     }
   }, [fetchRecent, sourceKey])
 
