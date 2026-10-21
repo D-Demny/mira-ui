@@ -115,4 +115,62 @@ describe('useMaDevices (issue #134)', () => {
     // exactly one fetch — the initial enable; disabling must not refetch
     expect(fetchMaDevices).toHaveBeenCalledTimes(1)
   })
+
+  it('retries on a fixed delay after failed fetches until the daemon answers (issue #138)', async () => {
+    vi.useFakeTimers()
+    try {
+      // the daemon answers 503 while the player session is still coming up -
+      // the hook must keep asking, not accept a spurious empty list
+      let call = 0
+      vi.mocked(fetchMaDevices).mockImplementation(async () => {
+        call++
+        if (call < 3) throw new Error('player session not ready')
+        return [{ id: 'ma-3', name: 'Player 3', available: true }]
+      })
+
+      const { result } = renderHook(() => useMaDevices(true))
+
+      await act(async () => {})
+      expect(result.current).toEqual([])
+      expect(fetchMaDevices).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000) // == MA_DEVICES_RETRY_MS
+      })
+      expect(fetchMaDevices).toHaveBeenCalledTimes(2)
+      expect(result.current).toEqual([])
+
+      await act(async () => {
+        vi.advanceTimersByTime(15_000)
+      })
+      expect(fetchMaDevices).toHaveBeenCalledTimes(3)
+      expect(result.current[0]?.id).toBe('ma-3')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels the pending retry when disabled again before it fires', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(fetchMaDevices).mockRejectedValue(new Error('player session not ready'))
+
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) => useMaDevices(enabled),
+        { initialProps: { enabled: true } },
+      )
+
+      await act(async () => {})
+      expect(fetchMaDevices).toHaveBeenCalledTimes(1)
+
+      // back on the spotify source before the retry delay elapsed - no
+      // further request may go out
+      rerender({ enabled: false })
+      vi.advanceTimersByTime(60_000)
+      expect(fetchMaDevices).toHaveBeenCalledTimes(1)
+      expect(result.current).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
