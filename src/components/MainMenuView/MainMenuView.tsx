@@ -366,7 +366,12 @@ export function MainMenuView({
 
   // destructured so the categories memo keys on stable primitives — the hook
   // results are new object literals on every render (bug8.1/8.2)
-  const { items: playlistItems, loading: playlistsLoading } = usePlaylists()
+  const {
+    items: playlistItems,
+    loading: playlistsLoading,
+    error: playlistsError,
+    refetch: refetchPlaylists,
+  } = usePlaylists()
   const {
     items: recentItems,
     loading: recentLoading,
@@ -761,6 +766,15 @@ export function MainMenuView({
     }))
     if (playlistsLoading && playlistCards.length === 0) {
       playlistCards.push({ id: 'pl-loading', title: 'Lade…', subtitle: '' })
+    } else if (!playlistsLoading && playlistCards.length === 0) {
+      // issue #138: surface a failed MA/Spotify fetch with a retry card
+      // (parity with the recent pane's 'rc-error' flow) instead of a blank
+      // carousel; the hook additionally retries on its own for MA errors
+      if (playlistsError) {
+        playlistCards.push({ id: 'pl-error', title: playlistsError, subtitle: 'Erneut versuchen' })
+      } else {
+        playlistCards.push({ id: 'pl-empty', title: 'Keine Playlists', subtitle: '' })
+      }
     }
 
     const seenTrackIds = new Set<string>()
@@ -868,6 +882,7 @@ export function MainMenuView({
   }, [
     playlistItems,
     playlistsLoading,
+    playlistsError,
     recentItems,
     recentLoading,
     recentError,
@@ -1044,6 +1059,9 @@ export function MainMenuView({
     } else if (card.id === 'rc-error') {
       // error placeholder (bug19): dial press retries the recents fetch
       refetchRecent()
+    } else if (card.id === 'pl-error') {
+      // error placeholder (issue #138): dial press retries the playlists fetch
+      refetchPlaylists()
     }
     // bug25: settings root rows
     else if (card.id === 'set-main') {

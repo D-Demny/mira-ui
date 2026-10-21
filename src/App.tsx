@@ -153,12 +153,21 @@ function AppContent() {
   const onPickMaDevice = useCallback(
     (device: MaDevice) => {
       notify(`Switching to ${device.name}...`, { variant: 'info' })
-      void selectMaPlayer(device.id).catch((err) => {
-        console.warn('ma player select failed', err)
-        notify(`Couldn't switch to ${device.name}`, { variant: 'error' })
-      })
+      void selectMaPlayer(device.id)
+        .then(() => {
+          // issue #138: advance the UI like the Connect switch does - close
+          // the outputs modal after a successful select (a no-op when picked
+          // from the idle screens, which open no overlay). With the daemon's
+          // transfer semantics playback moves to the picked player and the
+          // observer flips the app into Now Playing.
+          closeOutputs()
+        })
+        .catch((err) => {
+          console.warn('ma player select failed', err)
+          notify(`Couldn't switch to ${device.name}`, { variant: 'error' })
+        })
     },
-    [notify],
+    [notify, closeOutputs],
   )
   // issue #79: the default-device switch prompt. Every playback interaction
   // (player controls, hardware play/pause + presets, menu track selection) is

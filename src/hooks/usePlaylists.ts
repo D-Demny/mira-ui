@@ -4,7 +4,10 @@ import type { SpotifyPlaylist } from '@/api/types'
 import { useSettings } from '@/settings'
 
 const CACHE_TTL_MS = 5 * 60 * 1000
-
+// issue #138: delay before re-asking the daemon after a failed MA content
+// fetch (the daemon 503s until the player session is up, which can take
+// minutes right after boot/flash) - same rationale as useMaDevices
+const MA_CONTENT_RETRY_MS = 15_000
 interface CacheEntry {
   items: SpotifyPlaylist[]
   total: number
@@ -41,7 +44,11 @@ export function usePlaylists() {
   const [loading, setLoading] = useState(() => !cache.has(cacheKey))
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-
+  // issue #138: pending MA error retry (fixed delay until the daemon answers)
+  const retryTimerRef = useRef<number | undefined>(undefined)
+  // stable handle for the scheduled retry - a self-reference inside the
+  // useCallback body is a temporal-dead-zone hazard the linter rejects
+  const fetchRef = useRef<() => Promise<void>>(() => Promise.resolve())
   const fetchPlaylists = useCallback(async () => {
     // cancel in-flight request
     abortRef.current?.abort()
@@ -68,6 +75,8 @@ export function usePlaylists() {
         cache.set(cacheKey, { items: result.items, total: result.total, fetchedAt: now })
         setItems(result.items)
         setLoading(false)
+        // a fresh answer voids any pending MA error retry
+        window.clearTimeout(retryTimerRef.current)
       }
     } catch (err: unknown) {
       if (!controller.signal.aborted) {
@@ -75,9 +84,25 @@ export function usePlaylists() {
         console.warn('usePlaylists error:', message)
         setError(message)
         setLoading(false)
+        // issue #138: 503 while the MA player session is still coming up -
+        // retry on a fixed delay until the daemon answers (a one-shot fetch
+        // would otherwise leave the pane blank for the whole app session)
+        if (isMa) {
+          window.clearTimeout(retryTimerRef.current)
+          retryTimerRef.current = window.setTimeout(() => {
+            void fetchRef.current()
+          }, MA_CONTENT_RETRY_MS)
+        }
       }
     }
   }, [cacheKey, isMa])
+
+  // keep a stable handle for the scheduled MA error retry (ref writes during
+  // render are rejected by react-hooks lint; effects run before any timer
+  // could fire)
+  useEffect(() => {
+    fetchRef.current = fetchPlaylists
+  }, [fetchPlaylists])
 
   useEffect(() => {
     // issue #138: a source switch must not render the other source's list
@@ -86,6 +111,7 @@ export function usePlaylists() {
     void fetchPlaylists()
     return () => {
       abortRef.current?.abort()
+      window.clearTimeout(retryTimerRef.current)
     }
   }, [fetchPlaylists, cacheKey])
 
