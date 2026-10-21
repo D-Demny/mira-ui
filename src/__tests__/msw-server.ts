@@ -182,14 +182,17 @@ export const server = setupServer(
   // test opts in with server.use
   http.post('*/api/ha/login', () => new HttpResponse('404 page not found', { status: 404 })),
   http.post('*/api/ha/test', () => new HttpResponse('404 page not found', { status: 404 })),
-  // issue #134: the Music Assistant endpoints — the defaults mirror an
-  // UNCONFIGURED daemon (verified live in mira-daemon): GET /ma/devices
-  // answers 200 with an EMPTY array (never an error), POST /ma/player/select
-  // answers 400. Tests opt in with server.use
+  // issue #134/#138: the Music Assistant endpoints — the defaults mirror a
+  // READY daemon whose MA side is unconfigured/unreachable or has no
+  // players: GET /ma/devices answers 200 with an EMPTY array (never an
+  // error in that state), POST /ma/player/select answers 400. NOTE: before
+  // the player session exists the real daemon answers 503 (not this) —
+  // tests emulating startup opt in with server.use
   http.get('*/ma/devices', () => HttpResponse.json({ devices: [] })),
   http.post('*/ma/player/select', () => new HttpResponse(null, { status: 400 })),
-  // issue #138: the MA content endpoints — same UNCONFIGURED-daemon defaults
-  // (200 with an EMPTY list, never an error) as /ma/devices above
+  // issue #138: the MA content endpoints — same ready-but-empty defaults as
+  // /ma/devices above (200 with an EMPTY list; the pre-session 503 case is
+  // opt-in via server.use)
   http.get('*/ma/playlists', () => HttpResponse.json({ playlists: [] })),
   http.get('*/ma/playlist-items', () => HttpResponse.json({ tracks: [] })),
   http.get('*/ma/recent', () => HttpResponse.json({ tracks: [] })),
