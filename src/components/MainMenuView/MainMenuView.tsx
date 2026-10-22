@@ -279,11 +279,15 @@ interface OpenTracklist {
   // the paging id for usePlaylistTracks (playlist id or LIKED_SONGS_ID)
   playlistId: string
   // the context uri played when a sub-menu track is confirmed
-  // (spotify:playlist:<id> or spotify:collection:tracks)
+  // (spotify:playlist:<id>, spotify:collection:tracks, or in MA mode the
+  // library://playlist/<id> uri - issue #138)
   contextUri: string
   playlistName: string
   // where to restore the focus when the sub-menu closes
   playlistIndex: number
+  // which category's pane owns the sub-menu ('playlists', and 'recent' for
+  // a recently played MA playlist - issue #138 round 4, defect B')
+  category: string
 }
 
 // bug5: when the dial focus this close to the end of the loaded tracks, the
@@ -867,8 +871,9 @@ export function MainMenuView({
     const cardsByCategory: Record<string, MenuCard[]> = {
       home: homeCards,
       'now-playing': nowPlayingCards,
-      playlists: tracklistCards ?? playlistCards,
-      recent: recentCards,
+      playlists:
+        openTracklist?.category === 'playlists' ? (tracklistCards ?? playlistCards) : playlistCards,
+      recent: openTracklist?.category === 'recent' ? (tracklistCards ?? recentCards) : recentCards,
       settings: settingsCards,
     }
 
@@ -908,7 +913,7 @@ export function MainMenuView({
     index: number,
     category: MenuCategory = confirmedCategory,
   ) => {
-    if (category.id !== 'playlists' || openTracklist) return
+    if ((category.id !== 'playlists' && category.id !== 'recent') || openTracklist) return
     const match = /^spotify:playlist:([^/]+)/.exec(card.uri ?? '')
     // issue #138: an MA library playlist card ('library://playlist/<id>') —
     // the id is the numeric library item id of GET /ma/playlist-items and the
@@ -935,6 +940,7 @@ export function MainMenuView({
       contextUri,
       playlistName: card.title,
       playlistIndex: index,
+      category: category.id,
     })
     // focus the first track once the track cards are mounted
     focusRef.current?.focusContent(0)
@@ -1013,15 +1019,20 @@ export function MainMenuView({
       focusRef.current?.focusContent(0)
       return
     }
-    if (
-      category.id === 'playlists' &&
+    // bug4/bug22: playlist / Liked Songs card opens the track sub-menu
+    // instead of playing; issue #138 round 4, defect B': a recently played
+    // MA PLAYLIST row ('library://playlist/<id>') does the same from the
+    // 'Zuletzt' pane - MA play-log TRACK rows fall through to playback below.
+    // (!openTracklist gates FIRST: while the sub-menu is open, the pane shows
+    // track cards and no branch of the uri test may run)
+    const opensTracklist =
       !openTracklist &&
-      (card.uri?.startsWith('spotify:playlist:') ||
-        card.uri?.startsWith('library://playlist/') ||
-        card.uri === LIKED_SONGS_ID)
-    ) {
-      // bug4/bug22: playlist / Liked Songs card opens the track sub-menu
-      // instead of playing
+      (category.id === 'playlists'
+        ? card.uri?.startsWith('spotify:playlist:') ||
+          card.uri?.startsWith('library://playlist/') ||
+          card.uri === LIKED_SONGS_ID
+        : category.id === 'recent' && card.uri?.startsWith('library://playlist/'))
+    if (opensTracklist) {
       openPlaylistTracklist(card, index, category)
       return
     }
@@ -1235,7 +1246,8 @@ export function MainMenuView({
       if (category) {
         setActiveCategoryId(category.id)
         // leaving 'Playlists' closes the track sub-menu
-        if (category.id !== 'playlists' && openTracklist) setOpenTracklist(null)
+        if (category.id !== 'playlists' && category.id !== 'recent' && openTracklist)
+          setOpenTracklist(null)
         // bug25: (re)entering 'Einstellungen' always starts on the root rows
         if (category.id === 'settings') {
           setSettingsLevel('root')
@@ -1317,7 +1329,11 @@ export function MainMenuView({
   // lands anywhere else (sidebar preview, another category, a swipe), close it
   // so its cards can never leak into a different category's carousel
   useEffect(() => {
-    if (openTracklist && (activeCategoryId !== 'playlists' || focus.activePane !== 'content')) {
+    if (
+      openTracklist &&
+      ((activeCategoryId !== 'playlists' && activeCategoryId !== 'recent') ||
+        focus.activePane !== 'content')
+    ) {
       setOpenTracklist(null)
     }
   }, [openTracklist, activeCategoryId, focus.activePane])

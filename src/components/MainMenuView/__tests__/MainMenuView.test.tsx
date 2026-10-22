@@ -467,6 +467,67 @@ describe('MainMenuView', () => {
     expect(screen.queryByText('Track 1 of pl-1')).not.toBeInTheDocument()
   })
 
+  // issue #138 round 4, defect B': with playbackSource 'ma', a recently
+  // played PLAYLIST row ('library://playlist/<id>') opens the track sub-menu
+  // like in the Playlists pane; play-log TRACK rows keep plain playback.
+  it('MA mode: confirming a recently played playlist opens its track list (issue #138)', async () => {
+    updateSettings({
+      playbackSource: 'ma',
+      ma: { url: 'http://10.0.0.9:8097', token: 'tok' },
+    })
+    server.use(
+      http.get('*/ma/recent*', () =>
+        HttpResponse.json({
+          tracks: [
+            { id: 'ma-pl-26', name: 'Chill Mix', uri: 'library://playlist/26' },
+            { id: 'ma-tr-1', name: 'Sunset Lover', uri: 'spotify--x://track/sunset' },
+          ],
+        }),
+      ),
+      http.get('*/ma/playlists*', () => HttpResponse.json({ playlists: [] })),
+      http.get('*/ma/playlist-items*', () =>
+        HttpResponse.json({
+          tracks: [{ id: 'ma-tr-a', name: 'First Track', uri: 'spotify--x://track/a' }],
+        }),
+      ),
+    )
+    const onPlay = vi.fn()
+    render(<MainMenuView onPlay={onPlay} />)
+
+    // enter the 'Zuletzt' pane and confirm the playlist row
+    fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+    await screen.findByText('Chill Mix')
+    fireEvent.click(screen.getByText('Chill Mix'))
+
+    // the sub-menu opens with the playlist's tracks - no playback requested
+    expect(onPlay).not.toHaveBeenCalled()
+    await screen.findByText('First Track')
+  })
+
+  it('MA mode: confirming a recently played track plays its uri directly (issue #138)', async () => {
+    updateSettings({
+      playbackSource: 'ma',
+      ma: { url: 'http://10.0.0.9:8097', token: 'tok' },
+    })
+    server.use(
+      http.get('*/ma/recent*', () =>
+        HttpResponse.json({
+          tracks: [{ id: 'ma-tr-1', name: 'Sunset Lover', uri: 'spotify--x://track/sunset' }],
+        }),
+      ),
+      http.get('*/ma/playlists*', () => HttpResponse.json({ playlists: [] })),
+    )
+    const onPlay = vi.fn()
+    render(<MainMenuView onPlay={onPlay} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zuletzt' }))
+    await screen.findByText('Sunset Lover')
+    fireEvent.click(screen.getByText('Sunset Lover'))
+
+    expect(onPlay).toHaveBeenCalledTimes(1)
+    expect(onPlay).toHaveBeenCalledWith('spotify--x://track/sunset')
+  })
+
   it('exposes carousel cards as accessible buttons', async () => {
     render(<MainMenuView />)
     fireEvent.click(screen.getByRole('button', { name: 'Playlists' }))
