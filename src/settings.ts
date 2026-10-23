@@ -73,6 +73,11 @@ export interface Settings {
   uiScalePct: number
   presets: Record<number, PresetConfig>
   defaultDeviceId: string | null
+  // issue #48: the issue #79 default device is source-scoped — the Music
+  // Assistant players (playbackSource 'ma') keep their own Standard-Gerät,
+  // separate from the Connect list. Mirror of defaultDeviceId: additive blob
+  // key (missing → null on old blobs), so no schema version bump.
+  maDefaultDeviceId: string | null
   piProfiles: PiProfile[]
   activePiId: string | null
   // ticket10-7 KR4: the hybrid operation is strictly optional — the
@@ -174,6 +179,7 @@ const DEFAULTS: Settings = {
   uiScalePct: UI_SCALE_DEFAULT,
   presets: {},
   defaultDeviceId: null,
+  maDefaultDeviceId: null,
   piProfiles: [],
   activePiId: null,
   hybridDisabled: false,
@@ -368,6 +374,9 @@ function coerce(partial: Partial<Settings> | null | undefined): Settings {
     uiScalePct: coerceUiScale(partial?.uiScalePct),
     presets: partial?.presets ?? {},
     defaultDeviceId: partial?.defaultDeviceId ?? DEFAULTS.defaultDeviceId,
+    // issue #48: loose like defaultDeviceId — missing key on every pre-#48
+    // blob coerces to the null default (the coercion is the migration)
+    maDefaultDeviceId: partial?.maDefaultDeviceId ?? DEFAULTS.maDefaultDeviceId,
     piProfiles,
     activePiId: coerceActivePiId(piProfiles, partial?.activePiId),
     // ticket10-7 KR4: strict like keyInstalled — a hand-edited blob holding

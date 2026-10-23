@@ -102,6 +102,29 @@ describe('settings store', () => {
     updateSettings({ defaultDeviceId: null })
     expect(getSettings().defaultDeviceId).toBeNull()
   })
+  it('ma default device id is null by default (issue #48)', () => {
+    expect(getSettings().maDefaultDeviceId).toBeNull()
+  })
+
+  it('round-trips ma default device id (issue #48)', () => {
+    updateSettings({ maDefaultDeviceId: 'ma-player-1' })
+    expect(getSettings().maDefaultDeviceId).toBe('ma-player-1')
+    __resetSettings()
+    expect(getSettings().maDefaultDeviceId).toBe('ma-player-1')
+  })
+
+  it('clears ma default device id to null (issue #48)', () => {
+    updateSettings({ maDefaultDeviceId: 'ma-player-1' })
+    updateSettings({ maDefaultDeviceId: null })
+    expect(getSettings().maDefaultDeviceId).toBeNull()
+  })
+
+  it('coerces a pre-#48 blob without the key to a null ma default (issue #48)', () => {
+    localStorage.setItem('mira.settings.v1', JSON.stringify({ defaultDeviceId: 'device-x' }))
+    __resetSettings()
+    expect(getSettings().defaultDeviceId).toBe('device-x')
+    expect(getSettings().maDefaultDeviceId).toBeNull()
+  })
 
   it('preset get falls back to defaults; set overrides via the store', () => {
     expect(getPreset(1)?.contextUri).toBe('spotify:collection:tracks') // default

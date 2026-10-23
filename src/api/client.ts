@@ -18,9 +18,22 @@ import type {
   SpotifyRecentlyPlayedResponse,
 } from './types'
 
+// issue #47: the daemon reports Music Assistant tracks as
+// '<source>://<domain>/<id>' (e.g. 'spotify--yofvZfhZ://track/4ml1Eq4wmcdfN0Q6pNEly7').
+// The lyrics API wants the spotify track id, which is the remainder after the
+// first '/' when the domain segment is exactly 'track' (non-track MA domains —
+// episodes, local files, streams — have no lyrics id and stay ''). Legacy
+// Spotify Connect URIs are 3-part 'scheme:type:id' and take the legacy path.
 function trackIdFromUri(uri: string): string {
   const parts = uri.split(':')
-  return parts.length === 3 ? parts[2] : ''
+  if (parts.length === 3) return parts[2]
+  const sep = uri.indexOf('://')
+  if (sep !== -1) {
+    const rest = uri.slice(sep + '://'.length)
+    const slash = rest.indexOf('/')
+    if (slash > 0 && rest.slice(0, slash) === 'track') return rest.slice(slash + 1)
+  }
+  return ''
 }
 
 const MAX_POSITION_PROJECTION_MS = 10 * 60 * 1000
@@ -266,7 +279,10 @@ function maTrackToSpotifyTrack(t: MaTrackCard): SpotifyPlaylistTrack {
     name: t.name,
     uri: t.uri,
     artists: (t.artists ?? []).map((name) => ({ name })),
-    album: t.album || t.image_url ? { name: t.album ?? '', images: t.image_url ? [{ url: t.image_url }] : [] } : undefined,
+    album:
+      t.album || t.image_url
+        ? { name: t.album ?? '', images: t.image_url ? [{ url: t.image_url }] : [] }
+        : undefined,
     duration_ms: t.duration_ms,
     position: t.position,
   }

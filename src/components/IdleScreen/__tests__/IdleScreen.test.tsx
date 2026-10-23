@@ -76,6 +76,24 @@ describe('IdleScreen (issue #95 idle dashboard)', () => {
     expect(screen.getByText('Büro Speaker')).toBeInTheDocument()
   })
 
+  it('pins the MA list to maDefaultDeviceId while source is ma (issue #48)', async () => {
+    server.use(
+      http.get('*/ma/devices', () =>
+        HttpResponse.json({
+          devices: [
+            { id: 'ma-1', name: 'Kitchen', available: true },
+            { id: 'ma-2', name: 'Garden', available: false },
+          ],
+        }),
+      ),
+    )
+    render(<IdleScreen connected devices={DEVICES} source="ma" maDefaultDeviceId="ma-2" />)
+
+    await waitFor(() => expect(screen.getByText('Garden')).toBeInTheDocument())
+    // the unpinned player is filtered out of the picker
+    expect(screen.queryByText('Kitchen')).not.toBeInTheDocument()
+  })
+
   it('renders a scene tile per configured scene and tapping it sends scene/turn_on', async () => {
     localStorage.setItem(
       SELECTION_LS_KEY,

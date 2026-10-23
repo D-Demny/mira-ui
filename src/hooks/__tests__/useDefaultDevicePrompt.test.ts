@@ -250,3 +250,95 @@ describe('useDefaultDevicePrompt deferral + answers', () => {
     expect(first).not.toHaveBeenCalled()
   })
 })
+
+// issue #48: the prompt is source-aware — MA mode compares the observed
+// player against settings.maDefaultDeviceId in the MA list, and accept routes
+// through POST /ma/player/select instead of the Connect transfer.
+const MA_DEVICES = [
+  { id: 'ma-1', name: 'Kitchen', available: true },
+  { id: 'ma-2', name: 'Garden', available: false },
+]
+
+function maPrompt(over: Partial<UseDefaultDevicePromptParams> = {}) {
+  return renderPrompt({ playbackSource: 'ma', maDevices: MA_DEVICES, ...over })
+}
+
+describe('useDefaultDevicePrompt MA mode (issue #48)', () => {
+  it('defers and names the MA default when the observed player differs', () => {
+    updateSettings({ maDefaultDeviceId: 'ma-1' })
+    const action = vi.fn()
+    const { result } = maPrompt()
+
+    act(() => expect(result.current.wrapAction(action)).toBe(true))
+    expect(action).not.toHaveBeenCalled()
+    expect(result.current.prompt).toEqual({
+      action,
+      deviceId: 'ma-1',
+      deviceName: 'Kitchen',
+    })
+  })
+
+  it('accept runs the deferred interaction and selects the MA player', async () => {
+    const selects: string[] = []
+    // the msw default for this path returns 400 — record the successful shape
+    server.use(
+      http.post('*/ma/player/select', async ({ request }) => {
+        const body = (await request.json()) as { player_id?: string }
+        selects.push(body.player_id ?? '')
+        return HttpResponse.json({ ok: true })
+      }),
+    )
+    updateSettings({ maDefaultDeviceId: 'ma-2' })
+    const action = vi.fn()
+    const { result } = maPrompt()
+
+    act(() => expect(result.current.wrapAction(action)).toBe(true))
+    act(() => result.current.accept())
+
+    expect(result.current.prompt).toBeNull()
+    expect(action).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(selects).toEqual(['ma-2']))
+  })
+
+  it('ignores the spotify default entirely while the MA source is active', () => {
+    updateSettings({ defaultDeviceId: 'dev-2', maDefaultDeviceId: null })
+    const action = vi.fn()
+    const { result } = maPrompt()
+
+    // no maDefaultDeviceId + a spotify-only id that is not in the MA list
+    expect(result.current.wrapAction(action)).toBe(false)
+    expect(action).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps using the spotify default while the spotify source is active', () => {
+    updateSettings({ defaultDeviceId: 'dev-2', maDefaultDeviceId: 'ma-1' })
+    const action = vi.fn()
+    const { result } = renderPrompt() // playbackSource defaults to 'spotify'
+
+    act(() => expect(result.current.wrapAction(action)).toBe(true))
+    // the stored MA id must not leak into the spotify prompt
+    expect(result.current.prompt).toEqual({
+      action,
+      deviceId: 'dev-2',
+      deviceName: 'Living Room',
+    })
+  })
+
+  it('runs directly when the observed player already matches the MA default', () => {
+    updateSettings({ maDefaultDeviceId: 'pixel' }) // == fixture device_id
+    const action = vi.fn()
+    const { result } = maPrompt()
+
+    expect(result.current.wrapAction(action)).toBe(false)
+    expect(action).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs directly when the MA default is not in the MA list', () => {
+    updateSettings({ maDefaultDeviceId: 'ma-gone' }) // stale after a player vanished
+    const action = vi.fn()
+    const { result } = maPrompt()
+
+    expect(result.current.wrapAction(action)).toBe(false)
+    expect(action).toHaveBeenCalledTimes(1)
+  })
+})

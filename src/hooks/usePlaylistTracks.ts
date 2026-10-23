@@ -131,56 +131,62 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
   const inFlightRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
 
-  const appendPage = useCallback(async (id: string, offset: number, isInitial: boolean) => {
-    if (inFlightRef.current) return
-    inFlightRef.current = true
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    if (isInitial) {
-      setLoading(true)
-      setError(null)
-    } else {
-      setLoadingMore(true)
-    }
-    try {
-      // bug22: Liked Songs pages from me/tracks, everything else from playlists/<id>/tracks.
-      // issue #138: MA serves the FULL track list in one call (offset ignored)
-      // and the 'ma:' cache-key prefix is stripped for the daemon request.
-      const page =
-        id === LIKED_SONGS_ID
-          ? await fetchSavedTracks(offset, PAGE_SIZE, controller.signal)
-          : isMa
-            ? await fetchMaPlaylistTracks(id.startsWith('ma:') ? id.slice(3) : id, controller.signal)
-            : await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
-      if (controller.signal.aborted) return
-      const seen = new Set(listRef.current.map((track) => track.id))
-      const next = [...listRef.current]
-      for (const item of page.items) {
-        const track = item.track
-        if (!track || seen.has(track.id)) continue
-        seen.add(track.id)
-        next.push(track)
+  const appendPage = useCallback(
+    async (id: string, offset: number, isInitial: boolean) => {
+      if (inFlightRef.current) return
+      inFlightRef.current = true
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+      if (isInitial) {
+        setLoading(true)
+        setError(null)
+      } else {
+        setLoadingMore(true)
       }
-      listRef.current = next
-      totalRef.current = Math.max(page.total, next.length)
-      storeInCache(id, next, totalRef.current)
-      setTracks(next)
-      setTotal(totalRef.current)
-    } catch (err: unknown) {
-      if (!controller.signal.aborted) {
-        const message = err instanceof Error ? err.message : 'Failed to load playlist tracks'
-        console.warn('usePlaylistTracks error:', message)
-        setError(message)
+      try {
+        // bug22: Liked Songs pages from me/tracks, everything else from playlists/<id>/tracks.
+        // issue #138: MA serves the FULL track list in one call (offset ignored)
+        // and the 'ma:' cache-key prefix is stripped for the daemon request.
+        const page =
+          id === LIKED_SONGS_ID
+            ? await fetchSavedTracks(offset, PAGE_SIZE, controller.signal)
+            : isMa
+              ? await fetchMaPlaylistTracks(
+                  id.startsWith('ma:') ? id.slice(3) : id,
+                  controller.signal,
+                )
+              : await fetchPlaylistTracks(id, offset, PAGE_SIZE, controller.signal)
+        if (controller.signal.aborted) return
+        const seen = new Set(listRef.current.map((track) => track.id))
+        const next = [...listRef.current]
+        for (const item of page.items) {
+          const track = item.track
+          if (!track || seen.has(track.id)) continue
+          seen.add(track.id)
+          next.push(track)
+        }
+        listRef.current = next
+        totalRef.current = Math.max(page.total, next.length)
+        storeInCache(id, next, totalRef.current)
+        setTracks(next)
+        setTotal(totalRef.current)
+      } catch (err: unknown) {
+        if (!controller.signal.aborted) {
+          const message = err instanceof Error ? err.message : 'Failed to load playlist tracks'
+          console.warn('usePlaylistTracks error:', message)
+          setError(message)
+        }
+      } finally {
+        inFlightRef.current = false
+        if (!controller.signal.aborted) {
+          setLoading(false)
+          setLoadingMore(false)
+        }
       }
-    } finally {
-      inFlightRef.current = false
-      if (!controller.signal.aborted) {
-        setLoading(false)
-        setLoadingMore(false)
-      }
-    }
-  }, [isMa])
+    },
+    [isMa],
+  )
 
   // bug37: silent revalidation of a STALE cached list — fetches page 0 in the
   // background WITHOUT touching the loading flags (the stale list stays
@@ -202,7 +208,10 @@ export function usePlaylistTracks(playlistId: string | null): UsePlaylistTracksR
           id === LIKED_SONGS_ID
             ? await fetchSavedTracks(0, PAGE_SIZE, controller.signal)
             : isMa
-              ? await fetchMaPlaylistTracks(id.startsWith('ma:') ? id.slice(3) : id, controller.signal)
+              ? await fetchMaPlaylistTracks(
+                  id.startsWith('ma:') ? id.slice(3) : id,
+                  controller.signal,
+                )
               : await fetchPlaylistTracks(id, 0, PAGE_SIZE, controller.signal)
         if (controller.signal.aborted) return
         const freshTracks: SpotifyPlaylistTrack[] = []

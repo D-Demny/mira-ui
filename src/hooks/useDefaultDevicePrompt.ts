@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
-import { transferToDevice } from '@/api/client'
-import type { ConnectDevice, ObserverStatus } from '@/api/types'
+import { selectMaPlayer, transferToDevice } from '@/api/client'
+import type { ConnectDevice, MaDevice, ObserverStatus } from '@/api/types'
 import { getSettings } from '@/settings'
 import type { NotifyFn } from '@/notify/notifyContext'
 
@@ -20,6 +20,13 @@ export interface UseDefaultDevicePromptParams {
   status: ObserverStatus | null
   connectDevices: ConnectDevice[]
   notify: NotifyFn
+  // issue #48: source-aware default device. 'ma' (default 'spotify') selects
+  // which stored default wrapAction compares against — maDefaultDeviceId vs
+  // defaultDeviceId — and which list resolves it in (maDevices vs
+  // connectDevices). A default id from the other source is simply not found
+  // in the active list, so the interaction passes through without a prompt.
+  playbackSource?: 'spotify' | 'ma'
+  maDevices?: MaDevice[]
 }
 
 export interface UseDefaultDevicePromptResult {
@@ -45,16 +52,24 @@ export function useDefaultDevicePrompt({
   status,
   connectDevices,
   notify,
+  playbackSource = 'spotify',
+  maDevices = [],
 }: UseDefaultDevicePromptParams): UseDefaultDevicePromptResult {
   const suppressedUntilRef = useRef(0)
   const [prompt, setPrompt] = useState<DefaultDevicePromptState | null>(null)
+  // issue #48: the prompt is source-scoped — MA mode compares the observed
+  // player against settings.maDefaultDeviceId in the MA list and switches via
+  // selectMaPlayer (the daemon selects + transfers the native queue); Connect
+  // keeps the #79 behavior (defaultDeviceId + transferToDevice) unchanged.
+  const isMa = playbackSource === 'ma'
+  const sourceDevices = isMa ? maDevices : connectDevices
 
   const wrapAction = useCallback(
     (action: () => void): boolean => {
       // a prompt is already up: swallow the extra interaction rather than
       // replacing the deferred one
       if (prompt != null) return true
-      const defaultId = getSettings().defaultDeviceId
+      const defaultId = isMa ? getSettings().maDefaultDeviceId : getSettings().defaultDeviceId
       if (
         defaultId == null ||
         status?.active !== true ||
@@ -64,17 +79,18 @@ export function useDefaultDevicePrompt({
         action()
         return false
       }
-      const device = connectDevices.find((d) => d.id === defaultId)
+      const device = sourceDevices.find((d) => d.id === defaultId)
       if (device == null) {
-        // the stored default is no longer in the Connect list — nothing to
-        // switch to, so the interaction just runs
+        // the stored default is not in the active source's list (vanished or
+        // from the other source) — nothing to switch to, so the interaction
+        // just runs
         action()
         return false
       }
       setPrompt({ action, deviceId: defaultId, deviceName: device.name })
       return true
     },
-    [prompt, status, connectDevices],
+    [prompt, status, sourceDevices, isMa],
   )
 
   const accept = useCallback(() => {
@@ -84,11 +100,11 @@ export function useDefaultDevicePrompt({
     // the interaction always happens; a failed transfer degrades to the
     // decline outcome (action ran, device unchanged) plus an error toast
     action()
-    void transferToDevice(deviceId).catch((err: unknown) => {
+    void (isMa ? selectMaPlayer(deviceId) : transferToDevice(deviceId)).catch((err: unknown) => {
       console.warn('default device transfer failed', err)
       notify(`Couldn't switch to the default device`, { variant: 'error' })
     })
-  }, [notify, prompt])
+  }, [notify, prompt, isMa])
 
   const decline = useCallback(() => {
     if (prompt == null) return

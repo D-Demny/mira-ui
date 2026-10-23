@@ -169,12 +169,23 @@ function AppContent() {
     },
     [notify, closeOutputs],
   )
+  const settings = useSettings()
+  // issue #134: the "Ausgabegeräte" modal follows the selected playback source;
+  // fetch the MA players only while the MA source is active
+  const maDevices = useMaDevices(settings.playbackSource === 'ma')
+  // issue #48: the Standard-Gerät is source-scoped — each playback source keeps
+  // its own default device (Connect: settings.defaultDeviceId, MA:
+  // settings.maDefaultDeviceId). Only the active source's value feeds the
+  // issue #79 prompt below and the picker stars; the other stays stored.
+  const isMa = settings.playbackSource === 'ma'
+  const currentDefaultId = isMa ? settings.maDefaultDeviceId : settings.defaultDeviceId
   // issue #79: the default-device switch prompt. Every playback interaction
   // (player controls, hardware play/pause + presets, menu track selection) is
   // wrapped through wrapWithDefaultDevicePrompt: when a default device is set
   // and the active device differs, the interaction is deferred behind the
   // confirm popup instead of running immediately. A decline suppresses the
-  // popup for 10 minutes (see useDefaultDevicePrompt).
+  // popup for 10 minutes (see useDefaultDevicePrompt). issue #48 extended it
+  // to MA mode — source-aware default id + selectMaPlayer on accept.
   const {
     wrapAction: wrapWithDefaultDevicePrompt,
     prompt: defaultDevicePrompt,
@@ -185,12 +196,9 @@ function AppContent() {
     status: realStatus,
     connectDevices,
     notify,
+    playbackSource: settings.playbackSource,
+    maDevices,
   })
-
-  const settings = useSettings()
-  // issue #134: the "Ausgabegeräte" modal follows the selected playback source;
-  // fetch the MA players only while the MA source is active
-  const maDevices = useMaDevices(settings.playbackSource === 'ma')
   const showLyricsReal = settings.showLyrics
   const artSize = artSizeFor(settings.uiScalePct)
   const heroArtSize = heroArtSizeFor(settings.uiScalePct)
@@ -259,6 +267,9 @@ function AppContent() {
     forced === 'mainmenu'
       ? mockStatus
       : realStatus
+  // issue #48: the observed MA player id for the default-device modal's active
+  // row (null outside MA mode or while nothing is observed)
+  const maActiveId = isMa && status != null && status.active === true ? status.device_id : null
 
   const SPOTIFY_STUCK_MS = 60000
   const playerStartingUp = status != null && !status.active && status.message === 'starting up'
@@ -614,8 +625,10 @@ function AppContent() {
         source={settings.playbackSource}
         maDevices={maDevices}
         onSelectMaDevice={onPickMaDevice}
-        defaultDeviceId={settings.defaultDeviceId}
-        onSetDefault={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
+        defaultDeviceId={currentDefaultId}
+        onSetDefault={(deviceId) =>
+          updateSettings(isMa ? { maDefaultDeviceId: deviceId } : { defaultDeviceId: deviceId })
+        }
         pairing={pairing}
         screensaverArt={screensaverArt}
         utcOffsetMin={utcOffsetMin}
@@ -623,14 +636,29 @@ function AppContent() {
       {defaultDeviceModalOpen ? (
         <DefaultDeviceModal
           devices={connectDevices}
-          currentDefaultId={settings.defaultDeviceId}
+          // issue #48: the modal is source-aware — MA mode lists the MA players,
+          // marks the observed one active, and persists via maDefaultDeviceId
+          source={settings.playbackSource}
+          maDevices={maDevices}
+          activeId={maActiveId}
+          currentDefaultId={currentDefaultId}
           isActiveDevice={status?.active === true}
           onTransfer={() => {
+            if (isMa) {
+              // getSettings() fresh — the select that triggered this may have
+              // just written a new maDefaultDeviceId in the same event
+              const id = getSettings().maDefaultDeviceId
+              const target = id != null ? (maDevices.find((d) => d.id === id) ?? null) : null
+              if (target != null) void onPickMaDevice(target)
+              return Promise.resolve()
+            }
             const target = connectDevices.find((d) => d.is_active) || connectDevices[0]
             if (target) onPickDevice(target)
             return Promise.resolve()
           }}
-          onChange={(deviceId) => updateSettings({ defaultDeviceId: deviceId })}
+          onChange={(deviceId) =>
+            updateSettings(isMa ? { maDefaultDeviceId: deviceId } : { defaultDeviceId: deviceId })
+          }
           onClose={() => setDefaultDeviceModalOpen(false)}
         />
       ) : null}
@@ -973,9 +1001,11 @@ function AppContent() {
               onExit={() => setShowingLibrary(false)}
               // bug25: the settings list's link rows open the App-level panels
               // (rendered by globalOverlays above the menu)
+              // issue #48: source-scoped — MA mode resolves the name in the MA
+              // list instead of the Connect list
               defaultDevice={
-                settings.defaultDeviceId
-                  ? connectDevices.find((d) => d.id === settings.defaultDeviceId)?.name
+                currentDefaultId
+                  ? (isMa ? maDevices : connectDevices).find((d) => d.id === currentDefaultId)?.name
                   : undefined
               }
               phoneVolume={status?.active === true && status.volume_disabled === true}
@@ -1010,6 +1040,8 @@ function AppContent() {
                 // issue #134: the picker zone follows the selected playback source
                 source={settings.playbackSource}
                 onSelectMaDevice={onPickMaDevice}
+                // issue #48: pin the MA picker list to the stored MA Standard-Gerät
+                maDefaultDeviceId={settings.maDefaultDeviceId}
                 // issue #99: blurred last-known-track background
                 artUrl={ambientArt || null}
               />
@@ -1022,6 +1054,8 @@ function AppContent() {
                 // issue #134: the picker zone follows the selected playback source
                 source={settings.playbackSource}
                 onSelectMaDevice={onPickMaDevice}
+                // issue #48: pin the MA picker list to the stored MA Standard-Gerät
+                maDefaultDeviceId={settings.maDefaultDeviceId}
               />
             )}
             {globalOverlays}

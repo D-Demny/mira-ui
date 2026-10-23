@@ -22,6 +22,10 @@ interface Props {
   // default 'spotify' path is untouched.
   source?: 'spotify' | 'ma'
   onSelectMaDevice?: (device: MaDevice) => void
+  // issue #48: while source is 'ma' this pins the internally fetched MA list
+  // to the stored MA Standard-Gerät (the Connect filter below is untouched —
+  // disjoint id spaces)
+  maDefaultDeviceId?: string | null
 }
 
 function NothingPlayingScreenImpl({
@@ -30,6 +34,7 @@ function NothingPlayingScreenImpl({
   onSelectDevice,
   defaultDeviceId,
   source = 'spotify',
+  maDefaultDeviceId,
   onSelectMaDevice,
 }: Props) {
   // issue #134: fetch the MA list only while the MA source is selected (no
@@ -48,6 +53,12 @@ function NothingPlayingScreenImpl({
     defaultDeviceId && defaultDeviceId !== ''
       ? devices.filter((d) => d.id === defaultDeviceId)
       : devices
+  // issue #48: the MA list gets the same treatment from its own stored
+  // Standard-Gerät — pinned while source is 'ma' and a value is set
+  const filteredMaDevices =
+    maMode && maDefaultDeviceId && maDefaultDeviceId !== ''
+      ? maDevices.filter((d) => d.id === maDefaultDeviceId)
+      : maDevices
 
   const subtitle =
     devices.length > 0
@@ -65,7 +76,7 @@ function NothingPlayingScreenImpl({
         devices={filteredDevices}
         onSelect={onSelectDevice}
         source={source}
-        maDevices={maDevices}
+        maDevices={filteredMaDevices}
         onMaSelect={onSelectMaDevice}
       />
       {!connected ? (

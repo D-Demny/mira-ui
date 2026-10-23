@@ -370,3 +370,97 @@ describe('bug31: DefaultDeviceModal dial + back', () => {
     expect(ListFocusContext.entry).toBe(parent)
   })
 })
+
+// issue #48: source-aware modal — the MA player list with its own active /
+// offline flags, persisting through the same onChange contract
+const maPlayers = [
+  { id: 'ma-001', name: 'Kitchen', available: true },
+  { id: 'ma-002', name: 'Garden', available: false },
+]
+
+describe('issue #48: DefaultDeviceModal MA mode', () => {
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+  })
+
+  it('renders the MA list by name and dims unavailable players (Connect list hidden)', () => {
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        source="ma"
+        maDevices={maPlayers}
+        activeId="ma-001"
+        currentDefaultId="ma-001"
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    // the name renders twice: the header preview (current default) + the row
+    expect(screen.getAllByText('Kitchen')).toHaveLength(2)
+    expect(findItemByText('Garden')).toHaveClass('offline')
+    // the Connect devices are not part of this source's view
+    expect(screen.queryByText('Living Room')).not.toBeInTheDocument()
+  })
+
+  it('selecting an MA row persists its id through onChange', () => {
+    const onChange = vi.fn()
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        source="ma"
+        maDevices={maPlayers}
+        currentDefaultId={null}
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={onChange}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(findItemByText('Garden')!)
+
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('ma-002')
+  })
+
+  it('clearing the default still writes null in MA mode', () => {
+    const onChange = vi.fn()
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        source="ma"
+        maDevices={maPlayers}
+        currentDefaultId="ma-001"
+        isActiveDevice={false}
+        onTransfer={vi.fn()}
+        onChange={onChange}
+        onClose={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(findItemByText('None')!)
+
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+
+  it('shows the transfer button when the MA default differs from the observed player', () => {
+    render(
+      <DefaultDeviceModal
+        devices={devices}
+        source="ma"
+        maDevices={maPlayers}
+        activeId="ma-001"
+        currentDefaultId="ma-002"
+        isActiveDevice={true}
+        onTransfer={vi.fn()}
+        onChange={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Play on Garden')).toBeInTheDocument()
+  })
+})
