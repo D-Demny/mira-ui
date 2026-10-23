@@ -63,6 +63,11 @@ interface Props {
   // default 'spotify' path is untouched.
   source?: 'spotify' | 'ma'
   onSelectMaDevice?: (device: MaDevice) => void
+  // issue #48: the per-source default — while source is 'ma' this pins the
+  // internally fetched MA list to the stored MA Standard-Gerät (mirrors the
+  // Connect filter below; the two id spaces are disjoint, so neither filter
+  // touches the other list)
+  maDefaultDeviceId?: string | null
   // issue #99: last known track art for the blurred background (''/null = none)
   artUrl?: string | null
 }
@@ -74,6 +79,7 @@ function IdleScreenImpl({
   defaultDeviceId,
   source = 'spotify',
   onSelectMaDevice,
+  maDefaultDeviceId,
   artUrl,
 }: Props) {
   const selectedEntities = useHomeSelectedEntities(false)
@@ -102,6 +108,12 @@ function IdleScreenImpl({
     defaultDeviceId && defaultDeviceId !== ''
       ? devices.filter((d) => d.id === defaultDeviceId)
       : devices
+  // issue #48: the MA list gets the same treatment from its own stored
+  // Standard-Gerät — pinned while source is 'ma' and a value is set
+  const filteredMaDevices =
+    maMode && maDefaultDeviceId && maDefaultDeviceId !== ''
+      ? maDevices.filter((d) => d.id === maDefaultDeviceId)
+      : maDevices
   return (
     <div className={styles.idle}>
       {artUrl ? (
@@ -117,7 +129,7 @@ function IdleScreenImpl({
             onSelect={onSelectDevice}
             compact
             source={source}
-            maDevices={maDevices}
+            maDevices={filteredMaDevices}
             onMaSelect={onSelectMaDevice}
           />
           {!connected ? (

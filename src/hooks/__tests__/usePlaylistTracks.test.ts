@@ -842,7 +842,15 @@ describe('usePlaylistTracks - Music Assistant source (issue #138)', () => {
   })
 
   const maTracks = [
-    { id: 't0', name: 'A', uri: 'spotify:track:t0', artists: ['X'], position: 0, album: 'Al', image_url: 'http://10.0.0.4:8095/static/image/a.jpg' },
+    {
+      id: 't0',
+      name: 'A',
+      uri: 'spotify:track:t0',
+      artists: ['X'],
+      position: 0,
+      album: 'Al',
+      image_url: 'http://10.0.0.4:8095/static/image/a.jpg',
+    },
     { id: 't1', name: 'B', uri: 'spotify:track:t1', artists: [], position: 1 },
   ]
 

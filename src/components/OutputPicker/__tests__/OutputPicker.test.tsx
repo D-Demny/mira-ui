@@ -160,3 +160,78 @@ describe('issue #92: OutputPicker (Ausgabegeräte)', () => {
     expect(p.onClose).not.toHaveBeenCalled()
   })
 })
+
+// issue #48: the MA list carries the per-source Standard-Gerät star too —
+// available players only, persisted through the same onSetDefault contract
+const maPlayers = [
+  { id: 'ma-001', name: 'Kitchen', available: true },
+  { id: 'ma-002', name: 'Garden', available: false },
+  { id: 'ma-003', name: 'Bathroom', available: true },
+]
+
+function maProps() {
+  return {
+    devices,
+    currentDefaultId: 'ma-001',
+    source: 'ma' as const,
+    maDevices: maPlayers,
+    onSelect: vi.fn(),
+    onSetDefault: vi.fn(),
+    onSelectMaDevice: vi.fn(),
+    onClose: vi.fn(),
+  }
+}
+
+describe('issue #48: OutputPicker MA mode stars', () => {
+  afterEach(() => {
+    ListFocusContext.setActive(null)
+  })
+
+  it('renders the MA list (not the Connect list) with a filled star on the stored default', () => {
+    render(<OutputPicker {...maProps()} />)
+
+    for (const p of maPlayers) expect(screen.getByText(p.name)).toBeInTheDocument()
+    // the Connect devices are not part of this source's list
+    expect(screen.queryByText('MacBook Air')).not.toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: 'Standard-Gerät: Kitchen' })).toBeInTheDocument()
+    expect(screen.getByText('Standard-Gerät')).toBeInTheDocument()
+    // available non-default players get the outline star only
+    expect(
+      screen.getByRole('button', { name: 'Bathroom als Standard-Gerät festlegen' }),
+    ).toBeInTheDocument()
+  })
+
+  it('a star tap on an MA row persists the default without transferring or closing', () => {
+    const p = maProps()
+    render(<OutputPicker {...p} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bathroom als Standard-Gerät festlegen' }))
+
+    expect(p.onSetDefault).toHaveBeenCalledTimes(1)
+    expect(p.onSetDefault).toHaveBeenCalledWith('ma-003')
+    expect(p.onSelectMaDevice).not.toHaveBeenCalled()
+    expect(p.onClose).not.toHaveBeenCalled()
+  })
+
+  it('a row tap on an MA player routes playback there (onSelectMaDevice), not the default', () => {
+    const p = maProps()
+    render(<OutputPicker {...p} />)
+
+    fireEvent.click(screen.getByText('Kitchen'))
+
+    expect(p.onSelectMaDevice).toHaveBeenCalledTimes(1)
+    expect(p.onSelectMaDevice).toHaveBeenCalledWith(maPlayers[0])
+    expect(p.onSetDefault).not.toHaveBeenCalled()
+  })
+
+  it('unavailable MA players stay inert: no star at all', () => {
+    render(<OutputPicker {...maProps()} />)
+
+    expect(screen.getByText('Garden')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Garden als Standard-Gerät festlegen' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Standard-Gerät: Garden' })).not.toBeInTheDocument()
+  })
+})

@@ -23,8 +23,9 @@ function Star({ filled, size = 20 }: { filled: boolean; size?: number }) {
 // player screen. Vertically stacked list of all available audio outputs —
 // individual speakers (Spotify Connect devices) with their configured names,
 // the active one highlighted. Row tap routes playback there; the star sets
-// this speaker as the Standard-Gerät (persisted as settings.defaultDeviceId,
-// same value the issue #79 prompt transfers to). Multiroom groups are not
+// this speaker as the per-source Standard-Gerät (persisted as
+// settings.defaultDeviceId in Connect mode, maDefaultDeviceId in MA mode —
+// the value the issue #79 prompt switches to). Multiroom groups are not
 // listed yet: no group data source exists in the stack today (documented on
 // issue #92).
 
@@ -37,8 +38,11 @@ export interface OutputPickerProps {
   onSetDefault: (deviceId: string) => void
   onClose: () => void
   // issue #134: 'ma' switches the list to Music Assistant players — the row
-  // tap selects that player as observed/controlled from then on; there is
-  // no star, the Standard-Gerät concept only exists for Connect devices.
+  // tap selects that player as observed/controlled from then on. The star is
+  // rendered there too (issue #48): it sets the per-source Standard-Gerät,
+  // persisted as settings.maDefaultDeviceId and read back by the issue #79
+  // prompt (which switches via selectMaPlayer). Unavailable players stay
+  // dimmed and inert: no star on them.
   source?: 'spotify' | 'ma'
   maDevices?: MaDevice[]
   onSelectMaDevice?: (device: MaDevice) => void
@@ -75,7 +79,12 @@ function OutputPickerImpl({
     onBack: onClose,
     // start where the playback currently is, like the old device picker did;
     // MA has no active-connect notion - top of the list
-    initialIndex: isMa ? 0 : Math.max(0, devices.findIndex((d) => d.is_active)),
+    initialIndex: isMa
+      ? 0
+      : Math.max(
+          0,
+          devices.findIndex((d) => d.is_active),
+        ),
   })
 
   return (
@@ -142,6 +151,34 @@ function OutputPickerImpl({
                         <span className={styles.name}>{device.name}</span>
                         {!device.available && <span className={styles.sub}>offline</span>}
                       </span>
+                      {/* issue #48: per-source Standard-Gerät star — unavailable
+                          players stay inert (no star), like their row */}
+                      {device.available && (
+                        <button
+                          type="button"
+                          className={`${styles.star} ${
+                            currentDefaultId !== null && device.id === currentDefaultId
+                              ? styles.starFilled
+                              : ''
+                          }`}
+                          aria-label={
+                            currentDefaultId === device.id
+                              ? `Standard-Gerät: ${device.name}`
+                              : `${device.name} als Standard-Gerät festlegen`
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onSetDefault(device.id)
+                          }}
+                        >
+                          <Star
+                            filled={currentDefaultId !== null && device.id === currentDefaultId}
+                          />
+                          {currentDefaultId !== null && device.id === currentDefaultId && (
+                            <span className={styles.starLabel}>Standard-Gerät</span>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </li>
                 )

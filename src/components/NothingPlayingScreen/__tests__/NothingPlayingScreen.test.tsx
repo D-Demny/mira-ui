@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { NothingPlayingScreen } from '../NothingPlayingScreen'
 import type { ConnectDevice } from '@/api/types'
+import { http, HttpResponse } from 'msw'
+import { server } from '@/__tests__/msw-server'
 
 const DEVICES: ConnectDevice[] = [
   {
@@ -65,5 +67,25 @@ describe('NothingPlayingScreen (issue #100)', () => {
 
     expect(screen.queryByText('Office PC')).not.toBeInTheDocument()
     expect(screen.getByText('Büro Speaker')).toBeInTheDocument()
+  })
+
+  it('pins the MA list to maDefaultDeviceId while source is ma (issue #48)', async () => {
+    server.use(
+      http.get('*/ma/devices', () =>
+        HttpResponse.json({
+          devices: [
+            { id: 'ma-1', name: 'Kitchen', available: true },
+            { id: 'ma-2', name: 'Garden', available: false },
+          ],
+        }),
+      ),
+    )
+    render(
+      <NothingPlayingScreen connected devices={DEVICES} source="ma" maDefaultDeviceId="ma-2" />,
+    )
+
+    await waitFor(() => expect(screen.getByText('Garden')).toBeInTheDocument())
+    // the unpinned player is filtered out of the picker
+    expect(screen.queryByText('Kitchen')).not.toBeInTheDocument()
   })
 })

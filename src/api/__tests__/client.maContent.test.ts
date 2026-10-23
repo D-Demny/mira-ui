@@ -73,7 +73,8 @@ describe('fetchMaPlaylistTracks', () => {
     server.use(
       http.get('*/ma/playlist-items', ({ request }) => {
         const url = new URL(request.url)
-        if (url.searchParams.get('id') !== '61') return HttpResponse.json({ tracks: [] }, { status: 500 })
+        if (url.searchParams.get('id') !== '61')
+          return HttpResponse.json({ tracks: [] }, { status: 500 })
         return HttpResponse.json({
           tracks: [
             {
@@ -134,7 +135,8 @@ describe('fetchMaRecentlyPlayed', () => {
     server.use(
       http.get('*/ma/recent', ({ request }) => {
         const url = new URL(request.url)
-        if (url.searchParams.get('limit') !== '20') return HttpResponse.json({ tracks: [] }, { status: 500 })
+        if (url.searchParams.get('limit') !== '20')
+          return HttpResponse.json({ tracks: [] }, { status: 500 })
         return HttpResponse.json({
           tracks: [
             {
@@ -166,9 +168,7 @@ describe('fetchMaRecentlyPlayed', () => {
   })
 
   it('throws on non-OK response', async () => {
-    server.use(
-      http.get('*/ma/recent', () => HttpResponse.json({ error: 'boom' }, { status: 500 })),
-    )
+    server.use(http.get('*/ma/recent', () => HttpResponse.json({ error: 'boom' }, { status: 500 })))
     await expect(fetchMaRecentlyPlayed()).rejects.toThrow('ma/recent')
   })
 })

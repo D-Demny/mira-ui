@@ -133,7 +133,12 @@ describe('usePlaylists', () => {
 
 describe('usePlaylists - Music Assistant source (issue #138)', () => {
   const maPlaylists = [
-    { item_id: '61', name: 'Rock', uri: 'library://playlist/61', image_url: 'http://10.0.0.4:8095/static/image/a.jpg' },
+    {
+      item_id: '61',
+      name: 'Rock',
+      uri: 'library://playlist/61',
+      image_url: 'http://10.0.0.4:8095/static/image/a.jpg',
+    },
     { item_id: '62', name: 'Jazz', uri: 'library://playlist/62' },
   ]
 

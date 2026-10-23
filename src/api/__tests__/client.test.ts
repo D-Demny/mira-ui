@@ -147,6 +147,31 @@ describe('remoteStateToStatus', () => {
     expect(status.lyrics_url).toBe('')
   })
 
+  it('extracts the spotify id from a Music Assistant track URI (issue #47)', () => {
+    const status = remoteStateToStatus({
+      ...baseWire,
+      TrackUri: 'spotify--yofvZfhZ://track/4ml1Eq4wmcdfN0Q6pNEly7',
+    })
+
+    expect(status.track_id).toBe('4ml1Eq4wmcdfN0Q6pNEly7')
+    expect(status.lyrics_url).toBe('/lyrics/4ml1Eq4wmcdfN0Q6pNEly7')
+  })
+
+  it('returns empty trackId for Music Assistant non-track domains and garbage (issue #47)', () => {
+    // episodes, streams and malformed strings have no lyrics id — useLyrics
+    // treats '' as skip
+    for (const uri of [
+      'spotify--yofvZfhZ://episode/xyz123',
+      'local-file:/media/song.mp3',
+      'garbage-string-without-any-structure',
+    ]) {
+      const status = remoteStateToStatus({ ...baseWire, TrackUri: uri })
+
+      expect(status.track_id).toBe('')
+      expect(status.lyrics_url).toBe('')
+    }
+  })
+
   it('maps pascalcase wire fields onto snake_case output verbatim', () => {
     const wire: RemoteStateWire = {
       ...baseWire,

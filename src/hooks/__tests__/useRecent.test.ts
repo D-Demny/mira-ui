@@ -277,10 +277,14 @@ describe('useRecent - Music Assistant source (issue #138)', () => {
       release = r
     })
     server.use(
-      http.get('*/web-api/me/player/recently-played', () => HttpResponse.json({ items: mockRecent })),
+      http.get('*/web-api/me/player/recently-played', () =>
+        HttpResponse.json({ items: mockRecent }),
+      ),
       http.get('*/ma/recent', async () => {
         await gate
-        return HttpResponse.json({ tracks: [{ id: 't9', name: 'MA Track', uri: 'spotify:track:t9' }] })
+        return HttpResponse.json({
+          tracks: [{ id: 't9', name: 'MA Track', uri: 'spotify:track:t9' }],
+        })
       }),
     )
 
